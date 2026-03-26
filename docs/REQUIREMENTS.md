@@ -3565,6 +3565,120 @@
 
 ---
 
+## Additional Requirements (from review)
+
+### REQ-CLI-015: First-Run Setup Wizard
+- **Type**: UX
+- **Priority**: Must-Have
+- **Description**: On the very first invocation of `moodle-scraper` (or `moodle-scraper scrape`) when no config file and no Keychain credentials exist, the program must enter an interactive setup wizard before doing anything else. The wizard walks through exactly four steps in order: (1) prompt for the Moodle base URL (e.g. `https://moodle.hwr-berlin.de`), validate it is HTTPS and reachable; (2) prompt for username (visible) and password (hidden), attempt login to verify; (3) prompt for output directory with default `./output/` shown; (4) print a summary of what was configured and confirm readiness. After the wizard completes successfully, the scrape begins immediately without requiring a second command. The wizard is skipped entirely if credentials and config already exist.
+- **Trigger**: First invocation with no existing config file at `~/.config/moodle-scraper/config.json` AND no Keychain entry for service `moodle-scraper`.
+- **Input**: Interactive terminal input: Moodle URL (string), username (string), password (hidden string), output directory path (string, Enter to accept default).
+- **Output / Outcome**: Config file written to `~/.config/moodle-scraper/config.json` with `moodleUrl` and `outputDir`. Credentials stored in Keychain. Session cookies stored at `~/.config/moodle-scraper/session.json`. Scrape begins immediately after confirmation.
+- **Error Conditions**:
+  - Moodle URL is HTTP (not HTTPS): print "Error: URL must use HTTPS." and re-prompt. Maximum 3 attempts before aborting with exit code 1.
+  - Moodle URL is unreachable (connection error or timeout): print "Error: could not reach <url> — check the URL and your internet connection." Re-prompt. Maximum 3 attempts.
+  - Login fails (wrong password): print "Login failed: incorrect username or password." Re-prompt credentials. Maximum 3 attempts before aborting with exit code 2.
+  - Output directory cannot be created (permission denied): print "Error: cannot create directory <path>: <reason>." Re-prompt directory. Maximum 3 attempts.
+  - `--non-interactive` flag is set: skip wizard entirely; if config or credentials are missing, exit with code 2 and message "No configuration found. Run: moodle-scraper setup".
+- **Acceptance Criteria**:
+  ```gherkin
+  Scenario: First-ever invocation completes setup and begins scrape
+    Given no config file exists at ~/.config/moodle-scraper/config.json
+    And no Keychain entry exists for service "moodle-scraper"
+    When the user runs "moodle-scraper" and provides valid URL, credentials, and output dir
+    Then config is written, credentials stored, and the scrape begins without any further command
+
+  Scenario: Setup skipped when config and credentials already exist
+    Given a valid config file exists and Keychain credentials are present
+    When the user runs "moodle-scraper"
+    Then the wizard is not shown and the incremental scrape begins immediately
+
+  Scenario: Invalid HTTPS URL re-prompts up to 3 times
+    Given no config exists
+    When the user provides an HTTP URL three times in a row
+    Then the program exits with code 1 and message "Setup aborted after 3 failed attempts."
+  ```
+- **Rules**:
+  - RULE-CLI-015-A: The wizard must not require any flags or subcommands — plain `moodle-scraper` must trigger it on first run.
+  - RULE-CLI-015-B: Wizard state is transactional: nothing is written to disk or Keychain until all four steps succeed. A failure mid-wizard leaves the system in its pre-wizard state.
+  - RULE-CLI-015-C: The wizard is also accessible explicitly via `moodle-scraper setup` at any time, allowing re-configuration.
+- **Dependencies**: REQ-AUTH-001, REQ-AUTH-002, REQ-AUTH-003, REQ-CLI-007
+
+---
+
+### REQ-CLI-016: Issues Detail View (`status --issues`)
+- **Type**: UX
+- **Priority**: Should-Have
+- **Description**: The `status` command supports an `--issues` flag that prints a detailed, human-readable report of all known problems in the local sync state. The report is grouped into sections: (1) **Orphaned files** — local files whose Moodle resource no longer exists, listed by course with local path; (2) **Orphaned courses** — courses whose local folder exists but the user is no longer enrolled, listed with file count; (3) **Failed downloads** — resources that failed on the last scrape run and were skipped, listed with the failure reason; (4) **Stale partial files** — any `.part` files found in the output directory. Each section is printed only if it has at least one entry. If all sections are empty, print "No issues found." and exit 0.
+- **Trigger**: User runs `moodle-scraper status --issues`.
+- **Input**: Local state file (`.moodle-sync-state.json`), output directory tree scan (for `.part` files). No Moodle network request is made.
+- **Output / Outcome**: Grouped plaintext report on stdout. Each issue line includes enough information to identify and manually resolve the issue. Exit code 0 always (issues are informational, not errors).
+- **Error Conditions**:
+  - State file missing: print "No state file found at <path>. Run 'moodle-scraper scrape' first." Exit 0.
+  - State file corrupt: print "State file is corrupt — run 'moodle-scraper scrape' to rebuild it." Exit 0.
+  - Output directory missing: print "Output directory <path> does not exist." Exit 0.
+- **Acceptance Criteria**:
+  ```gherkin
+  Scenario: State has orphaned files and a stale partial
+    Given the state file contains 2 orphaned resources across 1 course
+    And a .part file exists in the output directory
+    When the user runs "moodle-scraper status --issues"
+    Then stdout contains an "Orphaned files" section listing both resources with their local paths
+    And stdout contains a "Stale partial files" section listing the .part file path
+    And the exit code is 0
+
+  Scenario: No issues exist
+    Given the state file has no orphaned, failed, or partial entries
+    And no .part files exist in the output directory
+    When the user runs "moodle-scraper status --issues"
+    Then stdout contains exactly "No issues found."
+    And the exit code is 0
+  ```
+- **Rules**:
+  - RULE-CLI-016-A: `status --issues` never makes any network request — it is entirely local.
+  - RULE-CLI-016-B: The failed-downloads section requires that failed resources are recorded in the state file with a `status` of `"failed"` and a `failureReason` field (string). REQ-SYNC-001 must be updated to include this field.
+  - RULE-CLI-016-C: Exit code is always 0 — the presence of issues is not an error condition for this command.
+- **Dependencies**: REQ-CLI-006, REQ-SYNC-001, REQ-SYNC-005, REQ-SYNC-007
+
+---
+
+### REQ-SEC-009: Request Jitter and Browsing-Pattern Normalisation
+- **Type**: Security
+- **Priority**: Must-Have
+- **Description**: To prevent the scraper's traffic from being identifiable as automated by Moodle's server-side monitoring, all outbound requests must exhibit human-like timing and header patterns. The fixed inter-request delay from REQ-SEC-005 is supplemented with a random jitter component. Additionally, standard browser request headers are included on all requests to make each request indistinguishable from normal browser activity at the HTTP header level, except for the User-Agent (which remains honest per REQ-SEC-006).
+- **Trigger**: Every outbound HTTP request to the Moodle host.
+- **Input**: The configured `requestDelayMs` base value; a cryptographically random jitter value; the list of standard headers to inject.
+- **Output / Outcome**: Each request is sent after a delay of `requestDelayMs + random(0, requestDelayMs * 0.5)` milliseconds (i.e. jitter up to 50% of the base delay). Every request includes: `Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8`, `Accept-Language: de-DE,de;q=0.9,en;q=0.8` (reflecting HWR Berlin's German-language context), `Accept-Encoding: gzip, deflate, br`, `Referer: <url of the previously fetched Moodle page>` (set to the parent page URL for resource/file requests).
+- **Error Conditions**:
+  - Random number generator unavailable: fall back to fixed delay with no jitter and log a single WARN at startup "WARN: jitter unavailable — using fixed delay". Do not abort.
+  - Referer URL for a request cannot be determined (e.g. first request of session): omit the Referer header for that request only.
+- **Acceptance Criteria**:
+  ```gherkin
+  Scenario: Consecutive requests have varying delays
+    Given requestDelayMs is set to 1000
+    When 10 consecutive requests are made to the Moodle host
+    Then no two consecutive inter-request delays are identical
+    And every delay is between 1000 ms and 1500 ms inclusive
+
+  Scenario: File download request includes Referer header
+    Given the scraper is downloading a file from a course section page
+    When the download request is sent
+    Then the request includes a "Referer" header set to the course section page URL
+
+  Scenario: Standard Accept headers are present on all requests
+    Given any outbound request to the Moodle host
+    When the request is inspected
+    Then it includes "Accept", "Accept-Language", and "Accept-Encoding" headers with the specified values
+  ```
+- **Rules**:
+  - RULE-SEC-009-A: Jitter is computed per-request using a uniform random distribution over `[0, requestDelayMs * 0.5]`, rounded to the nearest millisecond.
+  - RULE-SEC-009-B: The `Accept-Language` header value is `de-DE,de;q=0.9,en;q=0.8` and is not configurable, as it reflects the expected language context of HWR Berlin's Moodle.
+  - RULE-SEC-009-C: The `Referer` header is set to the URL of the Moodle page from which the current resource link was extracted (the "parent page"). It is never set to an external or non-Moodle URL.
+  - RULE-SEC-009-D: No per-session or per-day download volume cap is enforced by the program itself (the rate limiting and jitter are sufficient); the user is responsible for not running force re-syncs of large course lists repeatedly in short succession.
+- **Dependencies**: REQ-SEC-005, REQ-SEC-006
+
+---
+
 ## Completeness Checklist
 
 - [x] Every user interaction has a terminal state (success or handled error)
@@ -3585,7 +3699,22 @@
 | REQ-SCRAPE | 12 |
 | REQ-SYNC | 9 |
 | REQ-FS | 8 |
-| REQ-CLI | 14 |
-| REQ-SEC | 8 |
+| REQ-CLI | 16 |
+| REQ-SEC | 9 |
 | REQ-ERR | 13 |
-| **Total** | **72** |
+| **Total** | **75** |
+
+## State File Schema (canonical)
+
+Each entry in `.moodle-sync-state.json` contains exactly:
+```json
+{
+  "resourceId": "string (Moodle item ID)",
+  "localPath": "string (relative, forward slashes)",
+  "lastModified": "ISO8601 string or null",
+  "contentHash": "64-char lowercase hex SHA-256 or null",
+  "downloadedAt": "ISO8601 UTC string",
+  "status": "ok | orphan | failed",
+  "failureReason": "string or null (set when status=failed)"
+}
+```
