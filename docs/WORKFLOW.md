@@ -11,8 +11,8 @@
 - [x] Every error condition has a defined response
 - [x] Every piece of stored data has a defined format, location, and lifecycle
 - [x] No open questions remain in the document
-- [ ] The requirements checker agent finds zero gaps
-- [ ] Feature IDs are assigned to every requirement
+- [x] The requirements checker agent finds zero gaps
+- [x] Feature IDs are assigned to every requirement
 
 **Output**: `docs/REQUIREMENTS.md`
 
@@ -25,9 +25,9 @@
 **Checker**: `agents/requirements-checker.md` (traceability mode)
 
 **Completeness criteria**:
-- [ ] Every REQ-XXX ID from REQUIREMENTS.md appears in the timeline
-- [ ] Each step has: ID, name, description, linked requirements, dependencies, acceptance criteria
-- [ ] Checker script reports 100% coverage
+- [x] Every REQ-XXX ID from REQUIREMENTS.md appears in the timeline
+- [x] Each step has: ID, name, description, linked requirements, dependencies, acceptance criteria
+- [x] Checker script reports 100% coverage
 
 **Output**: `docs/FEATURE_TIMELINE.md`
 

@@ -58,11 +58,10 @@ hwr-moodle-scraper/
 | Update docs before commit | `agents/doc-updater.md` |
 
 ## Current Phase
-**Phase 1 — Requirements Engineering** ✅ COMPLETE
+**Phase 3 — Tests First**
 - 75 requirements across 7 categories (REQ-AUTH, REQ-SCRAPE, REQ-SYNC, REQ-FS, REQ-CLI, REQ-SEC, REQ-ERR)
-- Every requirement has full Gherkin acceptance criteria, quantified rules, and error conditions
-- Latest: `be35013` (3 new: REQ-CLI-015 setup wizard, REQ-CLI-016 status issues, REQ-SEC-009 jitter+headers)
-- **Next**: Phase 2 — Requirements Checker audit (Mode 1), then planner builds Feature Timeline
+- Feature Timeline complete: 22 steps in `docs/FEATURE_TIMELINE.md`, traceability audit PASS (75/75)
+- Next: write failing tests for each STEP before any implementation code
 
 ## Tech Stack
 TBD — decided after requirements are complete and tech research is done.
