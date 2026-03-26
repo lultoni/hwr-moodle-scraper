@@ -45,6 +45,10 @@
 
 **Output**: `tests/` directory
 
+**Checklist**:
+- [x] All 22 timeline steps have corresponding test files
+- [x] All tests written to spec; green tests skipped until implementation phase
+
 ---
 
 ## Phase 4 — Implementation
@@ -58,6 +62,13 @@
 - No new features without a corresponding test
 
 **Output**: `src/` directory
+
+**Checklist**:
+- [x] All 22 steps implemented
+- [x] All 146 tests passing (24 test files)
+- [x] Full CLI with auth, scrape, status, wizard commands
+- [x] Security: keychain integration, credential handling, HTTPS + retry logic
+- [x] Sync: rate limiting, incremental updates, state management
 
 ---
 

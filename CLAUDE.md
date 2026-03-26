@@ -58,10 +58,11 @@ hwr-moodle-scraper/
 | Update docs before commit | `agents/doc-updater.md` |
 
 ## Current Phase
-**Phase 3 — Tests First**
-- 75 requirements across 7 categories (REQ-AUTH, REQ-SCRAPE, REQ-SYNC, REQ-FS, REQ-CLI, REQ-SEC, REQ-ERR)
-- Feature Timeline complete: 22 steps in `docs/FEATURE_TIMELINE.md`, traceability audit PASS (75/75)
-- Next: write failing tests for each STEP before any implementation code
+**Phase 4 — Implementation: COMPLETE**
+- All 22 timeline steps implemented in `src/` with 146/146 tests passing across 24 test files
+- Full CLI implementation: auth, scrape, status, wizard commands
+- Security & robustness: credential handling, rate limiting, retry logic, incremental sync
+- Next: Phase 5 — iterative improvements based on real-world testing
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.
