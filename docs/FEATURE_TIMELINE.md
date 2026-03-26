@@ -17,7 +17,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ## Steps
 
 ### STEP-001: Project scaffold and CLI entry point
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-CLI-001, REQ-CLI-011, REQ-CLI-013, REQ-CLI-014
 - **Dependencies**: none
 - **Description**: Bootstrap the project: package manager setup, entry point binary (`moodle-scraper` / alias `msc`), version flag (`--version`/`-V`), top-level help text, and exit code constants. All other steps build on this scaffold.
@@ -32,7 +32,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-002: Config management
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-CLI-007, REQ-FS-001
 - **Dependencies**: STEP-001
 - **Description**: Implement the `config` command and the config file at `~/.config/moodle-scraper/config.json`. Handles `config get <key>`, `config set <key> <value>`, `config list`, and `config reset`. The root output directory key (`outputDir`) defaults to `~/moodle-scraper-output`. On first access, creates `~/.config/moodle-scraper/` with permissions `0700`.
@@ -49,7 +49,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-003: Filename sanitisation and collision handling
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-FS-003, REQ-FS-004
 - **Dependencies**: STEP-001
 - **Description**: Implement a filename sanitisation function that strips/replaces characters illegal on macOS/Linux/Windows (`/`, `\`, `:`, `*`, `?`, `"`, `<`, `>`, `|`, null byte), trims leading/trailing whitespace and dots, caps filenames at 255 bytes (UTF-8), and falls back to `"unnamed"` for blank results. Implement collision resolution by appending `_2`, `_3`, … suffix before the extension.
@@ -65,7 +65,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-004: Security primitives — HTTPS enforcement and TLS validation
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-SEC-003, REQ-SEC-008, REQ-SEC-006
 - **Dependencies**: STEP-001
 - **Description**: Create the HTTP client wrapper used throughout the project. Enforces HTTPS-only URLs (rejects any `http://` URL with a clear error), enables TLS certificate validation (no `rejectUnauthorized: false`), sets an honest `User-Agent` header (`moodle-scraper/x.y.z (github.com/…)`), and exposes a typed `get(url, options)` / `post(url, body, options)` interface.
@@ -80,7 +80,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-005: Request rate limiting and jitter
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-SEC-005, REQ-SEC-009
 - **Dependencies**: STEP-004
 - **Description**: Add a rate-limiter middleware to the HTTP client: maximum 5 concurrent requests, minimum 500 ms inter-request delay, and a ±200 ms random jitter applied to every request. Also implements browsing-pattern normalisation (sequential course page scraping, not burst parallel). Jitter and delay values must be configurable via `config set`.
@@ -95,7 +95,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-006: macOS Keychain credential storage
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-AUTH-002, REQ-SEC-001, REQ-SEC-004
 - **Dependencies**: STEP-001
 - **Description**: Implement the Keychain adapter: `storeCredentials(username, password)`, `readCredentials()`, `deleteCredentials()`. Uses the native macOS Keychain API (via `keytar` or equivalent). Service name is hardcoded to `"moodle-scraper"`. Fails fast with a clear error on non-macOS. Enforces that session files are written with `0600` permissions.
@@ -111,7 +111,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-007: Log and output redaction
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-SEC-002, REQ-SEC-007
 - **Dependencies**: STEP-006
 - **Description**: Implement a logger with three levels (info, warn, error) plus verbose and quiet modes. All log output is scanned for credential patterns before emission — any string matching the stored username or password is replaced with `[REDACTED]`. The state file writer is also audited to ensure it never writes credential fields. Logger respects `--verbose`/`--quiet` flags globally.
@@ -126,7 +126,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-008: First-run credential prompt and session acquisition
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-AUTH-001, REQ-AUTH-003, REQ-AUTH-006
 - **Dependencies**: STEP-004, STEP-006, STEP-007
 - **Description**: Implement the interactive credential prompt flow: prompt for username (visible), then password (masked via `getpass`/`readline`). Validate non-empty inputs. Attempt Moodle login via HTTP POST; capture session cookies on success; write `~/.config/moodle-scraper/session.json` (`0600`). On failure, print the appropriate error message and exit 1 without storing anything. Does NOT store credentials until login succeeds.
@@ -144,7 +144,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-009: Session validation and transparent re-authentication
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-AUTH-004, REQ-AUTH-005
 - **Dependencies**: STEP-008
 - **Description**: Before every scrape, validate the stored session by sending a lightweight authenticated request (e.g. GET `/my/` and checking for login page redirect). If expired, transparently re-authenticate using stored Keychain credentials — no user prompt needed. If Keychain credentials are absent, fall back to the interactive prompt (STEP-008). If re-auth fails after 3 attempts, exit 3.
@@ -160,7 +160,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-010: `auth` subcommands
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-AUTH-007, REQ-AUTH-008, REQ-CLI-003, REQ-CLI-004, REQ-CLI-005
 - **Dependencies**: STEP-008, STEP-009
 - **Description**: Implement `auth set` (triggers the credential prompt flow, replaces existing credentials), `auth clear` (removes Keychain entry and deletes session.json, requires `--force` or confirmation prompt), and `auth status` (prints whether credentials and a valid session exist, without revealing the password).
@@ -177,7 +177,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-011: Filesystem output structure
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-FS-002, REQ-FS-005, REQ-FS-006, REQ-FS-008
 - **Dependencies**: STEP-002, STEP-003
 - **Description**: Implement the output folder hierarchy builder: `<outputDir>/<CourseName>/<SectionName>/<filename>`. Creates intermediate directories on demand. Implements atomic file writes (write to `.tmp` then rename). On startup, scans output dir for `.tmp` orphans and deletes them. Pre-checks available disk space before downloads begin; aborts with error if headroom < 100 MB (configurable).
@@ -193,7 +193,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-012: Optional metadata sidecar
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-FS-007
 - **Dependencies**: STEP-011
 - **Description**: When `--metadata` flag is passed to `scrape`, write a `<filename>.meta.json` sidecar alongside each downloaded file. Sidecar contains: source URL, download timestamp (ISO 8601), file size bytes, SHA-256 hash, Moodle resource ID, course name, section name.
@@ -208,7 +208,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-013: Course listing and content tree traversal
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-SCRAPE-001, REQ-SCRAPE-002, REQ-SCRAPE-012
 - **Dependencies**: STEP-004, STEP-005, STEP-009, STEP-011
 - **Description**: Implement Moodle API calls (or HTML scraping) to retrieve the list of enrolled courses and then recursively traverse each course's content tree (sections → activities → resources). Build an in-memory content tree data structure. Handle inaccessible/restricted activities gracefully (skip + log, no crash). Use Moodle's REST API (`/webservice/rest/server.php`) if a token is available; fall back to HTML parsing.
@@ -224,7 +224,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-014: File download engine (streaming + concurrency)
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-SCRAPE-003, REQ-SCRAPE-004, REQ-SCRAPE-009, REQ-SCRAPE-010, REQ-SCRAPE-011
 - **Dependencies**: STEP-005, STEP-011, STEP-012, STEP-013
 - **Description**: Implement the streaming file download engine. Downloads are streamed to disk (no full file in memory). A configurable concurrency pool limits simultaneous downloads (default 3, max 10, configurable via `config set maxConcurrentDownloads`). A progress display shows per-file progress bars and a global summary. Folder-type activities are recursively traversed and all contained files are downloaded.
@@ -240,7 +240,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-015: Content type handlers (URLs, assignments, forums, labels)
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-SCRAPE-005, REQ-SCRAPE-006, REQ-SCRAPE-007, REQ-SCRAPE-008
 - **Dependencies**: STEP-013, STEP-014
 - **Description**: Implement handlers for non-file content types: (1) External URLs — write `<activityName>.url.txt` containing the URL. (2) Assignments — write `<assignmentName>_description.md` containing the HTML-to-Markdown converted description + due date + submission instructions. (3) Forums/Announcements — write `<forumName>/<postTitle>.md` per post with author, timestamp, body. (4) Inline Labels — write `<section>/_labels.md` accumulating all label text in section order.
@@ -255,7 +255,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-016: State file management
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-SYNC-001, REQ-SYNC-002, REQ-SEC-007
 - **Dependencies**: STEP-002, STEP-011
 - **Description**: Implement the sync state file at `<outputDir>/.moodle-scraper-state.json`. Schema: `{ version, lastSyncAt, courses: { [courseId]: { name, sections: { [sectionId]: { files: { [resourceId]: { name, url, localPath, hash, lastModified, status } } } } } } }`. Write atomically (temp + rename). Never store username, password, or session cookies in the state file.
@@ -271,7 +271,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-017: Incremental sync engine
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-SYNC-003, REQ-SYNC-004, REQ-SYNC-005, REQ-SYNC-006, REQ-SYNC-007, REQ-SYNC-008, REQ-SYNC-009
 - **Dependencies**: STEP-016, STEP-014
 - **Description**: Implement incremental sync logic: compare current Moodle content tree against state file. Download only new or changed files (changed = different `lastModified` or content hash). Detect orphaned local files (in state but not on Moodle) and log them. Detect new courses and removed courses. Implement `--force` flag to wipe state and re-download everything. Implement `--dry-run` flag to print planned actions without executing them.
@@ -288,7 +288,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-018: Error handling — network errors and HTTP status codes
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-ERR-001, REQ-ERR-002, REQ-ERR-003, REQ-ERR-004, REQ-ERR-005, REQ-ERR-006, REQ-ERR-007
 - **Dependencies**: STEP-004, STEP-005, STEP-013
 - **Description**: Implement error handling middleware in the HTTP client and scrape engine: (1) Timeouts: 30 s connect, 120 s read; exponential backoff retry (3 attempts, 2×) for transient errors. (2) 401 → trigger re-auth (STEP-009). (3) 403 → log "Access denied: <url>", skip resource, continue. (4) 404 → log "Not found: <url>", mark as orphan in state. (5) 429 → respect `Retry-After` header; wait and retry up to 3 times. (6) 5xx → exponential backoff retry 3×; if all fail, log error and skip. (7) Moodle maintenance page detection (check for `site-maintenance` CSS class in response body) → abort with "Moodle is in maintenance mode." exit 4.
@@ -305,7 +305,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-019: Error handling — filesystem and graceful shutdown
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-ERR-008, REQ-ERR-009, REQ-ERR-010, REQ-ERR-011, REQ-ERR-012, REQ-ERR-013
 - **Dependencies**: STEP-011, STEP-016
 - **Description**: Implement: (1) Disk-full detection during streaming download — abort download, delete partial file, log "Error: disk full — <path>: <OS error>.", continue other downloads. (2) Output dir inaccessible → print specific error, exit 5. (3) Corrupt/unreadable state file → log warning, treat as first run (full re-sync), do not crash. (4) Unexpected Moodle page structure (missing expected DOM elements) → log "Warning: unexpected page structure at <url> — <detail>", skip activity. (5) SIGINT/SIGTERM → flush state file, delete all `.tmp` files, print "Interrupted. Progress saved." and exit 0.
@@ -321,7 +321,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-020: `scrape` command
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-CLI-002, REQ-CLI-008, REQ-CLI-009, REQ-CLI-010
 - **Dependencies**: STEP-009, STEP-013, STEP-014, STEP-015, STEP-016, STEP-017, STEP-018, STEP-019
 - **Description**: Wire up the top-level `scrape` command with all its flags: `--output-dir <path>` (overrides config), `--courses <id,...>` (scrape specific courses only), `--force` (full re-sync), `--dry-run`, `--metadata`, `--verbose`/`-v`, `--quiet`/`-q`, `--non-interactive`. Orchestrates the full scrape pipeline: auth → course list → content tree → download → state update.
@@ -339,7 +339,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-021: `status` command and log file
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-CLI-006, REQ-CLI-012, REQ-CLI-016
 - **Dependencies**: STEP-016, STEP-017, STEP-020
 - **Description**: Implement `status` command: reads state file and prints a summary — last sync time, total courses, total files, orphaned files count, pending changes. Implement `status --issues` detail view listing each orphan/error. Implement `--log-file <path>` flag (or `config set logFile <path>`) to tee all log output to a file with timestamps. Log file is created with `0600` permissions.
@@ -355,7 +355,7 @@ Steps are ordered by dependency graph: foundational primitives first, then auth,
 ---
 
 ### STEP-022: First-run setup wizard
-- **Status**: Pending
+- **Status**: Complete
 - **Requirements**: REQ-CLI-015
 - **Dependencies**: STEP-010, STEP-020, STEP-021
 - **Description**: Implement the first-run setup wizard that fires automatically when neither credentials are stored nor a config file exists. Guides the user through: (1) setting the output directory, (2) entering credentials (STEP-008 flow), (3) optionally running a `scrape --dry-run` to preview. At the end, prints a summary of configured settings.
