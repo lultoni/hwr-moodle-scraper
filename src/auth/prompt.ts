@@ -23,6 +23,12 @@ export interface PromptAuthOptions {
   baseUrl?: string;
 }
 
+/** Extract the logintoken CSRF field from Moodle's login page HTML. */
+function extractLoginToken(html: string): string | undefined {
+  const match = html.match(/name="logintoken"\s+value="([^"]+)"/);
+  return match?.[1];
+}
+
 export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<void> {
   const { promptFn, httpClient, keychain, baseUrl = "https://moodle.hwr-berlin.de" } = opts;
 
@@ -45,13 +51,21 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
     }
   }
 
-  // Attempt login
-  let response: { status: number; url: string; cookies?: Array<{ name: string; value: string; domain: string; path: string; expires: null }> };
+  // Fetch login page to obtain the CSRF logintoken
+  let loginToken: string | undefined;
   try {
-    response = await httpClient.post(`${baseUrl}/login/index.php`, {
-      username,
-      password,
-    }) as typeof response;
+    const loginPage = await httpClient.get(`${baseUrl}/login/index.php`);
+    loginToken = extractLoginToken(loginPage.body);
+  } catch {
+    // Non-fatal: proceed without token (some Moodle versions don't require it)
+  }
+
+  // Attempt login
+  let response: { status: number; url: string };
+  try {
+    const body: Record<string, string> = { username, password };
+    if (loginToken) body["logintoken"] = loginToken;
+    response = await httpClient.post(`${baseUrl}/login/index.php`, body) as typeof response;
   } catch (err) {
     const msg = `Login failed: network error — ${(err as Error).message}.`;
     process.stderr.write(msg + "\n");
@@ -70,3 +84,4 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
     await keychain.storeCredentials(username, password);
   }
 }
+

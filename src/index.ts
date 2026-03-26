@@ -20,12 +20,17 @@ const pkg = JSON.parse(
 ) as { version: string; name: string };
 
 // --- interactive prompt helper ---
+// For masked input (passwords): use a muted output stream so readline still
+// functions correctly in a TTY but never echoes characters to the terminal.
 function makePromptFn() {
   return async (prompt: string, masked = false): Promise<string> => {
-    const rl = createInterface({ input: process.stdin, output: masked ? undefined : process.stdout });
-    if (masked) process.stdout.write(prompt);
+    process.stdout.write(prompt);
+    const output = masked
+      ? new (await import("node:stream")).Writable({ write(_chunk, _enc, cb) { cb(); } })
+      : process.stdout;
+    const rl = createInterface({ input: process.stdin, output, terminal: masked });
     return new Promise((resolve) => {
-      rl.question(masked ? "" : prompt, (answer) => {
+      rl.question("", (answer) => {
         rl.close();
         if (masked) process.stdout.write("\n");
         resolve(answer);

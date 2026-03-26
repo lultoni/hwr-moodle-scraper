@@ -24,9 +24,25 @@ vi.mock("../../src/http/client.js", () => ({
 import { promptAndAuthenticate } from "../../src/auth/prompt.js";
 import { KeychainAdapter } from "../../src/auth/keychain.js";
 
+const LOGIN_PAGE_HTML = `<html><body>
+  <input type="hidden" name="logintoken" value="abc123token">
+</body></html>`;
+
+const SUCCESS_URL = "https://moodle.example.com/my/";
+const FAIL_URL = "https://moodle.example.com/login/index.php";
+
 function makePromptInputs(inputs: string[]) {
   let i = 0;
   return vi.fn().mockImplementation(async () => inputs[i++] ?? "");
+}
+
+function makeHttpClient(opts: { postUrl: string; succeeds?: boolean }) {
+  const { createHttpClient } = require("../../src/http/client.js");
+  vi.mocked(createHttpClient).mockReturnValue({
+    get: vi.fn().mockResolvedValue({ status: 200, url: "https://moodle.example.com/login/index.php", body: LOGIN_PAGE_HTML }),
+    post: vi.fn().mockResolvedValue({ status: 200, url: opts.postUrl }),
+  } as never);
+  return vi.mocked(createHttpClient)();
 }
 
 describe("STEP-008: Credential prompt — input validation", () => {
@@ -35,11 +51,10 @@ describe("STEP-008: Credential prompt — input validation", () => {
     const promptFn = makePromptInputs(["", "alice", "password123"]);
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
-    // Mock HTTP to succeed on first real attempt
     const { createHttpClient } = await import("../../src/http/client.js");
     vi.mocked(createHttpClient).mockReturnValue({
-      post: vi.fn().mockResolvedValue({ status: 200, url: "https://moodle.example.com/my/" }),
-      get: vi.fn(),
+      get: vi.fn().mockResolvedValue({ status: 200, url: FAIL_URL, body: LOGIN_PAGE_HTML }),
+      post: vi.fn().mockResolvedValue({ status: 200, url: SUCCESS_URL }),
     } as never);
 
     await promptAndAuthenticate({ promptFn, httpClient: vi.mocked(createHttpClient)() });
@@ -56,8 +71,8 @@ describe("STEP-008: Credential prompt — input validation", () => {
 
     const { createHttpClient } = await import("../../src/http/client.js");
     vi.mocked(createHttpClient).mockReturnValue({
-      post: vi.fn().mockResolvedValue({ status: 200, url: "https://moodle.example.com/my/" }),
-      get: vi.fn(),
+      get: vi.fn().mockResolvedValue({ status: 200, url: FAIL_URL, body: LOGIN_PAGE_HTML }),
+      post: vi.fn().mockResolvedValue({ status: 200, url: SUCCESS_URL }),
     } as never);
 
     await promptAndAuthenticate({ promptFn, httpClient: vi.mocked(createHttpClient)() });
@@ -65,6 +80,57 @@ describe("STEP-008: Credential prompt — input validation", () => {
     const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
     expect(output).toContain("Password must not be empty.");
     stderrSpy.mockRestore();
+  });
+
+  // REQ-AUTH-001 — password prompt uses masked=true flag
+  it("calls promptFn with masked=true for the password field", async () => {
+    const promptFn = vi.fn().mockImplementation(async () => "value");
+    const { createHttpClient } = await import("../../src/http/client.js");
+    vi.mocked(createHttpClient).mockReturnValue({
+      get: vi.fn().mockResolvedValue({ status: 200, url: FAIL_URL, body: LOGIN_PAGE_HTML }),
+      post: vi.fn().mockResolvedValue({ status: 200, url: SUCCESS_URL }),
+    } as never);
+
+    await promptAndAuthenticate({ promptFn, httpClient: vi.mocked(createHttpClient)() });
+
+    const passwordCall = promptFn.mock.calls.find((c) => c[0] === "Password: ");
+    expect(passwordCall).toBeDefined();
+    expect(passwordCall?.[1]).toBe(true);
+  });
+});
+
+describe("STEP-008: Credential prompt — CSRF logintoken", () => {
+  it("fetches login page first and includes logintoken in POST body", async () => {
+    const promptFn = makePromptInputs(["alice", "correctpass"]);
+    const { createHttpClient } = await import("../../src/http/client.js");
+    const getMock = vi.fn().mockResolvedValue({ status: 200, url: FAIL_URL, body: LOGIN_PAGE_HTML });
+    const postMock = vi.fn().mockResolvedValue({ status: 200, url: SUCCESS_URL });
+    vi.mocked(createHttpClient).mockReturnValue({ get: getMock, post: postMock } as never);
+
+    await promptAndAuthenticate({ promptFn, httpClient: vi.mocked(createHttpClient)() });
+
+    expect(getMock).toHaveBeenCalledWith(expect.stringContaining("/login/index.php"));
+    expect(postMock).toHaveBeenCalledWith(
+      expect.stringContaining("/login/index.php"),
+      expect.objectContaining({ logintoken: "abc123token" })
+    );
+  });
+
+  it("proceeds without logintoken if login page fetch fails", async () => {
+    const promptFn = makePromptInputs(["alice", "correctpass"]);
+    const { createHttpClient } = await import("../../src/http/client.js");
+    const postMock = vi.fn().mockResolvedValue({ status: 200, url: SUCCESS_URL });
+    vi.mocked(createHttpClient).mockReturnValue({
+      get: vi.fn().mockRejectedValue(new Error("network error")),
+      post: postMock,
+    } as never);
+
+    await promptAndAuthenticate({ promptFn, httpClient: vi.mocked(createHttpClient)() });
+
+    expect(postMock).toHaveBeenCalledWith(
+      expect.stringContaining("/login/index.php"),
+      expect.not.objectContaining({ logintoken: expect.anything() })
+    );
   });
 });
 
@@ -76,12 +142,8 @@ describe("STEP-008: Credential prompt — login failure", () => {
 
     const { createHttpClient } = await import("../../src/http/client.js");
     vi.mocked(createHttpClient).mockReturnValue({
-      // Login redirects back to /login/ — indicates failure
-      post: vi.fn().mockResolvedValue({
-        status: 200,
-        url: "https://moodle.example.com/login/index.php",
-      }),
-      get: vi.fn(),
+      get: vi.fn().mockResolvedValue({ status: 200, url: FAIL_URL, body: LOGIN_PAGE_HTML }),
+      post: vi.fn().mockResolvedValue({ status: 200, url: FAIL_URL }),
     } as never);
 
     const keychainInstance = new (vi.mocked(KeychainAdapter))();
@@ -103,8 +165,8 @@ describe("STEP-008: Credential prompt — login failure", () => {
 
     const { createHttpClient } = await import("../../src/http/client.js");
     vi.mocked(createHttpClient).mockReturnValue({
+      get: vi.fn().mockResolvedValue({ status: 200, url: FAIL_URL, body: LOGIN_PAGE_HTML }),
       post: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
-      get: vi.fn(),
     } as never);
 
     const keychainInstance = new (vi.mocked(KeychainAdapter))();
@@ -122,17 +184,13 @@ describe("STEP-008: Credential prompt — login failure", () => {
 
 describe("STEP-008: Credential prompt — successful login", () => {
   // REQ-AUTH-001, REQ-AUTH-003
-  it("on success: stores credentials in Keychain and writes session.json", async () => {
+  it("on success: stores credentials in Keychain", async () => {
     const promptFn = makePromptInputs(["alice", "correctpass"]);
 
     const { createHttpClient } = await import("../../src/http/client.js");
     vi.mocked(createHttpClient).mockReturnValue({
-      post: vi.fn().mockResolvedValue({
-        status: 200,
-        url: "https://moodle.example.com/my/",
-        cookies: [{ name: "MoodleSession", value: "abc123", domain: "moodle.example.com", path: "/", expires: null }],
-      }),
-      get: vi.fn(),
+      get: vi.fn().mockResolvedValue({ status: 200, url: FAIL_URL, body: LOGIN_PAGE_HTML }),
+      post: vi.fn().mockResolvedValue({ status: 200, url: SUCCESS_URL }),
     } as never);
 
     const keychainInstance = new (vi.mocked(KeychainAdapter))();
@@ -154,12 +212,8 @@ describe("STEP-008: Credential prompt — successful login", () => {
 
     const { createHttpClient } = await import("../../src/http/client.js");
     vi.mocked(createHttpClient).mockReturnValue({
-      post: vi.fn().mockResolvedValue({
-        status: 200,
-        url: "https://moodle.example.com/my/",
-        cookies: [],
-      }),
-      get: vi.fn(),
+      get: vi.fn().mockResolvedValue({ status: 200, url: FAIL_URL, body: LOGIN_PAGE_HTML }),
+      post: vi.fn().mockResolvedValue({ status: 200, url: SUCCESS_URL }),
     } as never);
 
     await promptAndAuthenticate({ promptFn, httpClient: vi.mocked(createHttpClient)() });
