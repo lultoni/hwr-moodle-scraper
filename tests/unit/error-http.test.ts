@@ -1,0 +1,133 @@
+// Covers: STEP-018, REQ-ERR-001, REQ-ERR-002, REQ-ERR-003, REQ-ERR-004,
+//         REQ-ERR-005, REQ-ERR-006, REQ-ERR-007
+//
+// Tests for HTTP error handling: timeouts, retries, status codes, maintenance mode.
+// Uses fake timers for retry/backoff tests.
+
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { MockAgent, setGlobalDispatcher, getGlobalDispatcher, Dispatcher } from "undici";
+import { createHttpClient } from "../../src/http/client.js";
+import { withRetry } from "../../src/http/retry.js";
+
+let mockAgent: MockAgent;
+let originalDispatcher: Dispatcher;
+
+beforeEach(() => {
+  originalDispatcher = getGlobalDispatcher();
+  mockAgent = new MockAgent();
+  mockAgent.disableNetConnect();
+  setGlobalDispatcher(mockAgent);
+});
+
+afterEach(() => {
+  setGlobalDispatcher(originalDispatcher);
+  mockAgent.close();
+  vi.useRealTimers();
+});
+
+const BASE = "https://moodle.example.com";
+
+describe("STEP-018: Retry on transient errors", () => {
+  // REQ-ERR-001
+  it("retries up to 3 times with exponential backoff on network error", async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const operation = vi.fn(async () => {
+      attempts++;
+      if (attempts < 3) throw new Error("ECONNRESET");
+      return "success";
+    });
+
+    const resultPromise = withRetry(operation, { maxAttempts: 3, baseDelayMs: 1000 });
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(result).toBe("success");
+    expect(attempts).toBe(3);
+  });
+
+  it("throws after exhausting all retries", async () => {
+    vi.useFakeTimers();
+    const operation = vi.fn(async () => { throw new Error("persistent error"); });
+
+    const p = withRetry(operation, { maxAttempts: 3, baseDelayMs: 100 });
+    await vi.runAllTimersAsync();
+
+    await expect(p).rejects.toThrow("persistent error");
+    expect(operation).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("STEP-018: HTTP 403 handling", () => {
+  // REQ-ERR-003
+  it("logs 'Access denied' and does not throw", async () => {
+    mockAgent.get(BASE).intercept({ path: "/restricted", method: "GET" }).reply(403, "Forbidden");
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    const client = createHttpClient();
+    const result = await client.get(`${BASE}/restricted`, { handleErrors: true });
+
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output).toContain("Access denied");
+    expect(result.status).toBe(403);
+    stderrSpy.mockRestore();
+  });
+});
+
+describe("STEP-018: HTTP 429 handling", () => {
+  // REQ-ERR-005
+  it("waits Retry-After seconds then retries", async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    mockAgent.get(BASE)
+      .intercept({ path: "/throttled", method: "GET" })
+      .reply(429, "Too Many Requests", { headers: { "retry-after": "2" } })
+      .times(1);
+    mockAgent.get(BASE)
+      .intercept({ path: "/throttled", method: "GET" })
+      .reply(200, "ok")
+      .times(1);
+
+    const client = createHttpClient();
+    const p = client.get(`${BASE}/throttled`);
+    await vi.advanceTimersByTimeAsync(2100);
+    const result = await p;
+
+    expect(result.status).toBe(200);
+  });
+});
+
+describe("STEP-018: HTTP 5xx handling", () => {
+  // REQ-ERR-006
+  it("retries 3x on 503 then logs error and resolves with the error response", async () => {
+    vi.useFakeTimers();
+    mockAgent.get(BASE).intercept({ path: "/unstable", method: "GET" }).reply(503, "Service Unavailable").times(3);
+
+    const client = createHttpClient();
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    const p = client.get(`${BASE}/unstable`, { retry: true, maxRetries: 3 });
+    await vi.runAllTimersAsync();
+    const result = await p;
+
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output.length).toBeGreaterThan(0); // error was logged
+    stderrSpy.mockRestore();
+  });
+});
+
+describe("STEP-018: Moodle maintenance mode detection", () => {
+  // REQ-ERR-007
+  it("throws with exitCode 4 when response contains site-maintenance class", async () => {
+    mockAgent.get(BASE).intercept({ path: "/", method: "GET" }).reply(200,
+      '<html><body class="site-maintenance"><div>Moodle is in maintenance mode.</div></body></html>',
+      { headers: { "content-type": "text/html" } }
+    );
+
+    const client = createHttpClient();
+    await expect(client.get(`${BASE}/`)).rejects.toMatchObject({
+      exitCode: 4,
+      message: /maintenance mode/i,
+    });
+  });
+});

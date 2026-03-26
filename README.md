@@ -1,6 +1,6 @@
 # HWR Moodle Scraper
 
-> **Status**: Phase 2 — Feature Timeline
+> **Status**: Phase 3 — Tests First
 
 A CLI tool that downloads all content from HWR Berlin's Moodle LMS into a structured local folder for offline study. First run is a full scrape; subsequent runs are incremental.
 
@@ -8,7 +8,10 @@ A CLI tool that downloads all content from HWR Berlin's Moodle LMS into a struct
 See `docs/WORKFLOW.md` for the full phased development workflow.
 
 ## Current Phase
-**Phase 2**: Running the requirements-checker audit against `docs/REQUIREMENTS.md`, then building `docs/FEATURE_TIMELINE.md`.
+**Phase 3**: Writing failing tests for each of the 22 timeline steps before any implementation code.
+
+## Tech Stack
+Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md`.
 
 ## Mottos
 1. Security first

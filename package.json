@@ -1,0 +1,41 @@
+{
+  "name": "moodle-scraper",
+  "version": "0.1.0",
+  "description": "CLI tool to download all content from HWR Berlin Moodle LMS",
+  "type": "module",
+  "bin": {
+    "moodle-scraper": "./dist/index.js",
+    "msc": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "keytar": "^7.9.0",
+    "undici": "^6.19.2",
+    "p-limit": "^6.1.0",
+    "cli-progress": "^3.12.0",
+    "turndown": "^7.2.0",
+    "conf": "^13.0.1"
+  },
+  "devDependencies": {
+    "@types/cli-progress": "^3.11.6",
+    "@types/keytar": "^4.4.2",
+    "@types/node": "^20.14.0",
+    "@types/turndown": "^5.0.5",
+    "memfs": "^4.9.3",
+    "msw": "^2.3.1",
+    "tsup": "^8.1.0",
+    "typescript": "^5.5.3",
+    "vitest": "^1.6.0",
+    "@vitest/coverage-v8": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

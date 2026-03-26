@@ -64,4 +64,6 @@ hwr-moodle-scraper/
 - Next: write failing tests for each STEP before any implementation code
 
 ## Tech Stack
-TBD — decided after requirements are complete and tech research is done.
+Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.
+Key packages: `keytar` (Keychain), `undici` (HTTP), `commander` (CLI), `p-limit` (concurrency), `turndown` (HTML→MD).
+Test runner: `vitest` with fake timers. HTTP mocking: `msw`. FS mocking: `memfs`.

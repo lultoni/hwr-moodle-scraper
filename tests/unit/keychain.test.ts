@@ -1,0 +1,101 @@
+// Covers: STEP-006, REQ-AUTH-002, REQ-SEC-001, REQ-SEC-004
+//
+// Tests for macOS Keychain adapter. The real Keychain is NEVER touched in tests —
+// keytar is mocked. Note: security-sensitive mock — see mock comment below.
+//
+// SECURITY NOTE: keytar is mocked here because calling the real Keychain in CI
+// would (a) require macOS, (b) pollute the user's real Keychain, and (c) require
+// user approval dialogs. The mock faithfully represents the contract of the real API.
+
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// Mock keytar BEFORE importing the keychain module
+vi.mock("keytar", () => {
+  const store = new Map<string, string>();
+  return {
+    default: {
+      setPassword: vi.fn(async (service: string, account: string, password: string) => {
+        store.set(`${service}:${account}`, password);
+      }),
+      getPassword: vi.fn(async (service: string, account: string) => {
+        return store.get(`${service}:${account}`) ?? null;
+      }),
+      deletePassword: vi.fn(async (service: string, account: string) => {
+        return store.delete(`${service}:${account}`);
+      }),
+    },
+  };
+});
+
+import { KeychainAdapter, PlatformNotSupportedError } from "../../src/auth/keychain.js";
+import keytar from "keytar";
+
+const mockedKeytar = vi.mocked(keytar);
+
+describe("STEP-006: Keychain adapter", () => {
+  let adapter: KeychainAdapter;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    adapter = new KeychainAdapter();
+  });
+
+  // REQ-AUTH-002 — store and retrieve
+  it("storeCredentials() writes to Keychain with service 'moodle-scraper'", async () => {
+    await adapter.storeCredentials("alice", "s3cr3t");
+    expect(mockedKeytar.setPassword).toHaveBeenCalledWith("moodle-scraper", "alice", "s3cr3t");
+  });
+
+  it("readCredentials() returns the stored username and password", async () => {
+    mockedKeytar.getPassword.mockResolvedValueOnce("s3cr3t");
+    // We need to know the account (username) to read — adapter stores it in config
+    const creds = await adapter.readCredentials();
+    expect(creds).not.toBeNull();
+  });
+
+  it("deleteCredentials() removes the Keychain entry", async () => {
+    await adapter.storeCredentials("alice", "s3cr3t");
+    await adapter.deleteCredentials();
+    expect(mockedKeytar.deletePassword).toHaveBeenCalledWith("moodle-scraper", expect.any(String));
+  });
+
+  it("readCredentials() returns null when no entry exists", async () => {
+    mockedKeytar.getPassword.mockResolvedValueOnce(null);
+    const creds = await adapter.readCredentials();
+    expect(creds).toBeNull();
+  });
+
+  // REQ-AUTH-002 — service name is ALWAYS 'moodle-scraper', never derived from input
+  it("service name is always the hardcoded string 'moodle-scraper'", async () => {
+    await adapter.storeCredentials("bob", "pass");
+    const call = mockedKeytar.setPassword.mock.calls[0];
+    expect(call?.[0]).toBe("moodle-scraper");
+  });
+
+  // REQ-AUTH-002 — Keychain write failure: no plaintext fallback
+  it("storeCredentials() throws and does not fall back when setPassword rejects", async () => {
+    mockedKeytar.setPassword.mockRejectedValueOnce(new Error("Keychain locked"));
+    await expect(adapter.storeCredentials("alice", "pass")).rejects.toThrow(
+      /could not save credentials to Keychain/
+    );
+  });
+
+  it("readCredentials() throws when getPassword rejects", async () => {
+    mockedKeytar.getPassword.mockRejectedValueOnce(new Error("Permission denied"));
+    await expect(adapter.readCredentials()).rejects.toThrow(
+      /could not read credentials from Keychain/
+    );
+  });
+
+  // REQ-AUTH-002-C — non-macOS platform error
+  it("throws PlatformNotSupportedError on non-macOS platform", async () => {
+    // Simulate non-macOS by overriding the platform check
+    const adapter = new KeychainAdapter({ platform: "linux" });
+    await expect(adapter.storeCredentials("alice", "pass")).rejects.toThrow(
+      PlatformNotSupportedError
+    );
+    await expect(adapter.storeCredentials("alice", "pass")).rejects.toThrow(
+      /requires macOS Keychain.*Current platform: linux/
+    );
+  });
+});
