@@ -51,9 +51,10 @@ describe("STEP-018: Retry on transient errors", () => {
     const operation = vi.fn(async () => { throw new Error("persistent error"); });
 
     const p = withRetry(operation, { maxAttempts: 3, baseDelayMs: 100 });
+    const assertion = expect(p).rejects.toThrow("persistent error");
     await vi.runAllTimersAsync();
+    await assertion;
 
-    await expect(p).rejects.toThrow("persistent error");
     expect(operation).toHaveBeenCalledTimes(3);
   });
 });
