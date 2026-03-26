@@ -59,9 +59,9 @@ hwr-moodle-scraper/
 
 ## Current Phase
 **Phase 1 — Requirements Engineering** ✅ COMPLETE
-- 72 requirements across 7 categories (REQ-AUTH, REQ-SCRAPE, REQ-SYNC, REQ-FS, REQ-CLI, REQ-SEC, REQ-ERR)
+- 75 requirements across 7 categories (REQ-AUTH, REQ-SCRAPE, REQ-SYNC, REQ-FS, REQ-CLI, REQ-SEC, REQ-ERR)
 - Every requirement has full Gherkin acceptance criteria, quantified rules, and error conditions
-- Committed: `04874cd`
+- Latest: `be35013` (3 new: REQ-CLI-015 setup wizard, REQ-CLI-016 status issues, REQ-SEC-009 jitter+headers)
 - **Next**: Phase 2 — Requirements Checker audit (Mode 1), then planner builds Feature Timeline
 
 ## Tech Stack
