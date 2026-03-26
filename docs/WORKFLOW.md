@@ -7,10 +7,10 @@
 **Checker**: `agents/requirements-checker.md`
 
 **Completeness criteria** (all must be true before advancing):
-- [ ] Every user interaction path is specified to its terminal state
-- [ ] Every error condition has a defined response
-- [ ] Every piece of stored data has a defined format, location, and lifecycle
-- [ ] No open questions remain in the document
+- [x] Every user interaction path is specified to its terminal state
+- [x] Every error condition has a defined response
+- [x] Every piece of stored data has a defined format, location, and lifecycle
+- [x] No open questions remain in the document
 - [ ] The requirements checker agent finds zero gaps
 - [ ] Feature IDs are assigned to every requirement
 

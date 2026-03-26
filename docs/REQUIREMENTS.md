@@ -1,6 +1,6 @@
 # Requirements — HWR Moodle Scraper
 
-- **Status**: DRAFT
+- **Status**: COMPLETE
 - **Last updated**: 2026-03-26
 - **Completeness audit**: PENDING
 
