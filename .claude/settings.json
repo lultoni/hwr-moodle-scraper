@@ -2,15 +2,11 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(git:*)",
-      "Bash(git status)",
-      "Bash(git diff*)",
-      "Bash(git log*)",
-      "Bash(git add*)",
-      "Bash(git commit*)",
-      "Bash(mkdir:*)",
-      "Bash(ls:*)",
-      "Bash(cat:*)",
+      "Bash(git *)",
+      "Bash(mkdir *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(jq *)",
       "Read",
       "Edit",
       "Write",
@@ -24,10 +20,10 @@
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "node agents/doc-updater-hook.js 2>/dev/null || true",
-            "async": true,
-            "statusMessage": "Checking documentation freshness..."
+            "type": "agent",
+            "prompt": "You are the doc-updater agent. Read the file agents/doc-updater.md for your full instructions. Then run `git diff HEAD` and `git status`  to see what changed this session. Follow the doc-updater instructions to check if CLAUDE.md, README.md, docs/WORKFLOW.md, or docs/FEATURE_TIMELINE.md need updating. Only update files that are genuinely stale. If nothing needs updating, output nothing.",
+            "statusMessage": "Updating documentation...",
+            "timeout": 60
           }
         ]
       }

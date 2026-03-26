@@ -33,4 +33,4 @@ You are a software architect. You translate a complete requirements document int
 ## Output
 Write to `docs/FEATURE_TIMELINE.md`.
 
-After writing, call the requirements-checker agent in Mode 2 to verify 100% traceability. Do not finish until traceability audit passes.
+After writing, invoke the requirements-checker agent manually by reading `agents/requirements-checker.md` and running Mode 2 against both docs. Do not finish until traceability audit passes.
