@@ -1,0 +1,15 @@
+.env
+*.env
+output/
+.DS_Store
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+*.log
+.credentials
+session.json
+cookies.json
+.claude/settings.local.json
