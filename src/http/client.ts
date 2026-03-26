@@ -6,9 +6,14 @@ import { fileURLToPath } from "node:url";
 import { EXIT_CODES } from "../exit-codes.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(
-  readFileSync(resolve(__dirname, "../../package.json"), "utf8")
-) as { version: string };
+// Resolve package.json: works both from src/http/ (../../) and from flat dist/ (../)
+function readPkg(): { version: string } {
+  for (const rel of ["../../package.json", "../package.json"]) {
+    try { return JSON.parse(readFileSync(resolve(__dirname, rel), "utf8")) as { version: string }; } catch { /* try next */ }
+  }
+  return { version: "0.0.0" };
+}
+const pkg = readPkg();
 
 const USER_AGENT = `moodle-scraper/${pkg.version} (https://github.com/hwr-moodle-scraper)`;
 

@@ -44,25 +44,19 @@ export class KeychainAdapter {
 
   async readCredentials(): Promise<Credentials | null> {
     this.assertMacOS();
-    const username = this.storedUsername;
-    // If no username in memory, there's nothing to look up
-    if (!username) {
-      // Still attempt a mock-friendly call so tests can intercept getPassword
-      try {
-        const probe = await keytar.getPassword(SERVICE, "");
-        if (probe === null) return null;
-        // Username unknown — return with empty string (test scenario only)
-        return { username: "", password: probe };
-      } catch (err) {
-        throw new Error(
-          `Error: could not read credentials from Keychain — ${(err as Error).message}.`
-        );
-      }
-    }
     try {
-      const password = await keytar.getPassword(SERVICE, username);
-      if (password === null) return null;
-      return { username, password };
+      // If we have a username in memory, do a direct lookup
+      if (this.storedUsername) {
+        const password = await keytar.getPassword(SERVICE, this.storedUsername);
+        if (password === null) return null;
+        return { username: this.storedUsername, password };
+      }
+      // Otherwise discover stored accounts for this service
+      const found = await keytar.findCredentials(SERVICE);
+      if (found.length === 0) return null;
+      const { account, password } = found[0]!;
+      this.storedUsername = account;
+      return { username: account, password };
     } catch (err) {
       throw new Error(
         `Error: could not read credentials from Keychain — ${(err as Error).message}.`

@@ -23,6 +23,9 @@ vi.mock("keytar", () => {
       deletePassword: vi.fn(async (service: string, account: string) => {
         return store.delete(`${service}:${account}`);
       }),
+      findCredentials: vi.fn(async (_service: string) => {
+        return [];
+      }),
     },
   };
 });
@@ -47,10 +50,9 @@ describe("STEP-006: Keychain adapter", () => {
   });
 
   it("readCredentials() returns the stored username and password", async () => {
-    mockedKeytar.getPassword.mockResolvedValueOnce("s3cr3t");
-    // We need to know the account (username) to read — adapter stores it in config
+    mockedKeytar.findCredentials.mockResolvedValueOnce([{ account: "alice", password: "s3cr3t" }]);
     const creds = await adapter.readCredentials();
-    expect(creds).not.toBeNull();
+    expect(creds).toEqual({ username: "alice", password: "s3cr3t" });
   });
 
   it("deleteCredentials() removes the Keychain entry", async () => {
@@ -60,7 +62,7 @@ describe("STEP-006: Keychain adapter", () => {
   });
 
   it("readCredentials() returns null when no entry exists", async () => {
-    mockedKeytar.getPassword.mockResolvedValueOnce(null);
+    mockedKeytar.findCredentials.mockResolvedValueOnce([]);
     const creds = await adapter.readCredentials();
     expect(creds).toBeNull();
   });
@@ -80,8 +82,8 @@ describe("STEP-006: Keychain adapter", () => {
     );
   });
 
-  it("readCredentials() throws when getPassword rejects", async () => {
-    mockedKeytar.getPassword.mockRejectedValueOnce(new Error("Permission denied"));
+  it("readCredentials() throws when keytar rejects", async () => {
+    mockedKeytar.findCredentials.mockRejectedValueOnce(new Error("Permission denied"));
     await expect(adapter.readCredentials()).rejects.toThrow(
       /could not read credentials from Keychain/
     );

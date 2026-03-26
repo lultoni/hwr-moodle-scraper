@@ -8,6 +8,7 @@
     "msc": "./dist/index.js"
   },
   "scripts": {
+    "prebuild": "vitest run",
     "build": "tsup src/index.ts --format esm --dts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
