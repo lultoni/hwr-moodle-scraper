@@ -29,6 +29,14 @@ function extractLoginToken(html: string): string | undefined {
   return match?.[1];
 }
 
+/** Extract session cookie string from Set-Cookie headers. */
+function extractCookies(headers: Record<string, string | string[]>): string {
+  const raw = headers["set-cookie"];
+  if (!raw) return "";
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.map((c) => c.split(";")[0]).join("; ");
+}
+
 export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<void> {
   const { promptFn, httpClient, keychain, baseUrl = "https://moodle.hwr-berlin.de" } = opts;
 
@@ -51,13 +59,17 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
     }
   }
 
-  // Fetch login page to obtain the CSRF logintoken
+  // Fetch login page to obtain the CSRF logintoken AND the session cookie.
+  // Moodle validates the logintoken against the session established by this GET,
+  // so we must send the session cookie back with the POST.
   let loginToken: string | undefined;
+  let sessionCookie = "";
   try {
     const loginPage = await httpClient.get(`${baseUrl}/login/index.php`);
     loginToken = extractLoginToken(loginPage.body);
+    sessionCookie = extractCookies(loginPage.headers);
   } catch {
-    // Non-fatal: proceed without token (some Moodle versions don't require it)
+    // Non-fatal: proceed without token/cookie (will likely fail but not crash)
   }
 
   // Attempt login
@@ -65,7 +77,11 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
   try {
     const body: Record<string, string> = { username, password };
     if (loginToken) body["logintoken"] = loginToken;
-    response = await httpClient.post(`${baseUrl}/login/index.php`, body) as typeof response;
+    response = await httpClient.post(
+      `${baseUrl}/login/index.php`,
+      body,
+      sessionCookie ? { cookie: sessionCookie } : undefined
+    ) as typeof response;
   } catch (err) {
     const msg = `Login failed: network error — ${(err as Error).message}.`;
     process.stderr.write(msg + "\n");

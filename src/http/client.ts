@@ -43,6 +43,7 @@ export interface HttpRequestOptions {
   handleErrors?: boolean;
   retry?: boolean;
   maxRetries?: number;
+  cookie?: string;
 }
 
 function assertHttps(url: string): void {
@@ -75,6 +76,9 @@ export function createHttpClient(): HttpClient {
     };
     if (body !== undefined) {
       headers["content-type"] = "application/x-www-form-urlencoded";
+    }
+    if (options.cookie) {
+      headers["cookie"] = options.cookie;
     }
 
     const { statusCode, headers: resHeaders, body: resBody } = await request(url, {
