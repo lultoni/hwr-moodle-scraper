@@ -65,11 +65,11 @@
 
 **Checklist**:
 - [x] All 22 steps implemented
-- [x] All 222 tests passing (28 test files)
+- [x] All 225 tests passing (27 test files)
 - [x] Full CLI with auth, scrape, status, wizard commands
 - [x] Security: keychain integration, credential handling, HTTPS + retry logic
 - [x] Sync: rate limiting, incremental updates, state management
-- [x] Phase 5 improvements: redirect handling, folder expansion, type-aware dispatch, progress bar fixes, onetopic section names, label content + activity descriptions, semester grouping, state migration, state save bug fix
+- [x] Phase 5 improvements: redirect handling, folder expansion, type-aware dispatch, progress bar fixes, onetopic section names, label content + activity descriptions, semester grouping, state migration, state save bug fixes
 
 ---
 

@@ -59,7 +59,7 @@ hwr-moodle-scraper/
 
 ## Current Phase
 **Phase 5 — Iterative Improvements**
-- All 22 timeline steps implemented + Phase 5 fixes; 224/224 tests passing across 27 test files
+- All 22 timeline steps implemented + Phase 5 fixes; 225/225 tests passing across 27 test files
 - Full CLI implementation: auth, scrape, status, wizard commands
 - **Phase 5 fixes applied** (2026-03-27+):
   - Fixed redirect handling in `fetchContentTree` and `downloadFile` (root cause of "0 to download")
@@ -74,7 +74,7 @@ hwr-moodle-scraper/
   - Label content + activity descriptions: extract `activity-altcontent` to `Activity.description`, produce `label-md` items and `description-md` sidecars with HTML-to-Markdown conversion
   - Added `--check-files` flag: re-downloads missing local files without requiring `--force`
   - **Semester grouping + state migration**: reorganized output to `<outputDir>/Semester_X/CourseName/SectionName/` for better structure; `migrateStatePaths()` silently updates old state file paths on first run with new structure
-  - Fixed state save bug: wrapped `binaryItems` as `{ downloadItem, planItem }` pairs to eliminate off-by-one indexing error
+  - Fixed state save bugs: (1) wrapped `binaryItems` as `{ downloadItem, planItem }` pairs to eliminate off-by-one indexing error; (2) `DownloadQueue.run()` now returns `finalPaths` with actual on-disk extensions so state saves correct paths
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.
