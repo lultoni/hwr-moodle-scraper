@@ -280,4 +280,22 @@ describe("extractFilename — unit tests", () => {
     const name = extractFilename({}, "https://example.com/");
     expect(name).toBeNull();
   });
+
+  it("strips path traversal sequences from Content-Disposition filename", () => {
+    const name = extractFilename(
+      { "content-disposition": 'attachment; filename="../../../../.zshrc"' },
+      "https://moodle.example.com/pluginfile.php/1/content/0/file"
+    );
+    // Must not return a path with .. segments
+    expect(name).not.toContain("..");
+    expect(name).not.toContain("/");
+  });
+
+  it("strips leading slash from Content-Disposition filename", () => {
+    const name = extractFilename(
+      { "content-disposition": 'attachment; filename="/etc/passwd"' },
+      "https://moodle.example.com/file"
+    );
+    expect(name).not.toMatch(/^\//);
+  });
 });

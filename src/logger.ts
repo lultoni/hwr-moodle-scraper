@@ -1,5 +1,5 @@
 // REQ-SEC-002, REQ-SEC-007
-import { appendFileSync, openSync, chmodSync } from "node:fs";
+import { appendFileSync, openSync, closeSync, chmodSync } from "node:fs";
 
 export enum LogLevel {
   DEBUG = 0,
@@ -10,6 +10,7 @@ export enum LogLevel {
 
 export interface LoggerOptions {
   level: LogLevel;
+  /** Strings to redact from all log output (e.g. passwords, session tokens). Pass all known secrets here. */
   redact: string[];
   logFile?: string | null;
 }
@@ -30,15 +31,12 @@ function redactSecrets(msg: string, secrets: string[]): string {
 }
 
 function ensureLogFile(path: string): void {
-  // Create with 0600 if it doesn't exist
   try {
-    const fd = openSync(path, "a", 0o600);
+    closeSync(openSync(path, "a", 0o600));
     chmodSync(path, 0o600);
-    // fd closed automatically by GC — use appendFileSync going forward
   } catch {
-    // ignore if already exists
+    // ignore — file may already exist and be writable
   }
-  chmodSync(path, 0o600);
 }
 
 export function createLogger(opts: LoggerOptions): Logger {
@@ -55,7 +53,6 @@ export function createLogger(opts: LoggerOptions): Logger {
     process.stderr.write(line);
     if (logFile) {
       appendFileSync(logFile, line);
-      chmodSync(logFile, 0o600);
     }
   }
 

@@ -161,6 +161,36 @@ State and metadata:
 
 ---
 
+## Troubleshooting
+
+### `keytar` fails to compile (`Error: ENOENT: no such file or directory, spawn xcodebuild`)
+Xcode Command Line Tools are required to compile `keytar`'s native macOS binding.
+```bash
+xcode-select --install
+npm install
+```
+
+### "No courses found"
+The `courseSearch` config key must be set to a keyword that matches your course names on Moodle.
+```bash
+moodle-scraper config set courseSearch "WI"
+```
+
+### "0 files to download" on every run
+All files are already up to date according to the sync state. To verify:
+- `moodle-scraper status` — shows last sync summary
+- `moodle-scraper scrape --check-files` — re-downloads any files that are missing from disk
+- `moodle-scraper scrape --force` — re-downloads everything regardless of state
+
+### macOS Keychain dialog appears on first run
+This is expected. macOS asks for permission the first time `moodle-scraper` accesses the Keychain.
+Select **Always Allow** to prevent the dialog on subsequent runs.
+
+### Session expires during a long scrape
+The scraper automatically re-authenticates using stored Keychain credentials. If re-auth fails after 3 attempts, run `moodle-scraper auth set` to refresh your credentials.
+
+---
+
 ## Exit codes
 
 | Code | Meaning |

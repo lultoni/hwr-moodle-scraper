@@ -92,7 +92,30 @@ Strip `<span class="accesshide">…</span>` before stripping tags:
 - "Terminplan <span class='accesshide'> Datei</span>" → "Terminplan"
 - "Ankündigungen <span class='accesshide'> Forum</span>" → "Ankündigungen"
 
-### Known Modtypes (HWR)
+### Label Content Extraction
+Label activities embed their content in an `activity-altcontent` div on the course page itself:
+```html
+<li class="activity label modtype_label ...">
+  <div class="activity-altcontent">
+    <p>Welcome to the course! Please read...</p>
+  </div>
+</li>
+```
+The inner HTML is extracted as `Activity.description` and saved as a `.md` file using the label-md strategy.
+Non-label activities may also have an `activity-altcontent` description sidecar (saved as `.description.md`).
+
+### Onetopic Theme Section Names
+HWR uses the Onetopic theme for some courses. Section names come from tab navigation:
+```html
+<ul class="nav nav-tabs">
+  <li id="onetabid-42" ...><a href="...?section=1">Week 1 — Introduction</a></li>
+  <li id="onetabid-43" ...><a href="...?section=2">Week 2 — Methods</a></li>
+</ul>
+```
+`parseOnetopicTabs()` builds a `sectionNumber → name` map used as a 3rd fallback
+when neither `data-sectionname` nor `<h3 class="sectionname">` is found.
+
+
 | modtype | URL pattern | Download strategy |
 |---------|-------------|-------------------|
 | resource | /mod/resource/ | Follow redirect → actual file |

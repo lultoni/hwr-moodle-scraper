@@ -23,7 +23,7 @@ export class RateLimiter {
       const run = () => {
         this.inFlight++;
         const jitter = this.jitterMs > 0
-          ? Math.floor(Math.random() * this.jitterMs * 2) - this.jitterMs
+          ? (Math.random() - 0.5) * 2 * this.jitterMs
           : 0;
         const delay = Math.max(0, this.delayMs + jitter);
 

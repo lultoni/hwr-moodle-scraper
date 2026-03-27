@@ -3,6 +3,7 @@ import { validateOrRefreshSession } from "../auth/session.js";
 import { fetchCourseList, fetchContentTree, fetchFolderFiles, type Course, type ContentTree, type Activity, type Section } from "../scraper/courses.js";
 import { buildDownloadPlan } from "../scraper/dispatch.js";
 import { buildCourseShortPaths } from "../scraper/course-naming.js";
+import { getResourceId } from "../scraper/resource-id.js";
 import { computeSyncPlan, SyncAction } from "../sync/incremental.js";
 import { StateManager, migrateStatePaths, type CourseState, type State } from "../sync/state.js";
 import { KeychainAdapter } from "../auth/keychain.js";
@@ -21,6 +22,7 @@ export interface ScrapeOptions {
   dryRun: boolean;
   force: boolean;
   checkFiles?: boolean;
+  /** Moodle base URL. Defaults to "https://moodle.hwr-berlin.de". */
   baseUrl?: string;
   nonInteractive?: boolean;
   quiet?: boolean;
@@ -89,8 +91,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const rawState = await stateManager.load() ?? { courses: {} };
   const courseShortPathsStr = new Map<string, { semesterDir: string; shortName: string }>();
   for (const [id, sp] of courseShortPaths) courseShortPathsStr.set(String(id), sp);
-  const state = migrateStatePaths(rawState as State, outputDir, courseShortPathsStr);
-  if (state !== rawState) await stateManager.save({ courses: state.courses });
+  const { state, changed } = migrateStatePaths(rawState as State, outputDir, courseShortPathsStr);
+  if (changed) await stateManager.save({ courses: state.courses });
 
   logger.debug("Fetching content trees…");
 
@@ -148,7 +150,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   for (const tree of expandedTrees) {
     for (const section of tree.sections) {
       for (const activity of section.activities) {
-        const resourceId = activity.resourceId ?? `${tree.courseId}-${section.sectionId}-${activity.activityName}`;
+        const resourceId = getResourceId(activity, tree.courseId, section.sectionId);
         resourceSectionMap.set(resourceId, { courseId: tree.courseId, sectionId: section.sectionId, hash: activity.hash ?? "" });
       }
     }
@@ -186,7 +188,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       const semesterDir = sp?.semesterDir;
       const sectionName = sectionNameMap.get(`${tree.courseId}:${section.sectionId}`) ?? "General";
       for (const activity of section.activities) {
-        const resourceId = activity.resourceId ?? `${tree.courseId}-${section.sectionId}-${activity.activityName}`;
+        const resourceId = getResourceId(activity, tree.courseId, section.sectionId);
         activityByResourceId.set(resourceId, { activity, courseName, sectionName, semesterDir });
       }
     }
@@ -194,6 +196,11 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   const maxConcurrent = ((await config.get("maxConcurrentDownloads")) as number | undefined) ?? 3;
   const retryBaseDelayMs = ((await config.get("retryBaseDelayMs")) as number | undefined) ?? 5000;
+
+  // Progress display: bar in normal mode, counter already embedded in log lines in verbose/debug mode
+  const useProgressBar = !quiet && !verbose;
+  // Use a container so onComplete callbacks can reference bar after it's created
+  const progress: { bar?: import("cli-progress").SingleBar } = {};
 
   // Separate binary downloads from special-handling types
   const binaryItems: Array<{ downloadItem: DownloadItem; planItem: typeof downloads[0] }> = [];
@@ -232,14 +239,13 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       if (planItem.strategy === "binary") {
         logger.debug(`[DOWNLOAD] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${meta.activity.activityName}${counter}`);
         mkdirSync(dirname(planItem.destPath), { recursive: true });
-        // onComplete uses bar via closure — bar may not exist yet; check at call time
         binaryItems.push({
           downloadItem: {
             url: planItem.url,
             destPath: planItem.destPath,
             sessionCookies,
             retryBaseDelayMs,
-            onComplete: (fp) => { if (bar) bar.increment(1, { file: basename(fp) }); },
+            onComplete: (fp) => { progress.bar?.increment(1, { file: basename(fp) }); },
           },
           planItem: item,
         });
@@ -256,18 +262,14 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     }
   }
 
-  // Progress display: bar in normal mode, counter already embedded in log lines in verbose/debug mode
-  const useProgressBar = !quiet && !verbose;
-  let bar: import("cli-progress").SingleBar | undefined;
-
   if (useProgressBar && binaryItems.length > 0) {
     const cliProgress = await import("cli-progress");
-    bar = new cliProgress.SingleBar({
+    progress.bar = new cliProgress.SingleBar({
       format: "Downloading [{bar}] {percentage}% | {value}/{total} files | {file}",
       clearOnComplete: false,
       hideCursor: true,
     }, cliProgress.Presets.shades_classic);
-    bar.start(binaryItems.length + specialItems.length, 0, { file: "" });
+    progress.bar.start(binaryItems.length + specialItems.length, 0, { file: "" });
   }
 
   // Execute binary downloads via queue
@@ -310,15 +312,15 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         await writeFile(destPath, md, { mode: 0o600 });
       }
       downloadedCount++;
-      if (bar) bar.increment(1, { file: label });
+      progress.bar?.increment(1, { file: label });
     } catch (err) {
       failedCount++;
       logger.debug(`  Warning: failed to download ${item.url} — ${(err as Error).message}`);
     }
   }
 
-  if (bar) {
-    bar.stop();
+  if (progress.bar) {
+    progress.bar.stop();
     process.stdout.write("\n");
   }
 

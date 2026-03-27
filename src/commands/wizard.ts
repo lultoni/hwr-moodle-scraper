@@ -1,5 +1,6 @@
 // REQ-CLI-015
 import { EXIT_CODES } from "../exit-codes.js";
+import { homedir } from "node:os";
 import type { KeychainAdapter } from "../auth/keychain.js";
 import type { HttpClient } from "../http/client.js";
 import { promptAndAuthenticate, type PromptFn } from "../auth/prompt.js";
@@ -39,7 +40,7 @@ export async function runWizard(opts: WizardOptions): Promise<void> {
   }
 
   const defaultDir = ((await config.get("outputDir")) as string | undefined)
-    ?? `${process.env.HOME ?? "~"}/moodle-scraper-output`;
+    ?? `${process.env.HOME ?? homedir()}/moodle-scraper-output`;
   const inputDir = await promptFn(`Output directory [${defaultDir}]: `);
   const outputDir = inputDir.trim() || defaultDir;
   await config.set("outputDir", outputDir);

@@ -58,23 +58,21 @@ hwr-moodle-scraper/
 | Update docs before commit | `agents/doc-updater.md` |
 
 ## Current Phase
-**Phase 5 — Iterative Improvements**
-- All 22 timeline steps implemented + Phase 5 fixes; 225/225 tests passing across 27 test files
+**Phase 5 — Iterative Improvements — COMPLETE**
+- All 22 timeline steps fully implemented with 10 comprehensive cleanup passes
+- **Final status**: 233/233 tests passing (8 new tests added in cleanup passes)
 - Full CLI implementation: auth, scrape, status, wizard commands
-- **Phase 5 fixes applied** (2026-03-27+):
-  - Fixed redirect handling in `fetchContentTree` and `downloadFile` (root cause of "0 to download")
-  - Fixed activity name pollution from `<span class="accesshide">` text leaking into names
-  - Added all modtypes: `folder`, `page`, `label`, `quiz`, `glossary`, `grouptool`, `bigbluebuttonbn`
-  - Implemented folder expansion (`fetchFolderFiles`) — enumerates files inside Moodle folders
-  - Added `src/scraper/dispatch.ts` — type-aware download strategy (binary/url-txt/page-md)
-  - Added `agents/html-analyzer.md` — agent for analyzing Moodle HTML structure
-  - Added per-course debug logging in scrape command
-  - Progress bar fixes: added `onComplete` callback to `DownloadFileOptions` and `DownloadItem` for accurate incremental progress tracking
-  - Onetopic section names: `parseOnetopicTabs(html)` builds sectionNumber→name map from tab nav, used as 3rd fallback in `parseContentTree`
-  - Label content + activity descriptions: extract `activity-altcontent` to `Activity.description`, produce `label-md` items and `description-md` sidecars with HTML-to-Markdown conversion
-  - Added `--check-files` flag: re-downloads missing local files without requiring `--force`
-  - **Semester grouping + state migration**: reorganized output to `<outputDir>/Semester_X/CourseName/SectionName/` for better structure; `migrateStatePaths()` silently updates old state file paths on first run with new structure
-  - Fixed state save bugs: (1) wrapped `binaryItems` as `{ downloadItem, planItem }` pairs to eliminate off-by-one indexing error; (2) `DownloadQueue.run()` now returns `finalPaths` with actual on-disk extensions so state saves correct paths
+- **10 cleanup passes completed** (2026-03-27 to 2026-03-28):
+  1. **Bug Fixes** — fd leak in logger, dead else-if in downloader, redirect exhaustion, migrateStatePaths not saving, 403/5xx logging
+  2. **Security** — Path traversal guard in extractFilename, HTTPS check in redirects, symlink check in deleteSessionFile
+  3. **Deduplication** — extractCookies→src/http/cookies.ts, getResourceId→src/scraper/resource-id.ts
+  4. **Types** — migrateStatePaths returns {state, changed}, JSDoc on DownloadPlanItem.url
+  5. **Code Quality** — assertedOp wrapper, progress bar closure fixed, missing file detection in status, MODULE_SEMESTER JSDoc
+  6. **Tests** — checkFiles regression, dry-run describe fix, empty map test, integration localPath assertion
+  7. **Documentation** — JSDoc on 4 complex functions, all 112 FEATURE_TIMELINE.md checkboxes [x], README Troubleshooting
+  8. **Performance** — Memory buffer comment, activityOpenRe placement comment
+  9. **Style** — UK spelling in sanitise.ts, process.stderr.write audit with justification comments
+  10. **Agents** — developer.md shared utilities, html-analyzer.md label/onetopic patterns
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.

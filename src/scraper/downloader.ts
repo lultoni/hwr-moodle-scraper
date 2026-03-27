@@ -51,7 +51,14 @@ export function extractFilename(
   const cdStr = Array.isArray(cd) ? cd[0] : cd;
   if (cdStr) {
     const m = /filename="([^"]+)"/i.exec(cdStr) ?? /filename=([^\s;]+)/i.exec(cdStr);
-    if (m?.[1]) return decodeURIComponent(m[1].trim());
+    if (m?.[1]) {
+      const extracted = decodeURIComponent(m[1].trim());
+      // Guard against path traversal: strip any directory components
+      if (extracted.includes("..") || extracted.startsWith("/")) {
+        return basename(extracted);
+      }
+      return extracted;
+    }
   }
 
   // 2. Final URL pathname (strip query string, decode)
@@ -79,6 +86,8 @@ export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadF
       const maxRedirects = 10;
 
       for (let hop = 0; hop <= maxRedirects; hop++) {
+        if (!currentUrl.startsWith("https://")) throw new Error(`Insecure redirect URL rejected (http:// not allowed): ${currentUrl}`);
+
         const { statusCode, headers, body } = await request(currentUrl, {
           headers: { cookie: sessionCookies },
         });
@@ -102,19 +111,16 @@ export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadF
         // If destPath has no extension and we found one, rename destination
         if (extractedName && !extname(destPath)) {
           const ext = extname(extractedName);
-          if (ext) {
-            finalPath = destPath + ext;
-          } else {
-            finalPath = join(dirname(destPath), extractedName);
-          }
-        } else if (extractedName && extname(destPath) === "" ) {
-          finalPath = destPath;
+          finalPath = ext ? destPath + ext : join(dirname(destPath), extractedName);
         }
 
         const totalBytes = headers["content-length"]
           ? parseInt(headers["content-length"] as string, 10)
           : undefined;
 
+        // Note: entire file is buffered in memory before writing.
+        // Acceptable for typical Moodle files (<50 MB). If video streaming is added,
+        // switch to a pipe-based atomic write to avoid holding large buffers.
         const chunks: Buffer[] = [];
         let bytesReceived = 0;
 

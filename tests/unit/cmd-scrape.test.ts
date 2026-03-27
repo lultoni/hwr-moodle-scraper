@@ -30,7 +30,7 @@ vi.mock("../../src/sync/state.js", () => ({
     save: vi.fn().mockResolvedValue(undefined),
     statePath: "/tmp/test/.moodle-scraper-state.json",
   })),
-  migrateStatePaths: vi.fn().mockImplementation((state: unknown) => state),
+  migrateStatePaths: vi.fn().mockImplementation((state: unknown) => ({ state, changed: false })),
 }));
 
 import { runScrape } from "../../src/commands/scrape.js";

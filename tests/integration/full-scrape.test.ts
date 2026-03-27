@@ -2,7 +2,7 @@
 //         Full end-to-end scrape pipeline with mocked HTTP and real temp filesystem.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MockAgent, setGlobalDispatcher, getGlobalDispatcher, Dispatcher } from "undici";
@@ -87,5 +87,19 @@ describe("Integration: full scrape pipeline", () => {
 
     // State file must exist
     expect(existsSync(join(tmpDir, ".moodle-scraper-state.json"))).toBe(true);
+
+    // State file must record the downloaded file with a valid localPath that:
+    // (a) points into the output directory, (b) ends with the correct extension,
+    // (c) corresponds to a file that actually exists on disk.
+    const stateRaw = JSON.parse(readFileSync(join(tmpDir, ".moodle-scraper-state.json"), "utf8"));
+    const courses = stateRaw.courses as Record<string, { sections: Record<string, { files: Record<string, { localPath: string }> }> }>;
+    const allFiles = Object.values(courses).flatMap((c) =>
+      Object.values(c.sections).flatMap((s) => Object.values(s.files))
+    );
+    expect(allFiles.length).toBeGreaterThan(0);
+    for (const file of allFiles) {
+      expect(file.localPath).toContain(tmpDir);
+      expect(existsSync(file.localPath)).toBe(true);
+    }
   });
 });

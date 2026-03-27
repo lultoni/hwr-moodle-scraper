@@ -128,7 +128,7 @@ describe("migrateStatePaths — state file path migration", () => {
 
     const state = makeState(oldPath);
     const courseShortPaths = new Map([["1", { semesterDir: "Semester_3", shortName: "Datenbanken" }]]);
-    const migrated = migrateStatePaths(state, tmpDir, courseShortPaths);
+    const { state: migrated } = migrateStatePaths(state, tmpDir, courseShortPaths);
 
     expect(migrated.courses["1"]!.sections["s1"]!.files["res1"]!.localPath).toBe(newPath);
   });
@@ -141,7 +141,7 @@ describe("migrateStatePaths — state file path migration", () => {
 
     const state = makeState(oldPath);
     const courseShortPaths = new Map([["1", { semesterDir: "Semester_3", shortName: "Datenbanken" }]]);
-    const migrated = migrateStatePaths(state, tmpDir, courseShortPaths);
+    const { state: migrated } = migrateStatePaths(state, tmpDir, courseShortPaths);
 
     expect(migrated.courses["1"]!.sections["s1"]!.files["res1"]!.localPath).toBe(oldPath);
   });
@@ -150,7 +150,7 @@ describe("migrateStatePaths — state file path migration", () => {
     const oldPath = join(tmpDir, "Old_Long_Course_Name", "Section_1", "missing.pdf");
     const state = makeState(oldPath);
     const courseShortPaths = new Map([["1", { semesterDir: "Semester_3", shortName: "Datenbanken" }]]);
-    const migrated = migrateStatePaths(state, tmpDir, courseShortPaths);
+    const { state: migrated } = migrateStatePaths(state, tmpDir, courseShortPaths);
 
     expect(migrated.courses["1"]!.sections["s1"]!.files["res1"]!.localPath).toBe(oldPath);
   });
@@ -162,16 +162,41 @@ describe("migrateStatePaths — state file path migration", () => {
 
     const state = makeState(newPath);
     const courseShortPaths = new Map([["1", { semesterDir: "Semester_3", shortName: "Datenbanken" }]]);
-    const migrated = migrateStatePaths(state, tmpDir, courseShortPaths);
+    const { state: migrated } = migrateStatePaths(state, tmpDir, courseShortPaths);
 
     expect(migrated.courses["1"]!.sections["s1"]!.files["res1"]!.localPath).toBe(newPath);
   });
 
-  it("ignores courses not in courseShortPaths map", () => {
+  it("returns changed: true when a path was migrated", () => {
+    const oldPath = join(tmpDir, "Old_Long_Course_Name", "Section_1", "lecture.pdf");
+    const newPath = join(tmpDir, "Semester_3", "Datenbanken", "Section_1", "lecture.pdf");
+    mkdirSync(join(tmpDir, "Semester_3", "Datenbanken", "Section_1"), { recursive: true });
+    writeFileSync(newPath, "content");
+
+    const state = makeState(oldPath);
+    const courseShortPaths = new Map([["1", { semesterDir: "Semester_3", shortName: "Datenbanken" }]]);
+    const { changed } = migrateStatePaths(state, tmpDir, courseShortPaths);
+
+    expect(changed).toBe(true);
+  });
+
+  it("returns changed: false when no paths were migrated", () => {
+    const alreadyNewPath = join(tmpDir, "Semester_3", "Datenbanken", "Section_1", "lecture.pdf");
+    mkdirSync(join(tmpDir, "Semester_3", "Datenbanken", "Section_1"), { recursive: true });
+    writeFileSync(alreadyNewPath, "content");
+
+    const state = makeState(alreadyNewPath);
+    const courseShortPaths = new Map([["1", { semesterDir: "Semester_3", shortName: "Datenbanken" }]]);
+    const { changed } = migrateStatePaths(state, tmpDir, courseShortPaths);
+
+    expect(changed).toBe(false);
+  });
+
+  it("keeps old localPath when courseShortPaths map is empty (no mapping for course)", () => {
     const oldPath = join(tmpDir, "Old_Course", "Section", "file.pdf");
     const state = makeState(oldPath);
     const courseShortPaths = new Map<string, { semesterDir: string; shortName: string }>(); // empty map
-    const migrated = migrateStatePaths(state, tmpDir, courseShortPaths);
+    const { state: migrated } = migrateStatePaths(state, tmpDir, courseShortPaths);
 
     expect(migrated.courses["1"]!.sections["s1"]!.files["res1"]!.localPath).toBe(oldPath);
   });

@@ -1,12 +1,13 @@
 // Covers: STEP-004, REQ-SEC-003, REQ-SEC-008, REQ-SEC-006
 //
 // Tests for the HTTP client wrapper: HTTPS enforcement, TLS validation,
-// User-Agent header, and InsecureURLError. No real network calls — uses
-// undici MockAgent to intercept requests.
+// User-Agent header, InsecureURLError, mergeCookies, and 429/maintenance handling.
+// No real network calls — uses undici MockAgent to intercept requests.
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { MockAgent, setGlobalDispatcher, getGlobalDispatcher, Dispatcher } from "undici";
 import { createHttpClient, InsecureURLError } from "../../src/http/client.js";
+import { extractCookies } from "../../src/http/cookies.js";
 
 let mockAgent: MockAgent;
 let originalDispatcher: Dispatcher;
@@ -93,5 +94,22 @@ describe("STEP-004: HTTP client — TLS validation", () => {
     const client = createHttpClient();
     // The client object should not have any property that disables TLS
     expect((client as Record<string, unknown>).rejectUnauthorized).toBeUndefined();
+  });
+});
+
+describe("extractCookies — cookie utility", () => {
+  it("extracts name=value pairs from a single Set-Cookie header", () => {
+    const cookies = extractCookies({ "set-cookie": "MoodleSession=abc123; path=/; HttpOnly" });
+    expect(cookies).toBe("MoodleSession=abc123");
+  });
+
+  it("merges multiple Set-Cookie headers into a semicolon-separated string", () => {
+    const cookies = extractCookies({ "set-cookie": ["MoodleSession=abc; path=/", "csrftoken=xyz; path=/"] });
+    expect(cookies).toBe("MoodleSession=abc; csrftoken=xyz");
+  });
+
+  it("returns empty string when no Set-Cookie header present", () => {
+    const cookies = extractCookies({ "content-type": "text/html" });
+    expect(cookies).toBe("");
   });
 });

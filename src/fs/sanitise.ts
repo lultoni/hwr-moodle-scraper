@@ -1,4 +1,5 @@
 // REQ-FS-003, REQ-FS-004
+// UK English spelling used throughout this file (sanitise, not sanitize).
 const ILLEGAL = /[/\\:*?"<>|]/g;
 const NULL_BYTE = /\x00/g;
 const MAX_BYTES = 255;

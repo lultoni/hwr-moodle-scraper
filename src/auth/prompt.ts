@@ -3,6 +3,7 @@ import { EXIT_CODES } from "../exit-codes.js";
 import type { KeychainAdapter } from "./keychain.js";
 import type { HttpClient } from "../http/client.js";
 import type { Logger } from "../logger.js";
+import { extractCookies } from "../http/cookies.js";
 
 export class AuthError extends Error {
   readonly exitCode: number;
@@ -31,14 +32,19 @@ function extractLoginToken(html: string): string | undefined {
   return match?.[1];
 }
 
-/** Extract session cookie string from Set-Cookie headers. */
-function extractCookies(headers: Record<string, string | string[]>): string {
-  const raw = headers["set-cookie"];
-  if (!raw) return "";
-  const list = Array.isArray(raw) ? raw : [raw];
-  return list.map((c) => c.split(";")[0]).join("; ");
-}
-
+/**
+ * Prompt the user for credentials and perform a two-step Moodle login.
+ *
+ * Moodle login flow:
+ *   1. GET /login/index.php — obtain CSRF logintoken and establish pre-login session cookie
+ *   2. POST /login/index.php with credentials + logintoken (send pre-login cookie too)
+ *   3. On success, Moodle redirects to ?testsession=N — a confirmation page, NOT the dashboard
+ *   4. Verify login by GETting /my/ with the accumulated cookies:
+ *      - If /my/ loads without redirecting to /login/ → authenticated
+ *      - If redirected to /login/ → credentials incorrect
+ *
+ * On success, credentials are stored in the macOS Keychain via the provided adapter.
+ */
 export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<void> {
   const { promptFn, httpClient, keychain, baseUrl = "https://moodle.hwr-berlin.de", logger } = opts;
 
@@ -134,4 +140,3 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
     await keychain.storeCredentials(username, password);
   }
 }
-

@@ -75,14 +75,13 @@ describe("STEP-009: Session validation", () => {
       password: "correctpass",
     });
 
-    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const warnings: string[] = [];
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: (msg: string) => warnings.push(msg), error: vi.fn() };
 
-    await validateOrRefreshSession({ httpClient: httpClient as never, keychain: keychainInstance });
+    await validateOrRefreshSession({ httpClient: httpClient as never, keychain: keychainInstance, logger });
 
     expect(httpClient.post).toHaveBeenCalled(); // re-auth happened
-    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
-    expect(output).toContain("re-authenticating");
-    stderrSpy.mockRestore();
+    expect(warnings.join(" ")).toContain("re-authenticating");
   });
 
   // REQ-AUTH-005 — re-auth failure after 3 attempts → exit 3

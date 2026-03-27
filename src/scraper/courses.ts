@@ -1,4 +1,5 @@
 // REQ-SCRAPE-001, REQ-SCRAPE-002, REQ-SCRAPE-012
+import type { Logger } from "../logger.js";
 export interface Course {
   courseId: number;
   courseName: string;
@@ -8,6 +9,7 @@ export interface Course {
 export interface Activity {
   activityType: string;
   activityName: string;
+  /** URL to the activity page or resource. Empty string or undefined for labels and inaccessible items. */
   url: string;
   isAccessible: boolean;
   resourceId?: string;
@@ -35,6 +37,7 @@ export interface ContentTree {
 export interface FetchOptions {
   baseUrl: string;
   sessionCookies: string;
+  logger?: Logger;
 }
 
 /** Strip <span class="accesshide"> (and contents) from HTML then strip remaining tags. */
@@ -99,6 +102,8 @@ async function fetchWithRedirects(
   let currentUrl = url;
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
+    if (!currentUrl.startsWith("https://")) throw new Error(`Insecure redirect URL rejected (http:// not allowed): ${currentUrl}`);
+
     const { statusCode, headers: resHeaders, body } = await request(currentUrl, {
       method: "GET",
       headers,
@@ -106,7 +111,9 @@ async function fetchWithRedirects(
 
     if (statusCode >= 300 && statusCode < 400) {
       const location = resHeaders["location"];
-      if (!location) break;
+      if (!location) {
+        return { statusCode, body: await body.text(), finalUrl: currentUrl };
+      }
       const loc = Array.isArray(location) ? location[0]! : location;
       // Resolve relative redirects
       currentUrl = loc.startsWith("http") ? loc : new URL(loc, currentUrl).toString();
@@ -114,13 +121,10 @@ async function fetchWithRedirects(
       continue;
     }
 
-    const text = await body.text();
-    return { statusCode, body: text, finalUrl: currentUrl };
+    return { statusCode, body: await body.text(), finalUrl: currentUrl };
   }
 
-  // Exhausted redirects — return last response
-  const { statusCode, body } = await request(currentUrl, { method: "GET", headers });
-  return { statusCode, body: await body.text(), finalUrl: currentUrl };
+  throw new Error(`Too many redirects fetching ${url}`);
 }
 
 export async function fetchCourseList(opts: FetchOptions & { searchQuery?: string }): Promise<Course[]> {
@@ -147,7 +151,7 @@ export async function fetchContentTree(opts: FetchOptions & { courseId: number }
 
   if (statusCode >= 400) throw new Error(`Content tree fetch failed: HTTP ${statusCode}`);
 
-  return parseContentTree(body, courseId, baseUrl);
+  return parseContentTree(body, courseId, baseUrl, opts.logger);
 }
 
 /** Fetch a folder page and return all downloadable file links. */
@@ -180,7 +184,19 @@ function parseFolderFiles(html: string): FolderFile[] {
   return files;
 }
 
-function parseContentTree(html: string, courseId: number, baseUrl: string): ContentTree {
+/**
+ * Parse a Moodle course page HTML into a ContentTree of sections and activities.
+ *
+ * Section name resolution uses three fallbacks in order:
+ *   1. `data-sectionname` attribute on the section `<li>` (new Moodle 4.x HTML)
+ *   2. `<h3 class="sectionname">` heading text (classic Moodle layout)
+ *   3. Onetopic format: look up the section number in the pre-parsed onetopic tab nav
+ *      (`parseOnetopicTabs`), which maps `section=N` query parameters to tab labels.
+ *
+ * Activity names are extracted from the link text with `<span class="accesshide">` stripped
+ * to prevent Moodle's screenreader-only labels ("Datei", "Forum", etc.) from polluting names.
+ */
+function parseContentTree(html: string, courseId: number, baseUrl: string, logger?: Logger): ContentTree {
   const sections: Section[] = [];
   let sectionIndex = 0;
 
@@ -216,6 +232,7 @@ function parseContentTree(html: string, courseId: number, baseUrl: string): Cont
     const activities: Activity[] = [];
 
     // Find all activity items — <li class="activity ...">
+    // (regex declared inside loop intentionally: /g flag carries stateful lastIndex)
     const activityOpenRe = /<li([^>]+class="[^"]*\bactivity\b[^"]*"[^>]*)>/gi;
     let actMatch: RegExpExecArray | null;
     while ((actMatch = activityOpenRe.exec(chunk)) !== null) {
@@ -223,7 +240,8 @@ function parseContentTree(html: string, courseId: number, baseUrl: string): Cont
       const afterOpen = chunk.slice(actMatch.index);
       const result = parseActivityFromElement(
         attrs + afterOpen,
-        `${baseUrl}/course/view.php?id=${courseId}`
+        `${baseUrl}/course/view.php?id=${courseId}`,
+        logger,
       );
       if (result) activities.push(result);
     }
@@ -251,12 +269,27 @@ function activityTypeFromUrl(url: string): string {
   return "resource";
 }
 
+/**
+ * Parse a single Moodle activity `<li class="activity">` HTML fragment into an Activity.
+ *
+ * Expected HTML structure:
+ *   <li class="activity resource modtype_resource" data-activityname="Lecture PDF" ...>
+ *     <a href="https://moodle/mod/resource/view.php?id=10">
+ *       Lecture PDF<span class="accesshide"> Datei</span>
+ *     </a>
+ *     <div class="activity-altcontent"><p>Description text...</p></div>
+ *   </li>
+ *
+ * Returns null and logs a warning via `logger` when the element is null or malformed.
+ * The caller (`parseContentTree`) silently skips null results.
+ */
 export function parseActivityFromElement(
   element: string | null,
-  pageUrl: string
+  pageUrl: string,
+  logger?: Logger,
 ): Activity | null {
   if (!element) {
-    process.stderr.write(`Warning: unexpected page structure at ${pageUrl} — null element\n`);
+    logger?.warn(`Unexpected page structure at ${pageUrl} — null element`);
     return null;
   }
 
@@ -310,9 +343,7 @@ export function parseActivityFromElement(
       ...(description ? { description } : {}),
     };
   } catch (err) {
-    process.stderr.write(
-      `Warning: unexpected page structure at ${pageUrl} — ${(err as Error).message}\n`
-    );
+    logger?.warn(`Unexpected page structure at ${pageUrl} — ${(err as Error).message}`);
     return null;
   }
 }

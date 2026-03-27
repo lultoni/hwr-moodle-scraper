@@ -4,13 +4,21 @@ import type { KeychainAdapter } from "./keychain.js";
 import type { HttpClient } from "../http/client.js";
 import { AuthError } from "./prompt.js";
 import type { Logger } from "../logger.js";
+import { extractCookies } from "../http/cookies.js";
 
 export async function deleteSessionFile(): Promise<void> {
-  const { unlink } = await import("node:fs/promises");
+  const { unlink, lstat } = await import("node:fs/promises");
   const { homedir } = await import("node:os");
   const { join } = await import("node:path");
+  const sessionPath = join(homedir(), ".config", "moodle-scraper", "session.json");
   try {
-    await unlink(join(homedir(), ".config", "moodle-scraper", "session.json"));
+    const stat = await lstat(sessionPath);
+    if (stat.isSymbolicLink()) {
+      // Refuse to follow symlinks — could indicate TOCTOU attack
+      process.stderr.write(`Warning: session file at ${sessionPath} is a symlink — refusing to delete.\n`);
+      return;
+    }
+    await unlink(sessionPath);
   } catch {
     // ignore if not found
   }
@@ -23,14 +31,6 @@ export interface SessionOptions {
   maxRetries?: number;
   interactivePromptFallback?: () => Promise<void>;
   logger?: Logger;
-}
-
-/** Extract session cookie string from Set-Cookie headers. */
-function extractCookies(headers: Record<string, string | string[]>): string {
-  const raw = headers["set-cookie"];
-  if (!raw) return "";
-  const list = Array.isArray(raw) ? raw : [raw];
-  return list.map((c) => c.split(";")[0]).join("; ");
 }
 
 /** Extract the logintoken CSRF field from Moodle's login page HTML. */
@@ -79,6 +79,17 @@ async function silentReAuth(
   }
 }
 
+/**
+ * Validate the current session and return a valid session cookie string.
+ *
+ * Flow:
+ *   1. GET /my/ with the existing session cookie — if no redirect to /login/, session is alive.
+ *   2. If session has expired, attempt silent re-authentication using stored Keychain credentials
+ *      (up to maxRetries attempts). Each attempt replicates the two-step Moodle login
+ *      (GET login page → extract CSRF token → POST credentials → verify via /my/).
+ *   3. If all re-auth attempts fail, throw AuthError with exitCode AUTH_ERROR.
+ *   4. If no credentials are stored and no interactive fallback is provided, throw AuthError.
+ */
 export async function validateOrRefreshSession(opts: SessionOptions): Promise<string> {
   const {
     httpClient,
@@ -104,15 +115,12 @@ export async function validateOrRefreshSession(opts: SessionOptions): Promise<st
   }
 
   // Silent re-authentication
-  process.stderr.write("Session expired, re-authenticating…\n");
+  logger?.warn("Session expired, re-authenticating…");
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const cookie = await silentReAuth(httpClient, creds, baseUrl, logger);
     if (cookie !== null) return cookie;
   }
 
-  throw Object.assign(
-    new Error(`Authentication failed after ${maxRetries} attempts.`),
-    { exitCode: EXIT_CODES.AUTH_ERROR }
-  );
+  throw new AuthError(`Authentication failed after ${maxRetries} attempts.`, EXIT_CODES.AUTH_ERROR);
 }

@@ -2,6 +2,7 @@
 import { existsSync } from "node:fs";
 import type { State } from "./state.js";
 import type { ContentTree } from "../scraper/courses.js";
+import { getResourceId } from "../scraper/resource-id.js";
 
 export enum SyncAction {
   DOWNLOAD = "DOWNLOAD",
@@ -59,7 +60,7 @@ export function computeSyncPlan(opts: ComputeSyncPlanOptions): SyncPlanItem[] {
 
       for (const activity of section.activities) {
         if (!activity.isAccessible) continue;
-        const resourceId = activity.resourceId ?? `${tree.courseId}-${section.sectionId}-${activity.activityName}`;
+        const resourceId = getResourceId(activity, tree.courseId, section.sectionId);
         const fileState = sectionState?.files?.[resourceId];
 
         const needsDownload = force
@@ -83,7 +84,7 @@ export function computeSyncPlan(opts: ComputeSyncPlanOptions): SyncPlanItem[] {
       // Detect orphaned files in this section
       if (sectionState?.files) {
         const currentResourceIds = new Set(
-          section.activities.map((a) => a.resourceId ?? `${tree.courseId}-${section.sectionId}-${a.activityName}`)
+          section.activities.map((a) => getResourceId(a, tree.courseId, section.sectionId))
         );
         for (const resourceId of Object.keys(sectionState.files)) {
           if (!currentResourceIds.has(resourceId)) {

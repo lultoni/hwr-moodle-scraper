@@ -1,4 +1,5 @@
 // REQ-CLI-006, REQ-CLI-012, REQ-CLI-016
+import { existsSync } from "node:fs";
 import { StateManager } from "../sync/state.js";
 
 export interface StatusOptions {
@@ -19,6 +20,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   let totalFiles = 0;
   let orphanedFiles = 0;
   const orphans: Array<{ localPath: string; url: string }> = [];
+  const missingFiles: Array<{ localPath: string; url: string }> = [];
 
   for (const course of Object.values(state.courses)) {
     for (const section of Object.values(course.sections ?? {})) {
@@ -27,6 +29,8 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
         if (file.status === "orphan") {
           orphanedFiles++;
           orphans.push({ localPath: file.localPath, url: file.url });
+        } else if (showIssues && file.localPath && !existsSync(file.localPath)) {
+          missingFiles.push({ localPath: file.localPath, url: file.url });
         }
       }
     }
@@ -41,6 +45,13 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
     process.stdout.write("\nOrphaned files:\n");
     for (const o of orphans) {
       process.stdout.write(`  ${o.localPath} (last known: ${o.url})\n`);
+    }
+  }
+
+  if (showIssues && missingFiles.length > 0) {
+    process.stdout.write("\nMissing files (in state but not on disk):\n");
+    for (const m of missingFiles) {
+      process.stdout.write(`  ${m.localPath} (source: ${m.url})\n`);
     }
   }
 }

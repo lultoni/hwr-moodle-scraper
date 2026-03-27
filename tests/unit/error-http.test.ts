@@ -63,15 +63,14 @@ describe("STEP-018: HTTP 403 handling", () => {
   // REQ-ERR-003
   it("logs 'Access denied' and does not throw", async () => {
     mockAgent.get(BASE).intercept({ path: "/restricted", method: "GET" }).reply(403, "Forbidden");
-    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const warnings: string[] = [];
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: (msg: string) => warnings.push(msg), error: vi.fn() };
 
     const client = createHttpClient();
-    const result = await client.get(`${BASE}/restricted`, { handleErrors: true });
+    const result = await client.get(`${BASE}/restricted`, { handleErrors: true, logger });
 
-    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
-    expect(output).toContain("Access denied");
+    expect(warnings.join(" ")).toContain("Access denied");
     expect(result.status).toBe(403);
-    stderrSpy.mockRestore();
   });
 });
 
@@ -105,15 +104,14 @@ describe("STEP-018: HTTP 5xx handling", () => {
     mockAgent.get(BASE).intercept({ path: "/unstable", method: "GET" }).reply(503, "Service Unavailable").times(3);
 
     const client = createHttpClient();
-    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const warnings: string[] = [];
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: (msg: string) => warnings.push(msg), error: vi.fn() };
 
-    const p = client.get(`${BASE}/unstable`, { retry: true, maxRetries: 3 });
+    const p = client.get(`${BASE}/unstable`, { retry: true, maxRetries: 3, logger });
     await vi.runAllTimersAsync();
     const result = await p;
 
-    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
-    expect(output.length).toBeGreaterThan(0); // error was logged
-    stderrSpy.mockRestore();
+    expect(warnings.length).toBeGreaterThan(0); // error was logged
   });
 });
 

@@ -5,18 +5,18 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXIT_CODES } from "../exit-codes.js";
 import type { Logger } from "../logger.js";
+import { extractCookies } from "./cookies.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-// Resolve package.json: works both from src/http/ (../../) and from flat dist/ (../)
-function readPkg(): { version: string } {
+// Resolve version: prefer build-time env injection, fall back to package.json discovery
+const VERSION = process.env.npm_package_version ?? (() => {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
   for (const rel of ["../../package.json", "../package.json"]) {
-    try { return JSON.parse(readFileSync(resolve(__dirname, rel), "utf8")) as { version: string }; } catch { /* try next */ }
+    try { return (JSON.parse(readFileSync(resolve(__dirname, rel), "utf8")) as { version: string }).version; } catch { /* try next */ }
   }
-  return { version: "0.0.0" };
-}
-const pkg = readPkg();
+  return "0.0.0";
+})();
 
-const USER_AGENT = `moodle-scraper/${pkg.version} (https://github.com/hwr-moodle-scraper)`;
+const USER_AGENT = `moodle-scraper/${VERSION} (https://github.com/hwr-moodle-scraper)`;
 
 export class InsecureURLError extends Error {
   constructor(url: string) {
@@ -123,7 +123,7 @@ export function createHttpClient(): HttpClient {
 
     // Handle 403: log and return without throwing (when handleErrors: true)
     if (statusCode === 403 && options.handleErrors) {
-      process.stderr.write(`Access denied: ${url}\n`);
+      logger?.warn(`Access denied: ${url}`);
     }
 
     // Handle 429: respect Retry-After then retry
@@ -136,7 +136,7 @@ export function createHttpClient(): HttpClient {
     // Handle 5xx with retry
     if (statusCode >= 500 && options.retry) {
       const maxRetries = options.maxRetries ?? 3;
-      process.stderr.write(`HTTP ${statusCode} from ${url}, retrying...\n`);
+      logger?.warn(`HTTP ${statusCode} from ${url}, retrying...`);
       if (maxRetries > 1) {
         return doRequest(method, url, body, { ...options, maxRetries: maxRetries - 1 });
       }
@@ -148,10 +148,7 @@ export function createHttpClient(): HttpClient {
     const finalUrl = location ?? url;
 
     // Collect any new session cookies from this response
-    const resCookies = resHeaders["set-cookie"];
-    const newCookies = resCookies
-      ? (Array.isArray(resCookies) ? resCookies : [resCookies]).map(c => c.split(";")[0]).join("; ")
-      : "";
+    const newCookies = extractCookies(resHeaders as Record<string, string | string[]>);
 
     // Follow redirects if requested
     if (statusCode >= 300 && statusCode < 400 && options.followRedirects && location) {

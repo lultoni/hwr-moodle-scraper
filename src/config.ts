@@ -1,5 +1,5 @@
 // REQ-CLI-007, REQ-FS-001
-import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -38,6 +38,7 @@ export class ConfigManager {
     try {
       return JSON.parse(readFileSync(this.configFile, "utf8")) as Record<string, ConfigValue>;
     } catch {
+      process.stderr.write(`Warning: config file at ${this.configFile} is corrupt — using defaults.\n`);
       return {};
     }
   }
@@ -45,7 +46,6 @@ export class ConfigManager {
   private write(data: Record<string, ConfigValue>): void {
     const json = JSON.stringify(data, null, 2);
     writeFileSync(this.configFile, json, { mode: 0o600 });
-    chmodSync(this.configFile, 0o600);
   }
 
   async get<K extends ConfigKey>(key: K): Promise<(typeof DEFAULTS)[K] | undefined> {

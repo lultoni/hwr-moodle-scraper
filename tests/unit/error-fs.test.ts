@@ -69,16 +69,14 @@ describe("STEP-019: Unexpected page structure", () => {
   // REQ-ERR-011
   it("logs warning with URL and skips activity without throwing", async () => {
     const { parseActivityFromElement } = await import("../../src/scraper/courses.js");
-    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const warnings: string[] = [];
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: (msg: string) => warnings.push(msg), error: vi.fn() };
 
     // Pass a completely empty/invalid element
-    const result = await parseActivityFromElement(null as never, "https://moodle.example.com/course/view.php?id=1");
+    const result = await parseActivityFromElement(null as never, "https://moodle.example.com/course/view.php?id=1", logger);
 
-    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
-    expect(output).toContain("unexpected page structure");
+    expect(warnings.join(" ").toLowerCase()).toContain("unexpected page structure");
     expect(result).toBeNull(); // skipped
-
-    stderrSpy.mockRestore();
   });
 });
 

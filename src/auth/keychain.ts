@@ -30,46 +30,54 @@ export class KeychainAdapter {
     }
   }
 
-  async storeCredentials(username: string, password: string): Promise<void> {
+  private async assertedOp<T>(fn: () => Promise<T>): Promise<T> {
     this.assertMacOS();
-    try {
-      await keytar.setPassword(SERVICE, username, password);
-      this.storedUsername = username;
-    } catch (err) {
-      throw new Error(
-        `Error: could not save credentials to Keychain — ${(err as Error).message}.`
-      );
-    }
+    return fn();
+  }
+
+  async storeCredentials(username: string, password: string): Promise<void> {
+    return this.assertedOp(async () => {
+      try {
+        await keytar.setPassword(SERVICE, username, password);
+        this.storedUsername = username;
+      } catch (err) {
+        throw new Error(
+          `Error: could not save credentials to Keychain — ${(err as Error).message}.`
+        );
+      }
+    });
   }
 
   async readCredentials(): Promise<Credentials | null> {
-    this.assertMacOS();
-    try {
-      // If we have a username in memory, do a direct lookup
-      if (this.storedUsername) {
-        const password = await keytar.getPassword(SERVICE, this.storedUsername);
-        if (password === null) return null;
-        return { username: this.storedUsername, password };
+    return this.assertedOp(async () => {
+      try {
+        // If we have a username in memory, do a direct lookup
+        if (this.storedUsername) {
+          const password = await keytar.getPassword(SERVICE, this.storedUsername);
+          if (password === null) return null;
+          return { username: this.storedUsername, password };
+        }
+        // Otherwise discover stored accounts for this service
+        const found = await keytar.findCredentials(SERVICE);
+        if (found.length === 0) return null;
+        const { account, password } = found[0]!;
+        this.storedUsername = account;
+        return { username: account, password };
+      } catch (err) {
+        throw new Error(
+          `Error: could not read credentials from Keychain — ${(err as Error).message}.`
+        );
       }
-      // Otherwise discover stored accounts for this service
-      const found = await keytar.findCredentials(SERVICE);
-      if (found.length === 0) return null;
-      const { account, password } = found[0]!;
-      this.storedUsername = account;
-      return { username: account, password };
-    } catch (err) {
-      throw new Error(
-        `Error: could not read credentials from Keychain — ${(err as Error).message}.`
-      );
-    }
+    });
   }
 
   async deleteCredentials(): Promise<void> {
-    this.assertMacOS();
-    if (this.storedUsername) {
-      await keytar.deletePassword(SERVICE, this.storedUsername);
-      this.storedUsername = null;
-    }
+    return this.assertedOp(async () => {
+      if (this.storedUsername) {
+        await keytar.deletePassword(SERVICE, this.storedUsername);
+        this.storedUsername = null;
+      }
+    });
   }
 
   setStoredUsername(username: string): void {

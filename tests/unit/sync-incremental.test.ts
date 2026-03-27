@@ -164,7 +164,50 @@ describe("STEP-017: label activity state tracking", () => {
   });
 });
 
-describe("STEP-017: --dry-run mode", () => {
+describe("STEP-017: --check-files flag", () => {
+  it("returns DOWNLOAD for a file that exists in state but is missing on disk when checkFiles=true", () => {
+    const stateFile = {
+      courses: {
+        "1": {
+          name: "Macro",
+          sections: {
+            "s1": {
+              files: {
+                "r1": {
+                  ...makeFile("r1", "aaa"),
+                  // Use a path that definitely doesn't exist
+                  localPath: "/tmp/definitely-does-not-exist-xyz-12345/file-r1.pdf",
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+    const currentTree = {
+      courseId: 1,
+      sections: [{
+        sectionId: "s1",
+        sectionName: "Week 1",
+        activities: [{
+          activityType: "resource",
+          resourceId: "r1",
+          activityName: "file-r1.pdf",
+          url: "https://moodle.example.com/r/r1",
+          hash: "aaa",
+          isAccessible: true,
+        }],
+      }],
+    };
+
+    const plan = computeSyncPlan({ state: stateFile, currentTree: [currentTree], force: false, checkFiles: true });
+    const downloads = plan.filter((a) => a.action === SyncAction.DOWNLOAD);
+    expect(downloads).toHaveLength(1);
+    expect(downloads[0]?.resourceId).toBe("r1");
+  });
+});
+
+describe("STEP-017: --dry-run flag", () => {
   // REQ-SYNC-009
   it("dry-run returns the same plan but marks all actions as dry-run", () => {
     const stateFile = { courses: { "1": { name: "Macro", sections: { "s1": { files: {} } } } } };

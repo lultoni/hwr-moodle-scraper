@@ -8,6 +8,7 @@ export type DownloadStrategy = "binary" | "url-txt" | "page-md" | "label-md" | "
 
 export interface DownloadPlanItem {
   activity: Activity;
+  /** URL to download. Undefined for label-md and description-md strategies (content comes from activity.description). */
   url: string;
   destPath: string;
   strategy: DownloadStrategy;
@@ -27,7 +28,17 @@ const SKIP_TYPES = new Set([
 
 /**
  * Build a download plan for a list of activities in a single section.
- * Inaccessible activities and non-downloadable types are excluded.
+ *
+ * Strategy selection:
+ *   - `binary`        — `resource` activities and expanded folder files; content downloaded as-is
+ *   - `url-txt`       — `url` activities; target URL saved as a `.url.txt` text file
+ *   - `page-md`       — `page` activities; HTML fetched and converted to Markdown
+ *   - `label-md`      — `label` activities with a `description`; HTML description saved as `.md`
+ *   - `description-md`— sidecar `.description.md` file generated for any non-label activity
+ *                       that has a `description` field (activity details/metadata HTML)
+ *
+ * Inaccessible activities and non-downloadable types (assign, forum, quiz, etc.) are excluded.
+ * Labels without description content are also excluded (nothing to save).
  */
 export function buildDownloadPlan(
   activities: Activity[],

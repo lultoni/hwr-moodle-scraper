@@ -80,7 +80,7 @@ export function migrateStatePaths(
   state: State,
   outputDir: string,
   courseShortPaths: Map<string, { semesterDir: string; shortName: string }>,
-): State {
+): { state: State; changed: boolean } {
   let anyChanged = false;
   const normalizedOutputDir = outputDir.endsWith(sep) ? outputDir : outputDir + sep;
 
@@ -120,5 +120,5 @@ export function migrateStatePaths(
     }
   }
 
-  return state;
+  return { state, changed: anyChanged };
 }

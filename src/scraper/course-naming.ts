@@ -12,7 +12,11 @@ export interface CourseRef {
   courseUrl: string;
 }
 
-// Explicit module code → semester mapping from Modulübersicht WI ab Jahrgang 2022
+/**
+ * Maps HWR WI module code prefixes to semester directory names.
+ * Pattern: WIxyzN where xy=year-group, z=sequence number (e.g. WI2032 = group 2, module 32).
+ * Source: HWR Berlin WI curriculum structure (Modulübersicht WI ab Jahrgang 2022).
+ */
 const MODULE_SEMESTER: Record<string, string> = {
   "WI1011": "Semester_1", "WI1012": "Semester_1", "WI2013": "Semester_1",
   "WI2014": "Semester_1", "WI4015": "Semester_1",
