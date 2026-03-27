@@ -84,7 +84,7 @@ npm run test:watch        # watch mode
 npm run test:coverage     # with coverage report
 ```
 
-All 222 tests pass across 28 test files.
+All 224 tests pass across 27 test files.
 
 ### Type-check
 
@@ -113,7 +113,7 @@ src/
 ├── scraper/              # Course list, content tree parsing, downloader, dispatch
 └── sync/                 # State file, incremental sync plan
 tests/
-├── unit/                 # 24 unit test files (including Phase 5 fixes)
+├── unit/                 # 27 test files (including Phase 5 fixes and regression tests)
 └── integration/          # Full-scrape and incremental-sync end-to-end tests
 docs/
 ├── REQUIREMENTS.md       # 75 gap-free requirements

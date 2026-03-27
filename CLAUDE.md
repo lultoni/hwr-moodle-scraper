@@ -59,7 +59,7 @@ hwr-moodle-scraper/
 
 ## Current Phase
 **Phase 5 — Iterative Improvements**
-- All 22 timeline steps implemented + Phase 5 fixes; 222/222 tests passing across 28 test files
+- All 22 timeline steps implemented + Phase 5 fixes; 224/224 tests passing across 27 test files
 - Full CLI implementation: auth, scrape, status, wizard commands
 - **Phase 5 fixes applied** (2026-03-27+):
   - Fixed redirect handling in `fetchContentTree` and `downloadFile` (root cause of "0 to download")
