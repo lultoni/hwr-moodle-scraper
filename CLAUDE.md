@@ -59,10 +59,10 @@ hwr-moodle-scraper/
 
 ## Current Phase
 **Phase 5 — Iterative Improvements — COMPLETE**
-- All 22 timeline steps fully implemented with 10 comprehensive cleanup passes
-- **Final status**: 233/233 tests passing (8 new tests added in cleanup passes)
+- All 22 timeline steps fully implemented with 12 comprehensive cleanup passes
+- **Final status**: 240/240 tests passing (15 new tests added in cleanup passes)
 - Full CLI implementation: auth, scrape, status, wizard commands
-- **10 cleanup passes completed** (2026-03-27 to 2026-03-28):
+- **12 cleanup passes completed** (2026-03-27 to 2026-03-28):
   1. **Bug Fixes** — fd leak in logger, dead else-if in downloader, redirect exhaustion, migrateStatePaths not saving, 403/5xx logging
   2. **Security** — Path traversal guard in extractFilename, HTTPS check in redirects, symlink check in deleteSessionFile
   3. **Deduplication** — extractCookies→src/http/cookies.ts, getResourceId→src/scraper/resource-id.ts
@@ -73,6 +73,8 @@ hwr-moodle-scraper/
   8. **Performance** — Memory buffer comment, activityOpenRe placement comment
   9. **Style** — UK spelling in sanitise.ts, process.stderr.write audit with justification comments
   10. **Agents** — developer.md shared utilities, html-analyzer.md label/onetopic patterns
+  11. **Bug Fix** — Non-downloadable activities (assign, forum, quiz) acknowledged in state to prevent infinite re-planning
+  12. **HTML Parsing & Course Formats** — balanced-div depth-counter replaces regex for altcontent, fp-filename span variant for Moodle 4.x folders, format-grid multi-page section fetching, format-onetopic multi-tab fetching, modtype CSS class as primary activity type detection, duplicate folder name deduplication in scrape.ts
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.

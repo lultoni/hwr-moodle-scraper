@@ -557,6 +557,242 @@ describe("Parsing: Activity description extraction", () => {
     expect(result?.activityName).toBe("Aufgaben Asynchron");
     expect(result?.description).toContain("Liebe Studierende");
   });
+
+  it("extracts deeply nested altcontent description (multi-paragraph assign description)", () => {
+    // Mirrors real assign HTML: <div class="activity-altcontent"><div class="no-overflow"><div class="no-overflow"><p>...</p><p>...</p></div></div>
+    const element = `
+      class="activity assign modtype_assign"
+      id="module-1847126"
+      data-for="cmitem"
+      data-id="1847126"
+    >
+      <div class="activity-item focus-control" data-activityname="Einzelaufgabe" data-region="activity-card">
+        <div class="activity-grid">
+          <div class="activityname">
+            <a href="${BASE}/mod/assign/view.php?id=1847126" class="aalink stretched-link">
+              <span class="instancename">Einzelaufgabe <span class="accesshide"> Aufgabe</span></span>
+            </a>
+          </div>
+          <div class="activity-altcontent text-break activity-description">
+            <div class="no-overflow"><div class="no-overflow"><p dir="ltr">Überlegen Sie sich jeweils einzeln was mit den 6 unterschiedlichen Adjektiven gemeint ist.</p><p dir="ltr">Schreiben Sie Ihre Einschätzungen in 6 Stichpunkten.</p></div></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const result = parseActivityFromElement(element, `${BASE}/course/view.php?id=1`);
+    expect(result?.activityType).toBe("assign");
+    expect(result?.activityName).toBe("Einzelaufgabe");
+    // Must capture BOTH paragraphs, not just partial content
+    expect(result?.description).toContain("Überlegen Sie");
+    expect(result?.description).toContain("Schreiben Sie");
+  });
+});
+
+describe("Parsing: modtype class-based activity type detection", () => {
+  it("detects bigbluebuttonbn from modtype class even if URL doesn't match", () => {
+    // If the URL is indirect (e.g. external launch), URL-based detection falls back to 'resource'
+    // but modtype_bigbluebuttonbn class should win
+    const element = `
+      class="activity bigbluebuttonbn modtype_bigbluebuttonbn"
+      id="module-9999"
+    >
+      <div class="activity-item" data-activityname="Need help?">
+        <div class="activityname">
+          <a href="${BASE}/mod/bigbluebuttonbn/view.php?id=9999" class="aalink">
+            <span class="instancename">Need help? <span class="accesshide"> Virtueller Unterrichtsraum</span></span>
+          </a>
+        </div>
+      </div>
+    `;
+    const result = parseActivityFromElement(element, `${BASE}/course/view.php?id=1`);
+    expect(result?.activityType).toBe("bigbluebuttonbn");
+    expect(result?.activityName).toBe("Need help?");
+  });
+
+  it("uses modtype class over URL for assign detection", () => {
+    const element = `
+      class="activity assign modtype_assign"
+    >
+      <a href="${BASE}/mod/assign/view.php?id=600">Task</a>
+    `;
+    const result = parseActivityFromElement(element, `${BASE}/course/view.php?id=1`);
+    expect(result?.activityType).toBe("assign");
+  });
+});
+
+describe("Parsing: format-grid course — section cards", () => {
+  it("fetches each grid section card page to collect activities", async () => {
+    const pool = mockAgent.get(BASE);
+
+    // Main course page with grid cards
+    pool
+      .intercept({ path: `/course/view.php?id=77`, method: "GET" })
+      .reply(200, `
+        <html>
+          <body class="format-grid">
+            <ul class="grid">
+              <li id="section-0" class="section course-section main clearfix" data-sectionname="Allgemeines" data-number="0">
+                <ul class="section" data-for="cmlist">
+                  <li class="activity resource modtype_resource">
+                    <a href="${BASE}/mod/resource/view.php?id=1">General Info</a>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+            <div class="thegrid">
+              <div id="section-1" class="grid-section card" title="Lerneinheit 1">
+                <a class="grid-section-inner" href="${BASE}/course/section.php?id=1001">Lerneinheit 1</a>
+              </div>
+              <div id="section-2" class="grid-section card" title="Lerneinheit 2">
+                <a class="grid-section-inner" href="${BASE}/course/section.php?id=1002">Lerneinheit 2</a>
+              </div>
+            </div>
+          </body>
+        </html>
+      `);
+
+    // Section page 1
+    pool
+      .intercept({ path: `/course/section.php?id=1001`, method: "GET" })
+      .reply(200, `
+        <html><body>
+          <li class="section course-section main clearfix" data-sectionname="Lerneinheit 1">
+            <ul class="section" data-for="cmlist">
+              <li class="activity resource modtype_resource">
+                <a href="${BASE}/mod/resource/view.php?id=10">Skript 1</a>
+              </li>
+            </ul>
+          </li>
+        </body></html>
+      `);
+
+    // Section page 2
+    pool
+      .intercept({ path: `/course/section.php?id=1002`, method: "GET" })
+      .reply(200, `
+        <html><body>
+          <li class="section course-section main clearfix" data-sectionname="Lerneinheit 2">
+            <ul class="section" data-for="cmlist">
+              <li class="activity resource modtype_resource">
+                <a href="${BASE}/mod/resource/view.php?id=20">Skript 2</a>
+              </li>
+            </ul>
+          </li>
+        </body></html>
+      `);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 77, sessionCookies: "" });
+
+    // Should have: section-0 (general) + 2 grid sections
+    expect(tree.sections.length).toBeGreaterThanOrEqual(2);
+    const names = tree.sections.map((s) => s.sectionName);
+    expect(names).toContain("Lerneinheit 1");
+    expect(names).toContain("Lerneinheit 2");
+    const allActivities = tree.sections.flatMap((s) => s.activities.map((a) => a.activityName));
+    expect(allActivities).toContain("Skript 1");
+    expect(allActivities).toContain("Skript 2");
+  });
+});
+
+describe("Parsing: format-onetopic — multi-tab fetching", () => {
+  it("fetches each onetopic tab page to collect all sections", async () => {
+    const pool = mockAgent.get(BASE);
+
+    // Main course page shows only section 1 (active), with tab nav listing all tabs
+    pool
+      .intercept({ path: `/course/view.php?id=88`, method: "GET" })
+      .reply(200, `
+        <html><body class="format-onetopic">
+          <ul class="nav nav-tabs format_onetopic-tabs">
+            <li class="nav-item" id="onetabid-101">
+              <a class="nav-link active" href="${BASE}/course/view.php?id=88&section=1">Informationen</a>
+            </li>
+            <li class="nav-item" id="onetabid-102">
+              <a class="nav-link" href="${BASE}/course/view.php?id=88&section=2">Unterlagen</a>
+            </li>
+          </ul>
+          <ul class="onetopic">
+            <li id="section-1" class="section course-section main clearfix" data-sectionid="1" data-number="1">
+              <ul class="section" data-for="cmlist">
+                <li class="activity resource modtype_resource">
+                  <a href="${BASE}/mod/resource/view.php?id=1">Skript A</a>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </body></html>
+      `);
+
+    // Section 2 tab page
+    pool
+      .intercept({ path: `/course/view.php?id=88&section=2`, method: "GET" })
+      .reply(200, `
+        <html><body class="format-onetopic">
+          <ul class="onetopic">
+            <li id="section-2" class="section course-section main clearfix" data-sectionid="2" data-number="2">
+              <ul class="section" data-for="cmlist">
+                <li class="activity resource modtype_resource">
+                  <a href="${BASE}/mod/resource/view.php?id=2">Skript B</a>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </body></html>
+      `);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 88, sessionCookies: "" });
+
+    const names = tree.sections.map((s) => s.sectionName);
+    expect(names).toContain("Informationen");
+    expect(names).toContain("Unterlagen");
+    const allActivities = tree.sections.flatMap((s) => s.activities.map((a) => a.activityName));
+    expect(allActivities).toContain("Skript A");
+    expect(allActivities).toContain("Skript B");
+  });
+});
+
+describe("Parsing: folder fp-filename span (Moodle 4.x real structure)", () => {
+  it("parses folder files where fp-filename span wraps the link (Moodle 4.x)", async () => {
+    const { fetchFolderFiles } = await import("../../src/scraper/courses.js");
+
+    const pool = mockAgent.get(BASE);
+    pool
+      .intercept({ path: `/mod/folder/view.php?id=400`, method: "GET" })
+      .reply(200, `
+        <html><body>
+          <div class="foldertree">
+            <div id="folder_tree0" class="filemanager">
+              <ul>
+                <li>
+                  <div class="fp-filename-icon">
+                    <span class="fp-filename">
+                      <a href="${BASE}/pluginfile.php/4345936/mod_folder/content/0/Blatt%201.pdf?forcedownload=1">Blatt 1.pdf</a>
+                    </span>
+                  </div>
+                </li>
+                <li>
+                  <div class="fp-filename-icon">
+                    <span class="fp-filename">
+                      <a href="${BASE}/pluginfile.php/4345936/mod_folder/content/0/Formelsammlung.pdf?forcedownload=1">Formelsammlung.pdf</a>
+                    </span>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </body></html>
+      `);
+
+    const files = await fetchFolderFiles({
+      baseUrl: BASE,
+      folderUrl: `${BASE}/mod/folder/view.php?id=400`,
+      sessionCookies: "",
+    });
+
+    expect(files).toHaveLength(2);
+    expect(files[0]?.name).toBe("Blatt 1.pdf");
+    expect(files[1]?.name).toBe("Formelsammlung.pdf");
+  });
 });
 
 

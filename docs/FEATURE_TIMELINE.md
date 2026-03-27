@@ -5,7 +5,7 @@
 - **Traceability audit**: PASS (75/75)
 - **Total steps**: 22
 - **Requirements coverage**: 75/75
-- **Phase 5 improvements**: Redirect handling, activity name cleanup, folder expansion, type-aware dispatch, debug logging, progress bar fixes, onetopic section names, label content + activity descriptions, semester grouping with state migration, state save bug fix
+- **Phase 5 improvements**: Redirect handling, activity name cleanup, folder expansion, type-aware dispatch, debug logging, progress bar fixes, onetopic section names, label content + activity descriptions, semester grouping with state migration, state save bug fix, format-grid multi-page section fetching, format-onetopic multi-tab fetching, modtype CSS class type detection, balanced-div altcontent parser, Moodle 4.x fp-filename span variant, duplicate folder name deduplication
 
 ---
 

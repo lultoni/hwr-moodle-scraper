@@ -112,17 +112,26 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       const expandedSections: Section[] = await Promise.all(
         tree.sections.map(async (section) => {
           const expandedActivities: Activity[] = [];
+          // Track folder names seen in this section to detect duplicates and deduplicate paths
+          const folderNameCount = new Map<string, number>();
           for (const activity of section.activities) {
             if (activity.activityType === "folder" && activity.url) {
               logger.debug(`  Expanding folder: ${activity.activityName}`);
               const files = await fetchFolderFiles({ baseUrl, folderUrl: activity.url, sessionCookies });
+              // Use the activity URL's ?id= param as a stable unique key, falling back to name
+              const folderIdMatch = /[?&]id=(\d+)/.exec(activity.url);
+              const folderId = folderIdMatch ? folderIdMatch[1]! : activity.activityName;
+              // Track duplicate folder names to produce distinct destPaths
+              const prev = folderNameCount.get(activity.activityName) ?? 0;
+              folderNameCount.set(activity.activityName, prev + 1);
+              const nameSuffix = prev > 0 ? ` (${prev + 1})` : "";
               for (const f of files) {
                 expandedActivities.push({
                   activityType: "resource",
-                  activityName: f.name,
+                  activityName: nameSuffix ? `${f.name}${nameSuffix}` : f.name,
                   url: f.url,
                   isAccessible: true,
-                  resourceId: `folder-${activity.activityName}-${f.name}`,
+                  resourceId: `folder-${folderId}-${f.name}`,
                 });
               }
               logger.debug(`    → ${files.length} file(s) in folder`);

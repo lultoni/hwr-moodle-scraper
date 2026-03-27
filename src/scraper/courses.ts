@@ -77,6 +77,40 @@ function parseOnetopicTabs(html: string): Map<number, string> {
   return map;
 }
 
+/**
+ * Parse onetopic tab nav to build an ordered list of { sectionNum, name } entries.
+ * Used to iterate and fetch each section page.
+ */
+function parseOnetopicTabList(html: string): Array<{ sectionNum: number; name: string }> {
+  const tabs: Array<{ sectionNum: number; name: string }> = [];
+  const tabRe = /id="onetabid-\d+"[\s\S]*?href="[^"]*[?&]section=(\d+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = tabRe.exec(html)) !== null) {
+    const sectionNum = parseInt(m[1]!, 10);
+    const name = decodeHtmlEntities(m[2]!.replace(/<[^>]+>/g, "").trim());
+    if (name) tabs.push({ sectionNum, name });
+  }
+  return tabs;
+}
+
+/**
+ * Parse format-grid course overview page to extract section card URLs.
+ * Each card has: <div class="grid-section card" title="SectionName">
+ *   <a href="/course/section.php?id=SECTIONID">
+ */
+function parseGridSectionCards(html: string, baseUrl: string): Array<{ name: string; url: string }> {
+  const cards: Array<{ name: string; url: string }> = [];
+  const cardRe = /<div[^>]+class="[^"]*grid-section[^"]*"[^>]+title="([^"]*)"[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = cardRe.exec(html)) !== null) {
+    const name = decodeHtmlEntities(m[1]!.trim());
+    const href = m[2]!;
+    const url = href.startsWith("http") ? href : `${baseUrl}${href.startsWith("/") ? "" : "/"}${href}`;
+    if (name && url) cards.push({ name, url });
+  }
+  return cards;
+}
+
 /** Parse course search results page HTML into a Course list. */
 function parseCourseSearchHtml(html: string, baseUrl: string): Course[] {
   const courses: Course[] = [];
@@ -143,13 +177,85 @@ export async function fetchCourseList(opts: FetchOptions & { searchQuery?: strin
 
 export async function fetchContentTree(opts: FetchOptions & { courseId: number }): Promise<ContentTree> {
   const { baseUrl, courseId, sessionCookies } = opts;
+  const headers = { cookie: sessionCookies };
 
   const { statusCode, body } = await fetchWithRedirects(
     `${baseUrl}/course/view.php?id=${courseId}`,
-    { cookie: sessionCookies },
+    headers,
   );
 
   if (statusCode >= 400) throw new Error(`Content tree fetch failed: HTTP ${statusCode}`);
+
+  // Detect format-grid: sections are shown as cards, each with a separate section URL
+  if (body.includes("format-grid") && body.includes("grid-section")) {
+    const gridCards = parseGridSectionCards(body, baseUrl);
+    if (gridCards.length > 0) {
+      // Parse section-0 (general section) from main page, then each grid section separately
+      const mainTree = parseContentTree(body, courseId, baseUrl, opts.logger);
+      const allSections: Section[] = mainTree.sections.length > 0 ? [mainTree.sections[0]!] : [];
+
+      await Promise.all(
+        gridCards.map(async (card, idx) => {
+          const { statusCode: sc, body: sectionBody } = await fetchWithRedirects(card.url, headers);
+          if (sc >= 400) return;
+          // Parse section page — it contains a single section <li>
+          const sectionTree = parseContentTree(sectionBody, courseId, baseUrl, opts.logger);
+          // Take the first section with activities; override the name from the card title
+          const section = sectionTree.sections.find((s) => s.activities.length > 0)
+            ?? sectionTree.sections[0];
+          if (section) {
+            allSections.push({
+              ...section,
+              sectionId: `s${idx + 1}`,
+              sectionName: card.name,
+            });
+          }
+        }),
+      );
+
+      return { courseId, sections: allSections };
+    }
+  }
+
+  // Detect format-onetopic: sections are shown one at a time via tabs; each tab is a separate fetch
+  const onetopicTabList = parseOnetopicTabList(body);
+  if (onetopicTabList.length > 0) {
+    // Parse the active section from the main page
+    const mainTree = parseContentTree(body, courseId, baseUrl, opts.logger);
+    const activeSectionNums = new Set(mainTree.sections.map((_, i) => i + 1));
+
+    const allSections: Section[] = [...mainTree.sections];
+
+    await Promise.all(
+      onetopicTabList.map(async ({ sectionNum, name }) => {
+        // Skip sections already present (e.g. the active one returned in mainTree)
+        if (activeSectionNums.has(sectionNum)) {
+          // Update its name from the tab nav
+          const existing = allSections.find((s) => s.sectionId === `s${sectionNum - 1}`);
+          if (existing) existing.sectionName = name;
+          return;
+        }
+        const url = `${baseUrl}/course/view.php?id=${courseId}&section=${sectionNum}`;
+        const { statusCode: sc, body: tabBody } = await fetchWithRedirects(url, headers);
+        if (sc >= 400) return;
+        const tabTree = parseContentTree(tabBody, courseId, baseUrl, opts.logger);
+        // The tab page contains only the requested section
+        const section = tabTree.sections[0];
+        if (section) {
+          allSections.push({ ...section, sectionId: `s${sectionNum - 1}`, sectionName: name });
+        }
+      }),
+    );
+
+    // Sort sections by sectionId order
+    allSections.sort((a, b) => {
+      const na = parseInt(a.sectionId.slice(1), 10);
+      const nb = parseInt(b.sectionId.slice(1), 10);
+      return na - nb;
+    });
+
+    return { courseId, sections: allSections };
+  }
 
   return parseContentTree(body, courseId, baseUrl, opts.logger);
 }
@@ -168,19 +274,36 @@ export async function fetchFolderFiles(
 
 function parseFolderFiles(html: string): FolderFile[] {
   const files: FolderFile[] = [];
-  // Moodle folder pages list files with pluginfile.php links or forcedownload links
-  const linkRe = /<a[^>]+href="([^"]*(?:pluginfile\.php|forcedownload)[^"]*)"[^>]*>[\s\S]*?<\/a>/gi;
+
+  // Real Moodle folder structure (Moodle 4.x): <span class="fp-filename"><a href="...?forcedownload=1">name.pdf</a></span>
+  // Match the fp-filename span and extract href + link text.
+  const spanRe = /<span[^>]+class="[^"]*fp-filename[^"]*"[^>]*>([\s\S]*?)<\/span>/gi;
   let m: RegExpExecArray | null;
-  while ((m = linkRe.exec(html)) !== null) {
-    const url = m[0]!;
-    const href = m[1]!;
-    // Extract filename from fp-filename span, or from URL
-    const nameMatch = /<span[^>]+class="[^"]*fp-filename[^"]*"[^>]*>([\s\S]*?)<\/span>/i.exec(url);
-    const rawName = nameMatch
-      ? nameMatch[1]!.replace(/<[^>]+>/g, "").trim()
-      : decodeURIComponent(href.split("/").pop()?.split("?")[0] ?? "") || "file";
+  while ((m = spanRe.exec(html)) !== null) {
+    const spanInner = m[1]!;
+    const linkMatch = /<a[^>]+href="([^"]*(?:pluginfile\.php|forcedownload)[^"]*)"[^>]*>([\s\S]*?)<\/a>/i.exec(spanInner);
+    if (!linkMatch) continue;
+    const href = linkMatch[1]!;
+    const rawName = linkMatch[2]!.replace(/<[^>]+>/g, "").trim()
+      || decodeURIComponent(href.split("/").pop()?.split("?")[0] ?? "") || "file";
     files.push({ name: rawName, url: href });
   }
+
+  // Fallback: older Moodle structure where <a> wraps <span class="fp-filename">
+  // <a href="...pluginfile.php..."><span class="fp-filename">name.pdf</span></a>
+  if (files.length === 0) {
+    const linkRe = /<a[^>]+href="([^"]*(?:pluginfile\.php|forcedownload)[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+    while ((m = linkRe.exec(html)) !== null) {
+      const href = m[1]!;
+      const innerHtml = m[2]!;
+      const nameSpanMatch = /<span[^>]+class="[^"]*fp-filename[^"]*"[^>]*>([\s\S]*?)<\/span>/i.exec(innerHtml);
+      const rawName = nameSpanMatch
+        ? nameSpanMatch[1]!.replace(/<[^>]+>/g, "").trim()
+        : decodeURIComponent(href.split("/").pop()?.split("?")[0] ?? "") || "file";
+      files.push({ name: rawName, url: href });
+    }
+  }
+
   return files;
 }
 
@@ -315,7 +438,12 @@ export function parseActivityFromElement(
 
     if (!name) name = "Unnamed activity";
 
-    const activityType = url ? activityTypeFromUrl(url) : "label";
+    // Prefer modtype_xxx CSS class for type detection (more reliable than URL parsing).
+    // Fall back to URL-based detection, then "label" for activities with no URL.
+    const modtypeMatch = /\bmodtype_(\w+)\b/i.exec(element);
+    const activityType = modtypeMatch
+      ? modtypeMatch[1]!.toLowerCase()
+      : (url ? activityTypeFromUrl(url) : "label");
 
     // Check accessibility: dimmed_text class indicates restricted — check attrs (before content)
     const attrsEnd = element.indexOf(">");
@@ -325,12 +453,31 @@ export function parseActivityFromElement(
     const resourceIdMatch = /data-resource-id="([^"]+)"/.exec(element);
     const hashMatch = /data-hash="([^"]+)"/.exec(element);
 
-    // Extract activity-altcontent (label inline content or activity description sidecar)
+    // Extract activity-altcontent (label inline content or activity description sidecar).
+    // The altcontent div contains nested divs (e.g. <div class="no-overflow"><div>...</div></div>),
+    // so we can't use a simple non-greedy regex. Instead find the opening tag, then walk forward
+    // counting open/close div tags to find the matching closing </div>.
     let description: string | undefined;
-    const altcontentMatch = /<div[^>]+class="[^"]*activity-altcontent[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?:<\/div>|$)/i.exec(element);
-    if (altcontentMatch?.[1]?.trim()) {
-      // Strip outer wrapper divs but keep inner HTML for turndown conversion
-      description = altcontentMatch[1].trim();
+    const altcontentOpenRe = /<div[^>]+class="[^"]*activity-altcontent[^"]*"[^>]*>/i;
+    const altcontentOpenMatch = altcontentOpenRe.exec(element);
+    if (altcontentOpenMatch) {
+      const innerStart = altcontentOpenMatch.index + altcontentOpenMatch[0].length;
+      let depth = 1;
+      let pos = innerStart;
+      while (pos < element.length && depth > 0) {
+        const nextOpen = element.indexOf("<div", pos);
+        const nextClose = element.indexOf("</div", pos);
+        if (nextClose === -1) break;
+        if (nextOpen !== -1 && nextOpen < nextClose) {
+          depth++;
+          pos = nextOpen + 4;
+        } else {
+          depth--;
+          pos = nextClose + 5;
+        }
+      }
+      const inner = element.slice(innerStart, pos - 5 /* back before </div */).trim();
+      if (inner) description = inner;
     }
 
     return {
