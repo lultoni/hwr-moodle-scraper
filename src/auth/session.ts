@@ -69,10 +69,10 @@ async function silentReAuth(
         cookie: finalCookies || undefined,
         ...(logger ? { logger } : {}),
       });
-      if (!myPage.url.includes("/login/")) return extractCookies(myPage.headers) || finalCookies;
+      if (!myPage.url.includes("/login/")) return myPage.effectiveCookies || finalCookies || extractCookies(myPage.headers) || "";
       return null;
     }
-    if (!response.url.includes("/login/")) return extractCookies(response.headers);
+    if (!response.url.includes("/login/")) return response.effectiveCookies || extractCookies(response.headers);
     return null;
   } catch {
     return null;
@@ -91,7 +91,7 @@ export async function validateOrRefreshSession(opts: SessionOptions): Promise<st
 
   // Validate session with a lightweight GET — a logged-in GET /my/ returns 200 without redirecting to /login/
   const response = await httpClient.get(`${baseUrl}/my/`, { followRedirects: true, ...(logger ? { logger } : {}) });
-  if (!response.url.includes("/login/")) return extractCookies(response.headers); // session valid
+  if (!response.url.includes("/login/")) return response.effectiveCookies || extractCookies(response.headers); // session valid
 
   // Session expired — try Keychain credentials
   const creds = await keychain.readCredentials();

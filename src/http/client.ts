@@ -38,6 +38,8 @@ export interface HttpResponse {
   url: string;
   body: string;
   headers: Record<string, string | string[]>;
+  /** The cookie string that was sent on the final request (includes cookies accumulated through redirects). */
+  effectiveCookies?: string;
 }
 
 export interface HttpRequestOptions {
@@ -83,13 +85,16 @@ export function createHttpClient(): HttpClient {
     method: "GET" | "POST",
     url: string,
     body?: unknown,
-    options: HttpRequestOptions = {}
+    options: HttpRequestOptions = {},
+    _sentCookies?: string,
   ): Promise<HttpResponse> {
     assertHttps(url);
     const { logger } = options;
 
     logger?.debug(`→ ${method} ${url}`);
     if (options.cookie) logger?.debug(`  Cookie: ${options.cookie}`);
+
+    const sentCookies = _sentCookies ?? options.cookie ?? "";
 
     const headers: Record<string, string> = {
       "user-agent": USER_AGENT,
@@ -165,7 +170,7 @@ export function createHttpClient(): HttpClient {
           ...options,
           cookie: mergedCookie || undefined,
           maxRedirects: maxRedirects - 1,
-        });
+        }, mergedCookie || undefined);
       }
     }
 
@@ -174,6 +179,7 @@ export function createHttpClient(): HttpClient {
       url: statusCode >= 300 && statusCode < 400 ? finalUrl : url,
       body: text,
       headers: resHeaders as Record<string, string | string[]>,
+      effectiveCookies: sentCookies || undefined,
     };
   }
 
