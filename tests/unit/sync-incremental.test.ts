@@ -91,6 +91,79 @@ describe("STEP-017: --force flag", () => {
   });
 });
 
+describe("STEP-017: label activity state tracking", () => {
+  // Regression: label activities have url="" — state must still be saved and checked
+  it("skips a label activity on second run when state entry exists (url is empty string)", () => {
+    // Simulate: label was downloaded on first run and state was saved with url=""
+    const stateFile = {
+      courses: {
+        "1": {
+          name: "Course",
+          sections: {
+            "s1": {
+              files: {
+                "label-Welcome-Welcome": {
+                  name: "Welcome",
+                  url: "",
+                  localPath: "/out/Course/s1/Welcome.md",
+                  hash: "",
+                  lastModified: "2026-01-01T00:00:00Z",
+                  status: "ok" as const,
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+    const currentTree = {
+      courseId: 1,
+      sections: [{
+        sectionId: "s1",
+        sectionName: "Week 1",
+        activities: [{
+          activityType: "label",
+          activityName: "Welcome",
+          resourceId: "label-Welcome-Welcome",
+          url: "",
+          hash: "",
+          isAccessible: true,
+        }],
+      }],
+    };
+
+    const plan = computeSyncPlan({ state: stateFile, currentTree: [currentTree], force: false });
+    const downloads = plan.filter((a) => a.action === SyncAction.DOWNLOAD);
+    expect(downloads).toHaveLength(0);
+    const skips = plan.filter((a) => a.action === SyncAction.SKIP);
+    expect(skips).toHaveLength(1);
+  });
+
+  it("downloads a label activity on first run when no state entry exists", () => {
+    const stateFile = { courses: {} };
+    const currentTree = {
+      courseId: 1,
+      sections: [{
+        sectionId: "s1",
+        sectionName: "Week 1",
+        activities: [{
+          activityType: "label",
+          activityName: "Welcome",
+          resourceId: "label-Welcome-Welcome",
+          url: "",
+          hash: "",
+          isAccessible: true,
+        }],
+      }],
+    };
+
+    const plan = computeSyncPlan({ state: stateFile, currentTree: [currentTree], force: false });
+    const downloads = plan.filter((a) => a.action === SyncAction.DOWNLOAD);
+    expect(downloads).toHaveLength(1);
+    expect(downloads[0]?.resourceId).toBe("label-Welcome-Welcome");
+  });
+});
+
 describe("STEP-017: --dry-run mode", () => {
   // REQ-SYNC-009
   it("dry-run returns the same plan but marks all actions as dry-run", () => {

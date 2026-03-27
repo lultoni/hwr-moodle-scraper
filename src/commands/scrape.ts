@@ -244,7 +244,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           planItem: item,
         });
       } else {
-        logger.debug(`[DOWNLOAD] ${courseName} / ${sectionName} / ${meta.activity.activityName} (${planItem.strategy})${counter}`);
+        logger.debug(`[DOWNLOAD] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${meta.activity.activityName} (${planItem.strategy})${counter}`);
         specialItems.push({
           item,
           destPath: planItem.destPath,
@@ -327,11 +327,13 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   const allDownloadedItems = [
     ...binaryItems.map((b) => ({ item: b.planItem, destPath: b.downloadItem.destPath })),
-    ...specialItems.map((si) => ({ item: si.item, destPath: si.destPath })),
+    ...specialItems
+      .filter((si) => si.strategy !== "description-md")  // sidecars share resourceId with parent — skip to avoid overwriting parent's localPath
+      .map((si) => ({ item: si.item, destPath: si.destPath })),
   ];
 
   for (const { item, destPath } of allDownloadedItems) {
-    if (!item || !item.courseId || !item.url) continue;
+    if (!item || !item.courseId) continue;
 
     const courseIdStr = String(item.courseId);
     const sp = courseShortPaths.get(item.courseId);
