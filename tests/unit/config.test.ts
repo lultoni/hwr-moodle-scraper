@@ -76,4 +76,16 @@ describe("STEP-002: Config management", () => {
     const cfg = await importConfigManager(tmpDir);
     expect(await cfg.get("nonExistentKey" as never)).toBeUndefined();
   });
+
+  // retryBaseDelayMs default and set
+  it("retryBaseDelayMs defaults to 5000", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    expect(await cfg.get("retryBaseDelayMs")).toBe(5000);
+  });
+
+  it("retryBaseDelayMs can be set and retrieved", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    await cfg.set("retryBaseDelayMs", 2000);
+    expect(await cfg.get("retryBaseDelayMs")).toBe(2000);
+  });
 });

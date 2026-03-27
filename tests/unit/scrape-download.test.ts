@@ -6,10 +6,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { MockAgent, setGlobalDispatcher, getGlobalDispatcher, Dispatcher } from "undici";
-import { mkdtempSync, rmSync, statSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { downloadFile, DownloadQueue } from "../../src/scraper/downloader.js";
+import { join, extname } from "node:path";
+import { downloadFile, DownloadQueue, extractFilename } from "../../src/scraper/downloader.js";
 
 let mockAgent: MockAgent;
 let originalDispatcher: Dispatcher;
@@ -51,6 +51,62 @@ describe("STEP-014: File download — streaming", () => {
 
     expect(existsSync(dest)).toBe(true);
     expect(statSync(dest).size).toBeGreaterThan(0);
+  });
+
+  it("appends extension from Content-Disposition when destPath has no extension", async () => {
+    const content = "pdf content";
+    mockAgent.get(BASE).intercept({ path: "/mod/resource/view.php?id=1", method: "GET" }).reply(200, content, {
+      headers: {
+        "content-disposition": 'attachment; filename="Skript.pdf"',
+        "content-type": "application/pdf",
+      },
+    });
+
+    const dest = join(tmpDir, "Skript");
+    const { finalPath } = await downloadFile({ url: `${BASE}/mod/resource/view.php?id=1`, destPath: dest, sessionCookies: "" });
+
+    expect(extname(finalPath)).toBe(".pdf");
+    expect(existsSync(finalPath)).toBe(true);
+  });
+
+  it("appends extension from final URL pathname when no Content-Disposition", async () => {
+    const content = "pptx content";
+    // Redirect to actual file URL with extension
+    mockAgent.get(BASE)
+      .intercept({ path: "/mod/resource/view.php?id=2", method: "GET" })
+      .reply(302, "", { headers: { location: `${BASE}/pluginfile.php/1/mod_resource/content/0/Praesentation.pptx` } });
+    mockAgent.get(BASE)
+      .intercept({ path: "/pluginfile.php/1/mod_resource/content/0/Praesentation.pptx", method: "GET" })
+      .reply(200, content, { headers: { "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation" } });
+
+    const dest = join(tmpDir, "Praesentation");
+    const { finalPath } = await downloadFile({ url: `${BASE}/mod/resource/view.php?id=2`, destPath: dest, sessionCookies: "" });
+
+    expect(extname(finalPath)).toBe(".pptx");
+    expect(existsSync(finalPath)).toBe(true);
+  });
+
+  it("retries on 'other side closed' network error and succeeds on second attempt", async () => {
+    const content = "retry content";
+    let attempts = 0;
+
+    // First attempt throws network error, second succeeds
+    mockAgent.get(BASE)
+      .intercept({ path: "/retry-test.pdf", method: "GET" })
+      .replyWithError(Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }));
+    mockAgent.get(BASE)
+      .intercept({ path: "/retry-test.pdf", method: "GET" })
+      .reply(200, content, { headers: { "content-type": "application/pdf" } });
+
+    const dest = join(tmpDir, "retry-test.pdf");
+    const { finalPath } = await downloadFile({
+      url: `${BASE}/retry-test.pdf`,
+      destPath: dest,
+      sessionCookies: "",
+      retryBaseDelayMs: 0, // no delay in tests
+    });
+
+    expect(existsSync(finalPath)).toBe(true);
   });
 });
 
@@ -119,5 +175,74 @@ describe("STEP-014: Download progress display", () => {
 
     expect(progressEvents.length).toBeGreaterThan(0);
     expect(progressEvents[progressEvents.length - 1]?.bytesReceived).toBeGreaterThan(0);
+  });
+});
+
+describe("STEP-014: DownloadQueue — per-item error isolation", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "msc-isolation-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // REQ-SCRAPE-010 — one failure must not abort the whole queue
+  it("continues downloading remaining items after one item fails", async () => {
+    // Item 1 fails (network error, all retries exhausted)
+    for (let i = 0; i < 5; i++) {
+      mockAgent.get(BASE)
+        .intercept({ path: "/fail.pdf", method: "GET" })
+        .replyWithError(new Error("other side closed"));
+    }
+    // Item 2 succeeds
+    mockAgent.get(BASE)
+      .intercept({ path: "/ok.pdf", method: "GET" })
+      .reply(200, "ok content", { headers: { "content-type": "application/pdf" } });
+
+    const queue = new DownloadQueue({ maxConcurrent: 2 });
+    const result = await queue.run([
+      { url: `${BASE}/fail.pdf`, destPath: join(tmpDir, "fail.pdf"), sessionCookies: "", retryBaseDelayMs: 0 },
+      { url: `${BASE}/ok.pdf`, destPath: join(tmpDir, "ok.pdf"), sessionCookies: "", retryBaseDelayMs: 0 },
+    ]);
+
+    expect(result.failed).toHaveLength(1);
+    expect(result.downloaded).toBe(1);
+    expect(existsSync(join(tmpDir, "ok.pdf"))).toBe(true);
+  });
+});
+
+describe("extractFilename — unit tests", () => {
+  it("extracts filename from Content-Disposition attachment header", () => {
+    const name = extractFilename(
+      { "content-disposition": 'attachment; filename="Report.pdf"' },
+      "https://example.com/mod/resource/view.php?id=1"
+    );
+    expect(name).toBe("Report.pdf");
+  });
+
+  it("gracefully handles Content-Disposition filename* (RFC 5987) without crashing", () => {
+    // RFC 5987 encoded names (filename*=UTF-8''...) are not parsed — returns null gracefully
+    const name = extractFilename(
+      { "content-disposition": "attachment; filename*=UTF-8''Pr%C3%A4sentation.pptx" },
+      "https://example.com/irrelevant"
+    );
+    // null is acceptable — caller falls back to activity name
+    expect(name === null || typeof name === "string").toBe(true);
+  });
+
+  it("falls back to final URL pathname when no Content-Disposition", () => {
+    const name = extractFilename(
+      {},
+      "https://moodle.example.com/pluginfile.php/1/mod_resource/content/0/Skript_WS24.pdf?forcedownload=1"
+    );
+    expect(name).toBe("Skript_WS24.pdf");
+  });
+
+  it("returns null when neither header nor URL provides useful filename", () => {
+    const name = extractFilename({}, "https://example.com/");
+    expect(name).toBeNull();
   });
 });

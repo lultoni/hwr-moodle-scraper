@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { MockAgent, setGlobalDispatcher, getGlobalDispatcher, Dispatcher } from "undici";
 import { fetchContentTree, parseActivityFromElement } from "../../src/scraper/courses.js";
 
+
 let mockAgent: MockAgent;
 let originalDispatcher: Dispatcher;
 
@@ -371,3 +372,62 @@ describe("Parsing: Folder expansion", () => {
     expect(files[1]?.name).toBe("lecture2.pdf");
   });
 });
+
+describe("Parsing: HTML entity decoding in names", () => {
+  it("decodes hex HTML entities in activity names (e.g. &#x25BA; → ►)", async () => {
+    const html = `
+      <html><body>
+        <li class="section" data-sectionname="&#x25BA;Stichwort &quot;Wissenschaft&quot;">
+          <ul>
+            <li class="activity resource">
+              <a href="${BASE}/mod/resource/view.php?id=1">&#x25BA;Artikel &amp; Notizen</a>
+            </li>
+          </ul>
+        </li>
+      </body></html>`;
+
+    mockAgent.get(BASE)
+      .intercept({ path: `/course/view.php?id=99`, method: "GET" })
+      .reply(200, html);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 99, sessionCookies: "" });
+
+    expect(tree.sections[0]?.sectionName).toBe('►Stichwort "Wissenschaft"');
+    expect(tree.sections[0]?.activities[0]?.activityName).toBe("►Artikel & Notizen");
+  });
+
+  it("decodes decimal HTML entities in activity names (e.g. &#9658; → ►)", async () => {
+    const html = `
+      <html><body>
+        <li class="section" data-sectionname="&#9658;Lektion 1">
+          <ul>
+            <li class="activity resource">
+              <a href="${BASE}/mod/resource/view.php?id=2">Folien &#9658; Teil 1</a>
+            </li>
+          </ul>
+        </li>
+      </body></html>`;
+
+    mockAgent.get(BASE)
+      .intercept({ path: `/course/view.php?id=100`, method: "GET" })
+      .reply(200, html);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 100, sessionCookies: "" });
+
+    expect(tree.sections[0]?.sectionName).toBe("►Lektion 1");
+    expect(tree.sections[0]?.activities[0]?.activityName).toBe("Folien ► Teil 1");
+  });
+
+  it("decodes &amp; &lt; &gt; &quot; in names", () => {
+    const element = `
+      class="activity resource"
+    >
+      <a href="${BASE}/mod/resource/view.php?id=3">
+        Einführung &amp; Grundlagen &lt;2024&gt;
+      </a>
+    `;
+    const result = parseActivityFromElement(element, `${BASE}/course/view.php?id=1`);
+    expect(result?.activityName).toBe("Einführung & Grundlagen <2024>");
+  });
+});
+

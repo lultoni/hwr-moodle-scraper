@@ -1,7 +1,7 @@
 // REQ-CLI-002, REQ-CLI-008, REQ-CLI-009, REQ-CLI-010
 import { validateOrRefreshSession } from "../auth/session.js";
 import { fetchCourseList, fetchContentTree, fetchFolderFiles, type Course, type ContentTree, type Activity, type Section } from "../scraper/courses.js";
-import { buildDownloadPlan, type DownloadPlanItem } from "../scraper/dispatch.js";
+import { buildDownloadPlan } from "../scraper/dispatch.js";
 import { computeSyncPlan, SyncAction } from "../sync/incremental.js";
 import { StateManager, type CourseState } from "../sync/state.js";
 import { KeychainAdapter } from "../auth/keychain.js";
@@ -12,7 +12,7 @@ import { buildOutputPath } from "../fs/output.js";
 import { DownloadQueue, type DownloadItem } from "../scraper/downloader.js";
 import { writeUrlFile } from "../scraper/content-types.js";
 import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 import { writeFile } from "node:fs/promises";
 
 export interface ScrapeOptions {
@@ -159,6 +159,14 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   logger.debug(`Sync plan: ${downloads.length} to download, ${skipped.length} to skip.`);
 
+  // Log skipped items in verbose mode
+  if (verbose) {
+    for (const item of skipped) {
+      const meta = activityMetaForItem(item, expandedTrees, courseNameMap, sectionNameMap);
+      logger.debug(`[SKIP] ${meta.courseName} / ${meta.sectionName} / ${meta.filename} (already up to date)`);
+    }
+  }
+
   // Build a map from resourceId → Activity for dispatch
   const activityByResourceId = new Map<string, { activity: Activity; courseName: string; sectionName: string }>();
   for (const tree of expandedTrees) {
@@ -173,18 +181,23 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   const maxConcurrent = ((await config.get("maxConcurrentDownloads")) as number | undefined) ?? 3;
+  const retryBaseDelayMs = ((await config.get("retryBaseDelayMs")) as number | undefined) ?? 5000;
 
   // Separate binary downloads from special-handling types
   const binaryItems: DownloadItem[] = [];
-  const specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string }> = [];
+  const specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string; label: string }> = [];
 
-  for (const item of downloads) {
+  const totalItems = downloads.length;
+
+  for (let i = 0; i < downloads.length; i++) {
+    const item = downloads[i]!;
     if (!item.url || !item.courseId) continue;
 
     const resourceId = item.resourceId ?? "";
     const meta = activityByResourceId.get(resourceId);
     const courseName = meta?.courseName ?? (courseNameMap.get(item.courseId) ?? String(item.courseId));
     const sectionName = meta?.sectionName ?? "General";
+    const counter = verbose ? ` (${i + 1}/${totalItems})` : "";
 
     if (!meta?.activity) {
       // Fallback: treat as binary download using URL-derived filename
@@ -192,8 +205,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       const rawSegment = urlPathname.split("/").pop() ?? "";
       const filenameDerived = decodeURIComponent(rawSegment) || resourceId || "file";
       const destPath = await buildOutputPath({ outputDir, courseName, sectionName, filename: filenameDerived });
-      logger.debug(`Queuing (binary): ${courseName} / ${sectionName} / ${filenameDerived}`);
-      binaryItems.push({ url: item.url, destPath, sessionCookies });
+      logger.debug(`[DOWNLOAD] ${courseName} / ${sectionName} / ${filenameDerived}${counter}`);
+      binaryItems.push({ url: item.url, destPath, sessionCookies, retryBaseDelayMs });
       continue;
     }
 
@@ -201,24 +214,69 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     if (!planItem) continue;
 
     if (planItem.strategy === "binary") {
-      logger.debug(`Queuing (binary): ${courseName} / ${sectionName} / ${meta.activity.activityName}`);
+      logger.debug(`[DOWNLOAD] ${courseName} / ${sectionName} / ${meta.activity.activityName}${counter}`);
       mkdirSync(dirname(planItem.destPath), { recursive: true });
-      binaryItems.push({ url: planItem.url, destPath: planItem.destPath, sessionCookies });
+      binaryItems.push({ url: planItem.url, destPath: planItem.destPath, sessionCookies, retryBaseDelayMs });
     } else {
-      logger.debug(`Queuing (${planItem.strategy}): ${courseName} / ${sectionName} / ${meta.activity.activityName}`);
-      specialItems.push({ item, destPath: planItem.destPath, strategy: planItem.strategy });
+      logger.debug(`[DOWNLOAD] ${courseName} / ${sectionName} / ${meta.activity.activityName} (${planItem.strategy})${counter}`);
+      specialItems.push({ item, destPath: planItem.destPath, strategy: planItem.strategy, label: meta.activity.activityName });
     }
   }
 
+  // Progress display: bar in normal mode, counter already embedded in log lines in verbose/debug mode
+  const useProgressBar = !quiet && !verbose;
+  let bar: import("cli-progress").SingleBar | undefined;
+
+  if (useProgressBar && binaryItems.length > 0) {
+    const cliProgress = await import("cli-progress");
+    bar = new cliProgress.SingleBar({
+      format: "Downloading [{bar}] {percentage}% | {value}/{total} files | {file}",
+      clearOnComplete: false,
+      hideCursor: true,
+    }, cliProgress.Presets.shades_classic);
+    bar.start(binaryItems.length + specialItems.length, 0, { file: "" });
+  }
+
+  // Attach progress callbacks to binary items for the bar
+  const binaryItemsWithProgress: DownloadItem[] = binaryItems.map((bi) => ({
+    ...bi,
+    onProgress: bar
+      ? () => { /* progress tracked per-file completion below */ }
+      : undefined,
+  }));
+
   // Execute binary downloads via queue
-  if (binaryItems.length > 0) {
+  let downloadedCount = 0;
+  let failedCount = 0;
+
+  if (binaryItemsWithProgress.length > 0) {
     const queue = new DownloadQueue({ maxConcurrent });
-    await queue.run(binaryItems);
+
+    // Wrap each item to update bar on completion
+    const wrappedItems: DownloadItem[] = binaryItemsWithProgress.map((bi) => ({
+      ...bi,
+      onProgress: (e) => {
+        // Update bar filename on first progress event for this file
+        if (bar && e.bytesReceived > 0) {
+          bar.update({ file: basename(bi.destPath) });
+        }
+      },
+    }));
+
+    const result = await queue.run(wrappedItems);
+    downloadedCount += result.downloaded;
+    failedCount += result.failed.length;
+
+    if (bar) bar.update(result.downloaded, { file: "" });
+
+    for (const { item: failedItem, error } of result.failed) {
+      logger.warn(`  Failed to download ${failedItem.url}: ${error.message}`);
+    }
   }
 
   // Execute special-type downloads sequentially
   let TurndownService: typeof import("turndown") | undefined;
-  for (const { item, destPath, strategy } of specialItems) {
+  for (const { item, destPath, strategy, label } of specialItems) {
     try {
       mkdirSync(dirname(destPath), { recursive: true });
       if (strategy === "url-txt") {
@@ -232,13 +290,21 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         const md = td.turndown(html);
         await writeFile(destPath, md, { mode: 0o600 });
       }
+      downloadedCount++;
+      if (bar) bar.increment(1, { file: label });
     } catch (err) {
+      failedCount++;
       logger.debug(`  Warning: failed to download ${item.url} — ${(err as Error).message}`);
     }
   }
 
-  const totalDownloaded = binaryItems.length + specialItems.length;
-  logger.info(`Done: ${totalDownloaded} downloaded, ${skipped.length} skipped.`);
+  if (bar) {
+    bar.stop();
+    process.stdout.write("\n");
+  }
+
+  const failedMsg = failedCount > 0 ? `, ${failedCount} failed` : "";
+  logger.info(`Done: ${downloadedCount} downloaded, ${skipped.length} skipped${failedMsg}.`);
 
   // Update state with downloaded files
   const updatedCourses: Record<string, CourseState> = { ...(state.courses as Record<string, CourseState>) };
@@ -277,6 +343,19 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   // Save state
   await stateManager.save({ courses: updatedCourses });
+}
+
+/** Get display metadata for a sync plan item (used for skip/download log messages). */
+function activityMetaForItem(
+  item: { resourceId?: string; courseId?: number; url?: string },
+  trees: ContentTree[],
+  courseNameMap: Map<number, string>,
+  sectionNameMap: Map<string, string>,
+): { courseName: string; sectionName: string; filename: string } {
+  const courseName = item.courseId ? (courseNameMap.get(item.courseId) ?? String(item.courseId)) : "Unknown";
+  const filename = item.url ? (decodeURIComponent(new URL(item.url).pathname.split("/").pop() ?? "") || item.resourceId || "file") : (item.resourceId ?? "file");
+  // sectionName is best-effort; we don't have a direct resourceId→sectionId map here
+  return { courseName, sectionName: "", filename };
 }
 
 /** Derive a filename from a URL, falling back to resourceId. */

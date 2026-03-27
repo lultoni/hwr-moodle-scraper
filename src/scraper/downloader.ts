@@ -1,5 +1,8 @@
 // REQ-SCRAPE-003, REQ-SCRAPE-004, REQ-SCRAPE-009, REQ-SCRAPE-010, REQ-SCRAPE-011
 import { atomicWrite } from "../fs/output.js";
+import { withRetry } from "../http/retry.js";
+import { extname, dirname, join, basename } from "node:path";
+import { mkdirSync, renameSync } from "node:fs";
 
 export interface ProgressEvent {
   bytesReceived: number;
@@ -11,49 +14,131 @@ export interface DownloadFileOptions {
   destPath: string;
   sessionCookies: string;
   onProgress?: (e: ProgressEvent) => void;
+  /** Base delay in ms for exponential backoff retries. Default 5000. */
+  retryBaseDelayMs?: number;
 }
 
-export async function downloadFile(opts: DownloadFileOptions): Promise<void> {
-  const { url, destPath, sessionCookies, onProgress } = opts;
-  const { request } = await import("undici");
+export interface DownloadFileResult {
+  /** The path the file was actually written to (may differ from destPath if an extension was appended). */
+  finalPath: string;
+}
 
-  let currentUrl = url;
-  const maxRedirects = 5;
+/** True for transient network errors that warrant a retry. */
+function isNetworkError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("other side closed") ||
+    msg.includes("econnreset") ||
+    msg.includes("etimedout") ||
+    msg.includes("socket hang up") ||
+    msg.includes("und_err") ||
+    msg.includes("connect timeout") ||
+    msg.includes("network error")
+  );
+}
 
-  for (let hop = 0; hop <= maxRedirects; hop++) {
-    const { statusCode, headers, body } = await request(currentUrl, {
-      headers: { cookie: sessionCookies },
-    });
-
-    // Follow redirects
-    if (statusCode >= 300 && statusCode < 400) {
-      const location = headers["location"];
-      if (!location) break;
-      const loc = Array.isArray(location) ? location[0]! : location;
-      currentUrl = loc.startsWith("http") ? loc : new URL(loc, currentUrl).toString();
-      await body.dump();
-      continue;
-    }
-
-    const totalBytes = headers["content-length"]
-      ? parseInt(headers["content-length"] as string, 10)
-      : undefined;
-
-    const chunks: Buffer[] = [];
-    let bytesReceived = 0;
-
-    for await (const chunk of body) {
-      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
-      chunks.push(buf);
-      bytesReceived += buf.length;
-      onProgress?.({ bytesReceived, totalBytes });
-    }
-
-    await atomicWrite(destPath, Buffer.concat(chunks));
-    return;
+/**
+ * Extract the best filename from response headers and/or the final URL.
+ * Returns null if nothing useful is found.
+ */
+export function extractFilename(
+  headers: Record<string, string | string[] | undefined>,
+  finalUrl: string,
+): string | null {
+  // 1. Content-Disposition: attachment; filename="foo.pdf"
+  const cd = headers["content-disposition"];
+  const cdStr = Array.isArray(cd) ? cd[0] : cd;
+  if (cdStr) {
+    const m = /filename="([^"]+)"/i.exec(cdStr) ?? /filename=([^\s;]+)/i.exec(cdStr);
+    if (m?.[1]) return decodeURIComponent(m[1].trim());
   }
 
-  throw new Error(`Too many redirects downloading ${url}`);
+  // 2. Final URL pathname (strip query string, decode)
+  try {
+    const u = new URL(finalUrl);
+    const seg = u.pathname.split("/").pop() ?? "";
+    const decoded = decodeURIComponent(seg);
+    if (decoded && decoded !== "/" && extname(decoded)) return decoded;
+  } catch {
+    // ignore invalid URLs
+  }
+
+  return null;
+}
+
+export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadFileResult> {
+  const { url, destPath, sessionCookies, onProgress, retryBaseDelayMs = 5000 } = opts;
+
+  let finalPath = destPath;
+
+  await withRetry(
+    async () => {
+      const { request } = await import("undici");
+      let currentUrl = url;
+      const maxRedirects = 10;
+
+      for (let hop = 0; hop <= maxRedirects; hop++) {
+        const { statusCode, headers, body } = await request(currentUrl, {
+          headers: { cookie: sessionCookies },
+        });
+
+        // Follow redirects
+        if (statusCode >= 300 && statusCode < 400) {
+          const location = headers["location"];
+          if (!location) break;
+          const loc = Array.isArray(location) ? location[0]! : location;
+          currentUrl = loc.startsWith("http") ? loc : new URL(loc, currentUrl).toString();
+          await body.dump();
+          continue;
+        }
+
+        // Determine the actual filename/extension from headers + final URL
+        const extractedName = extractFilename(
+          headers as Record<string, string | string[] | undefined>,
+          currentUrl,
+        );
+
+        // If destPath has no extension and we found one, rename destination
+        if (extractedName && !extname(destPath)) {
+          const ext = extname(extractedName);
+          if (ext) {
+            finalPath = destPath + ext;
+          } else {
+            finalPath = join(dirname(destPath), extractedName);
+          }
+        } else if (extractedName && extname(destPath) === "" ) {
+          finalPath = destPath;
+        }
+
+        const totalBytes = headers["content-length"]
+          ? parseInt(headers["content-length"] as string, 10)
+          : undefined;
+
+        const chunks: Buffer[] = [];
+        let bytesReceived = 0;
+
+        for await (const chunk of body) {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+          chunks.push(buf);
+          bytesReceived += buf.length;
+          onProgress?.({ bytesReceived, totalBytes });
+        }
+
+        mkdirSync(dirname(finalPath), { recursive: true });
+        await atomicWrite(finalPath, Buffer.concat(chunks));
+        return;
+      }
+
+      throw new Error(`Too many redirects downloading ${url}`);
+    },
+    {
+      maxAttempts: 5,
+      baseDelayMs: retryBaseDelayMs,
+      shouldRetry: isNetworkError,
+    },
+  );
+
+  return { finalPath };
 }
 
 export interface DownloadItem {
@@ -61,6 +146,12 @@ export interface DownloadItem {
   destPath: string;
   sessionCookies: string;
   onProgress?: (e: ProgressEvent) => void;
+  retryBaseDelayMs?: number;
+}
+
+export interface DownloadQueueResult {
+  downloaded: number;
+  failed: Array<{ item: DownloadItem; error: Error }>;
 }
 
 export class DownloadQueue {
@@ -70,9 +161,28 @@ export class DownloadQueue {
     this.maxConcurrent = opts.maxConcurrent;
   }
 
-  async run(items: DownloadItem[]): Promise<void> {
+  async run(items: DownloadItem[]): Promise<DownloadQueueResult> {
     const pLimit = (await import("p-limit")).default;
     const limit = pLimit(this.maxConcurrent);
-    await Promise.all(items.map((item) => limit(() => downloadFile(item))));
+
+    const results = await Promise.allSettled(
+      items.map((item, index) =>
+        limit(() => downloadFile(item).then((r) => ({ index, result: r }))),
+      ),
+    );
+
+    const failed: DownloadQueueResult["failed"] = [];
+    let downloaded = 0;
+
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i]!;
+      if (r.status === "fulfilled") {
+        downloaded++;
+      } else {
+        failed.push({ item: items[i]!, error: r.reason as Error });
+      }
+    }
+
+    return { downloaded, failed };
   }
 }

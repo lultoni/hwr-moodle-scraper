@@ -44,6 +44,18 @@ function stripAccessHide(html: string): string {
     .trim();
 }
 
+/** Decode HTML entities in a plain-text string. */
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&#(\d+);/gi, (_, d: string) => String.fromCharCode(parseInt(d, 10)))
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'");
+}
+
 /** Parse course search results page HTML into a Course list. */
 function parseCourseSearchHtml(html: string, baseUrl: string): Course[] {
   const courses: Course[] = [];
@@ -165,11 +177,11 @@ function parseContentTree(html: string, courseId: number, baseUrl: string): Cont
     const dataNameMatch = /data-sectionname="([^"]+)"/i.exec(chunk);
     let sectionName: string;
     if (dataNameMatch) {
-      sectionName = dataNameMatch[1]!;
+      sectionName = decodeHtmlEntities(dataNameMatch[1]!);
     } else {
       const h3Match = /<h[1-6][^>]+class="[^"]*sectionname[^"]*"[^>]*>([\s\S]*?)<\/h[1-6]>/i.exec(chunk);
       sectionName = h3Match
-        ? h3Match[1]!.replace(/<[^>]+>/g, "").trim()
+        ? decodeHtmlEntities(h3Match[1]!.replace(/<[^>]+>/g, "").trim())
         : `Section ${sectionIndex}`;
     }
 
@@ -225,13 +237,13 @@ export function parseActivityFromElement(
     const url = linkMatch?.[1] ?? "";
     const rawLinkHtml = linkMatch?.[2] ?? "";
 
-    // Strip accesshide spans before deriving name, then strip remaining tags
+    // Strip accesshide spans before deriving name, then strip remaining tags, then decode entities
     const name = rawLinkHtml
-      ? stripAccessHide(rawLinkHtml)
+      ? decodeHtmlEntities(stripAccessHide(rawLinkHtml))
       : (() => {
           // Fall back to span text for restricted (no-link) activities
           const spanMatch = /<span[^>]*>([\s\S]*?)<\/span>/i.exec(element);
-          return spanMatch ? stripAccessHide(spanMatch[1]!) : "";
+          return spanMatch ? decodeHtmlEntities(stripAccessHide(spanMatch[1]!)) : "";
         })() || "Unnamed activity";
 
     const activityType = activityTypeFromUrl(url);

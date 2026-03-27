@@ -10,6 +10,7 @@ const DEFAULTS = {
   maxConcurrentDownloads: 3,
   requestDelayMs: 500,
   requestJitterMs: 200,
+  retryBaseDelayMs: 5000,
   logFile: null as string | null,
 } as const;
 
