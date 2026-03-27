@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 
 const DEFAULTS = {
   get outputDir() { return join(homedir(), "moodle-scraper-output"); },
+  courseSearch: "" as string,
   minFreeDiskMb: 100,
   maxConcurrentDownloads: 3,
   requestDelayMs: 500,

@@ -102,6 +102,7 @@ program
       quiet: opts.quiet,
       verbose: opts.verbose,
       metadata: opts.metadata,
+      ...withLogger(logger),
     };
     if (opts.courses) scrapeOpts.courses = opts.courses.split(",").map(Number);
 

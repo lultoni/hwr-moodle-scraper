@@ -5,11 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { MockAgent, setGlobalDispatcher, getGlobalDispatcher, Dispatcher } from "undici";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { fetchCourseList, fetchContentTree } from "../../src/scraper/courses.js";
-
-const FIXTURES = resolve(__dirname, "../fixtures/mock-moodle-responses");
 
 let mockAgent: MockAgent;
 let originalDispatcher: Dispatcher;
@@ -28,45 +24,45 @@ afterEach(() => {
 
 const BASE = "https://moodle.example.com";
 
+const SEARCH_HTML = `
+<div class="courses course-search-result">
+  <div class="coursebox clearfix odd first" data-courseid="1" data-type="1">
+    <div class="info"><h3 class="coursename">
+      <a class="aalink" href="${BASE}/course/view.php?id=1">Macro Economics 2024</a>
+    </h3></div>
+  </div>
+  <div class="coursebox clearfix even" data-courseid="2" data-type="1">
+    <div class="info"><h3 class="coursename">
+      <a class="aalink" href="${BASE}/course/view.php?id=2">Statistics <span class="highlight">I</span></a>
+    </h3></div>
+  </div>
+</div>`;
+
 describe("STEP-013: Course listing", () => {
   // REQ-SCRAPE-001
-  it("returns enrolled courses with courseId, courseName, courseUrl", async () => {
-    const pool = mockAgent.get(BASE);
-    pool
-      .intercept({ path: /\/lib\/ajax\/service\.php/, method: "POST" })
-      .reply(200, JSON.stringify([
-        {
-          data: [
-            { id: 1, fullname: "Macro Economics 2024", viewurl: `${BASE}/course/view.php?id=1` },
-            { id: 2, fullname: "Statistics I", viewurl: `${BASE}/course/view.php?id=2` },
-          ],
-        },
-      ]), { headers: { "content-type": "application/json" } });
+  it("returns courses with courseId, courseName, courseUrl from search page", async () => {
+    mockAgent.get(BASE)
+      .intercept({ path: /\/course\/search\.php/, method: "GET" })
+      .reply(200, SEARCH_HTML, { headers: { "content-type": "text/html" } });
 
-    const courses = await fetchCourseList({ baseUrl: BASE, sessionCookies: "MoodleSession=abc" });
+    const courses = await fetchCourseList({ baseUrl: BASE, sessionCookies: "MoodleSession=abc", searchQuery: "TEST" });
 
     expect(courses).toHaveLength(2);
     expect(courses[0]).toMatchObject({ courseId: 1, courseName: "Macro Economics 2024" });
     expect(courses[1]).toMatchObject({ courseId: 2, courseName: "Statistics I" });
   });
 
-  it("returns an empty array when no courses are enrolled", async () => {
-    const pool = mockAgent.get(BASE);
-    pool
-      .intercept({ path: /\/lib\/ajax\/service\.php/, method: "POST" })
-      .reply(200, JSON.stringify([{ data: [] }]), { headers: { "content-type": "application/json" } });
-
+  it("returns an empty array when no searchQuery is provided", async () => {
     const courses = await fetchCourseList({ baseUrl: BASE, sessionCookies: "" });
     expect(courses).toEqual([]);
   });
 
-  it("propagates error when the course list endpoint fails", async () => {
-    const pool = mockAgent.get(BASE);
-    pool
-      .intercept({ path: /\/lib\/ajax\/service\.php/, method: "POST" })
+  it("propagates error when the search endpoint fails", async () => {
+    mockAgent.get(BASE)
+      .intercept({ path: /\/course\/search\.php/, method: "GET" })
       .reply(500, "Internal Server Error");
 
-    await expect(fetchCourseList({ baseUrl: BASE, sessionCookies: "" })).rejects.toThrow();
+    await expect(fetchCourseList({ baseUrl: BASE, sessionCookies: "", searchQuery: "TEST" })).rejects.toThrow();
   });
 });
 

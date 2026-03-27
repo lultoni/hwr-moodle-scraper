@@ -39,13 +39,13 @@ function extractLoginToken(html: string): string | undefined {
   return match?.[1];
 }
 
-/** Attempt silent re-authentication using stored credentials. Returns true on success. */
+/** Attempt silent re-authentication using stored credentials. Returns session cookie on success, null on failure. */
 async function silentReAuth(
   httpClient: HttpClient,
   creds: { username: string; password: string },
   baseUrl: string,
   logger?: Logger,
-): Promise<boolean> {
+): Promise<string | null> {
   try {
     // Fetch login page for CSRF token + session cookie
     const loginPage = await httpClient.get(`${baseUrl}/login/index.php`, logger ? { logger } : {});
@@ -69,15 +69,17 @@ async function silentReAuth(
         cookie: finalCookies || undefined,
         ...(logger ? { logger } : {}),
       });
-      return !myPage.url.includes("/login/");
+      if (!myPage.url.includes("/login/")) return extractCookies(myPage.headers) || finalCookies;
+      return null;
     }
-    return !response.url.includes("/login/");
+    if (!response.url.includes("/login/")) return extractCookies(response.headers);
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
-export async function validateOrRefreshSession(opts: SessionOptions): Promise<void> {
+export async function validateOrRefreshSession(opts: SessionOptions): Promise<string> {
   const {
     httpClient,
     keychain,
@@ -89,14 +91,14 @@ export async function validateOrRefreshSession(opts: SessionOptions): Promise<vo
 
   // Validate session with a lightweight GET — a logged-in GET /my/ returns 200 without redirecting to /login/
   const response = await httpClient.get(`${baseUrl}/my/`, { followRedirects: true, ...(logger ? { logger } : {}) });
-  if (!response.url.includes("/login/")) return; // session valid
+  if (!response.url.includes("/login/")) return extractCookies(response.headers); // session valid
 
   // Session expired — try Keychain credentials
   const creds = await keychain.readCredentials();
   if (!creds) {
     if (interactivePromptFallback) {
       await interactivePromptFallback();
-      return;
+      return "";
     }
     throw new AuthError("No credentials stored.", EXIT_CODES.AUTH_ERROR);
   }
@@ -105,8 +107,8 @@ export async function validateOrRefreshSession(opts: SessionOptions): Promise<vo
   process.stderr.write("Session expired, re-authenticating…\n");
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const ok = await silentReAuth(httpClient, creds, baseUrl, logger);
-    if (ok) return;
+    const cookie = await silentReAuth(httpClient, creds, baseUrl, logger);
+    if (cookie !== null) return cookie;
   }
 
   throw Object.assign(

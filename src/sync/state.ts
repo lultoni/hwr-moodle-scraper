@@ -1,5 +1,5 @@
 // REQ-SYNC-001, REQ-SYNC-002, REQ-SEC-007
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { renameSync } from "node:fs";
@@ -54,6 +54,7 @@ export class StateManager {
       lastSyncAt: new Date().toISOString(),
       courses: data.courses as Record<string, CourseState>,
     };
+    mkdirSync(join(this.statePath, ".."), { recursive: true });
     const tmpPath = this.statePath + "." + randomBytes(4).toString("hex") + ".tmp";
     writeFileSync(tmpPath, JSON.stringify(state, null, 2));
     renameSync(tmpPath, this.statePath);

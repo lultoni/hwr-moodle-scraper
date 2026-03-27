@@ -61,9 +61,10 @@ describe("STEP-009: Session validation", () => {
     const httpClient = makeHttpClient(true);
     vi.mocked(keychainInstance.readCredentials).mockResolvedValue(null);
 
-    await validateOrRefreshSession({ httpClient: httpClient as never, keychain: keychainInstance });
+    const cookie = await validateOrRefreshSession({ httpClient: httpClient as never, keychain: keychainInstance });
 
     expect(httpClient.post).not.toHaveBeenCalled();
+    expect(typeof cookie).toBe("string");
   });
 
   // REQ-AUTH-005 — expired session + valid Keychain creds → silent re-auth

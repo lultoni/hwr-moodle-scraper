@@ -30,33 +30,38 @@ export interface FetchOptions {
   sessionCookies: string;
 }
 
-export async function fetchCourseList(opts: FetchOptions): Promise<Course[]> {
-  const { baseUrl, sessionCookies } = opts;
+/** Parse course search results page HTML into a Course list. */
+function parseCourseSearchHtml(html: string, baseUrl: string): Course[] {
+  const courses: Course[] = [];
+  // Each course card: <div class="coursebox ..." data-courseid="NNNN">
+  const cardRe = /data-courseid="(\d+)"[\s\S]*?class="coursename"[\s\S]*?href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  let m: RegExpExecArray | null;
+  while ((m = cardRe.exec(html)) !== null) {
+    const courseId = parseInt(m[1]!, 10);
+    const courseUrl = m[2]!;
+    const rawName = m[3]!.replace(/<[^>]+>/g, "").trim();
+    courses.push({ courseId, courseName: rawName, courseUrl });
+  }
+  return courses;
+}
+
+export async function fetchCourseList(opts: FetchOptions & { searchQuery?: string }): Promise<Course[]> {
+  const { baseUrl, sessionCookies, searchQuery } = opts;
   const { request } = await import("undici");
 
-  const payload = JSON.stringify([{
-    index: 0,
-    methodname: "core_course_get_enrolled_courses_by_timeline_classification",
-    args: { offset: 0, limit: 0, classification: "all", sort: "fullname" },
-  }]);
+  if (!searchQuery) return [];
 
-  const { statusCode, body } = await request(`${baseUrl}/lib/ajax/service.php?sesskey=session`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "cookie": sessionCookies,
-    },
-    body: payload,
+  // Use perpage=all to fetch all results in a single request
+  const url = `${baseUrl}/course/search.php?search=${encodeURIComponent(searchQuery)}&perpage=all`;
+  const { statusCode, body } = await request(url, {
+    method: "GET",
+    headers: { cookie: sessionCookies },
   });
 
   if (statusCode >= 400) throw new Error(`Course list fetch failed: HTTP ${statusCode}`);
 
-  const json = await body.json() as Array<{ data: Array<{ id: number; fullname: string; viewurl: string }> }>;
-  return (json[0]?.data ?? []).map((c) => ({
-    courseId: c.id,
-    courseName: c.fullname,
-    courseUrl: c.viewurl,
-  }));
+  const html = await body.text();
+  return parseCourseSearchHtml(html, baseUrl);
 }
 
 export async function fetchContentTree(opts: FetchOptions & { courseId: number }): Promise<ContentTree> {

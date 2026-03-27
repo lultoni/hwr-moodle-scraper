@@ -50,9 +50,15 @@ describe("Integration: full scrape pipeline", () => {
     mockAgent.get(BASE).intercept({ path: "/my/", method: "GET" })
       .reply(200, "<html><body>Dashboard</body></html>", { headers: { "content-type": "text/html" } });
 
-    // Course list
-    mockAgent.get(BASE).intercept({ path: /\/lib\/ajax\/service\.php/, method: "POST" })
-      .reply(200, JSON.stringify([{ data: [{ id: 1, fullname: "Test Course", viewurl: `${BASE}/course/view.php?id=1` }] }]), { headers: { "content-type": "application/json" } });
+    // Course list via search page
+    mockAgent.get(BASE).intercept({ path: /\/course\/search\.php/, method: "GET" })
+      .reply(200, `
+        <div class="coursebox" data-courseid="1" data-type="1">
+          <div class="info"><h3 class="coursename">
+            <a class="aalink" href="${BASE}/course/view.php?id=1">Test Course</a>
+          </h3></div>
+        </div>
+      `, { headers: { "content-type": "text/html" } });
 
     // Course content tree
     mockAgent.get(BASE).intercept({ path: "/course/view.php?id=1", method: "GET" })
@@ -77,7 +83,7 @@ describe("Integration: full scrape pipeline", () => {
       .reply(200, pdfContent, { headers: { "content-type": "application/pdf", "content-length": String(pdfContent.length) } });
 
     const { runScrape } = await import("../../src/commands/scrape.js");
-    await runScrape({ outputDir: tmpDir, dryRun: false, force: false, baseUrl: BASE });
+    await runScrape({ outputDir: tmpDir, dryRun: false, force: false, baseUrl: BASE, courses: [1] });
 
     // State file must exist
     expect(existsSync(join(tmpDir, ".moodle-scraper-state.json"))).toBe(true);

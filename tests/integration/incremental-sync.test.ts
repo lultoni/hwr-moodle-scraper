@@ -36,9 +36,6 @@ function setupMocks(fileHash: string) {
   mockAgent.get(BASE).intercept({ path: "/my/", method: "GET" })
     .reply(200, "<html><body>Dashboard</body></html>", { headers: { "content-type": "text/html" } });
 
-  mockAgent.get(BASE).intercept({ path: /\/lib\/ajax\/service\.php/, method: "POST" })
-    .reply(200, JSON.stringify([{ data: [{ id: 1, fullname: "Test Course", viewurl: `${BASE}/course/view.php?id=1`, hash: fileHash }] }]), { headers: { "content-type": "application/json" } });
-
   mockAgent.get(BASE).intercept({ path: "/course/view.php?id=1", method: "GET" })
     .reply(200, `
       <html><body>
@@ -73,7 +70,7 @@ describe("Integration: incremental sync", () => {
       .reply(200, "pdf content", { headers: { "content-type": "application/pdf" } });
 
     const { runScrape } = await import("../../src/commands/scrape.js");
-    await runScrape({ outputDir: tmpDir, dryRun: false, force: false, baseUrl: BASE });
+    await runScrape({ outputDir: tmpDir, dryRun: false, force: false, baseUrl: BASE, courses: [1] });
 
     // Second run — same hash, no download expected
     setupMocks("hash-v1");
@@ -85,7 +82,7 @@ describe("Integration: incremental sync", () => {
       DownloadQueue: vi.fn().mockImplementation(() => ({ run: vi.fn() })),
     }));
 
-    await runScrape({ outputDir: tmpDir, dryRun: false, force: false, baseUrl: BASE });
+    await runScrape({ outputDir: tmpDir, dryRun: false, force: false, baseUrl: BASE, courses: [1] });
 
     // 0 downloads on second run
     expect(downloadSpy).not.toHaveBeenCalled();
