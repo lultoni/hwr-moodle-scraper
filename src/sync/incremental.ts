@@ -1,4 +1,5 @@
 // REQ-SYNC-003 through REQ-SYNC-009
+import { existsSync } from "node:fs";
 import type { State } from "./state.js";
 import type { ContentTree } from "../scraper/courses.js";
 
@@ -22,6 +23,7 @@ export interface ComputeSyncPlanOptions {
   state: PartialStateInput;
   currentTree: ContentTree[];
   force: boolean;
+  checkFiles?: boolean;
   dryRun?: boolean;
 }
 
@@ -35,7 +37,7 @@ interface PartialStateInput {
 }
 
 export function computeSyncPlan(opts: ComputeSyncPlanOptions): SyncPlanItem[] {
-  const { state, currentTree, force, dryRun = false } = opts;
+  const { state, currentTree, force, checkFiles = false, dryRun = false } = opts;
   const plan: SyncPlanItem[] = [];
 
   const currentCourseIds = new Set(currentTree.map((c) => String(c.courseId)));
@@ -62,7 +64,8 @@ export function computeSyncPlan(opts: ComputeSyncPlanOptions): SyncPlanItem[] {
 
         const needsDownload = force
           || !fileState
-          || (activity.hash && fileState.hash !== activity.hash);
+          || (activity.hash && fileState.hash !== activity.hash)
+          || (checkFiles && fileState.localPath && !existsSync(fileState.localPath));
 
         if (needsDownload) {
           plan.push({

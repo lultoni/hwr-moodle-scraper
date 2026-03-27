@@ -66,6 +66,7 @@ program
   .option("--output-dir <path>", "Override output directory for this run")
   .option("--courses <ids>", "Comma-separated course IDs to scrape")
   .option("--force", "Re-download everything, ignoring cached state", false)
+  .option("--check-files", "Re-download any files missing from disk (even if state says up-to-date)", false)
   .option("--dry-run", "Print planned actions without writing files", false)
   .option("--metadata", "Write .meta.json sidecar alongside each file", false)
   .option("-q, --quiet", "Suppress all output except errors", false)
@@ -75,6 +76,7 @@ program
     outputDir?: string;
     courses?: string;
     force: boolean;
+    checkFiles: boolean;
     dryRun: boolean;
     metadata: boolean;
     quiet: boolean;
@@ -98,6 +100,7 @@ program
       outputDir,
       dryRun: opts.dryRun,
       force: opts.force,
+      checkFiles: opts.checkFiles,
       nonInteractive: opts.nonInteractive,
       quiet: opts.quiet,
       verbose: opts.verbose,
