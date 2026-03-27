@@ -34,6 +34,7 @@ export function buildDownloadPlan(
   courseName: string,
   sectionName: string,
   outputDir: string,
+  semesterDir?: string,
 ): DownloadPlanItem[] {
   const items: DownloadPlanItem[] = [];
 
@@ -48,7 +49,9 @@ export function buildDownloadPlan(
     const safeName = sanitiseFilename(activity.activityName || "unnamed");
     const safeSection = sanitiseFilename(sectionName);
     const safeCourse = sanitiseFilename(courseName);
-    const sectionDir = join(outputDir, safeCourse, safeSection);
+    const sectionDir = semesterDir
+      ? join(outputDir, semesterDir, safeCourse, safeSection)
+      : join(outputDir, safeCourse, safeSection);
 
     let destPath: string;
     let strategy: DownloadStrategy;

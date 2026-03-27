@@ -12,17 +12,20 @@ import type { Logger } from "../logger.js";
 
 export interface OutputPathOptions {
   outputDir: string;
+  semesterDir?: string;  // Optional semester grouping folder (e.g. "Semester_3")
   courseName: string;
   sectionName: string;
   filename: string;
 }
 
 export async function buildOutputPath(opts: OutputPathOptions): Promise<string> {
-  const { outputDir, courseName, sectionName, filename } = opts;
+  const { outputDir, semesterDir, courseName, sectionName, filename } = opts;
   // Sanitise names and also replace spaces with _ for directory names
   const safeCourse = sanitiseFilename(courseName).replace(/\s+/g, "_");
   const safeSection = sanitiseFilename(sectionName).replace(/\s+/g, "_");
-  const dir = join(outputDir, safeCourse, safeSection);
+  const dir = semesterDir
+    ? join(outputDir, semesterDir, safeCourse, safeSection)
+    : join(outputDir, safeCourse, safeSection);
   try {
     mkdirSync(dir, { recursive: true });
   } catch (err) {

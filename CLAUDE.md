@@ -59,9 +59,9 @@ hwr-moodle-scraper/
 
 ## Current Phase
 **Phase 5 — Iterative Improvements**
-- All 22 timeline steps implemented + Phase 5 fixes; 192/192 tests passing across 26 test files
+- All 22 timeline steps implemented + Phase 5 fixes; 222/222 tests passing across 28 test files
 - Full CLI implementation: auth, scrape, status, wizard commands
-- **Phase 5 fixes applied** (2026-03-27):
+- **Phase 5 fixes applied** (2026-03-27+):
   - Fixed redirect handling in `fetchContentTree` and `downloadFile` (root cause of "0 to download")
   - Fixed activity name pollution from `<span class="accesshide">` text leaking into names
   - Added all modtypes: `folder`, `page`, `label`, `quiz`, `glossary`, `grouptool`, `bigbluebuttonbn`
@@ -72,6 +72,9 @@ hwr-moodle-scraper/
   - Progress bar fixes: added `onComplete` callback to `DownloadFileOptions` and `DownloadItem` for accurate incremental progress tracking
   - Onetopic section names: `parseOnetopicTabs(html)` builds sectionNumber→name map from tab nav, used as 3rd fallback in `parseContentTree`
   - Label content + activity descriptions: extract `activity-altcontent` to `Activity.description`, produce `label-md` items and `description-md` sidecars with HTML-to-Markdown conversion
+  - Added `--check-files` flag: re-downloads missing local files without requiring `--force`
+  - **Semester grouping + state migration**: reorganized output to `<outputDir>/Semester_X/CourseName/SectionName/` for better structure; `migrateStatePaths()` silently updates old state file paths on first run with new structure
+  - Fixed state save bug: wrapped `binaryItems` as `{ downloadItem, planItem }` pairs to eliminate off-by-one indexing error
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.

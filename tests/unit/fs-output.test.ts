@@ -47,6 +47,34 @@ describe("STEP-011: Folder hierarchy", () => {
     const dir = outPath.replace(/[/\\][^/\\]+$/, "");
     expect(existsSync(dir)).toBe(true);
   });
+
+  it("with semesterDir creates <outputDir>/<semesterDir>/<CourseName>/<SectionName>/", async () => {
+    const { existsSync } = await import("node:fs");
+    const outPath = await buildOutputPath({
+      outputDir: tmpDir,
+      semesterDir: "Semester_3",
+      courseName: "Datenbanken",
+      sectionName: "Einführung",
+      filename: "lecture.pdf",
+    });
+    expect(outPath).toMatch(/Semester_3[/\\]Datenbanken[/\\]Einf.hrung[/\\]lecture\.pdf/);
+    const dir = outPath.replace(/[/\\][^/\\]+$/, "");
+    expect(existsSync(dir)).toBe(true);
+  });
+
+  it("without semesterDir behaves same as before (no extra level)", async () => {
+    const outPath = await buildOutputPath({
+      outputDir: tmpDir,
+      courseName: "Datenbanken",
+      sectionName: "Section 1",
+      filename: "file.pdf",
+    });
+    // Should NOT contain a semester prefix
+    const rel = outPath.replace(tmpDir, "");
+    const parts = rel.split(/[/\\]/).filter(Boolean);
+    // parts: [courseName, sectionName, filename] — exactly 3 levels
+    expect(parts).toHaveLength(3);
+  });
 });
 
 describe("STEP-011: Atomic file writes", () => {

@@ -2,8 +2,9 @@
 import { validateOrRefreshSession } from "../auth/session.js";
 import { fetchCourseList, fetchContentTree, fetchFolderFiles, type Course, type ContentTree, type Activity, type Section } from "../scraper/courses.js";
 import { buildDownloadPlan } from "../scraper/dispatch.js";
+import { buildCourseShortPaths } from "../scraper/course-naming.js";
 import { computeSyncPlan, SyncAction } from "../sync/incremental.js";
-import { StateManager, type CourseState } from "../sync/state.js";
+import { StateManager, migrateStatePaths, type CourseState, type State } from "../sync/state.js";
 import { KeychainAdapter } from "../auth/keychain.js";
 import { createHttpClient } from "../http/client.js";
 import { createLogger, LogLevel, type Logger } from "../logger.js";
@@ -81,8 +82,15 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     courseNameMap.set(course.courseId, course.courseName);
   }
 
-  // Load state
-  const state = await stateManager.load() ?? { courses: {} };
+  // Build courseId → { semesterDir, shortName } for organised folder structure
+  const courseShortPaths = buildCourseShortPaths(courses);
+
+  // Load state and auto-migrate any old-style localPaths to new short paths
+  const rawState = await stateManager.load() ?? { courses: {} };
+  const courseShortPathsStr = new Map<string, { semesterDir: string; shortName: string }>();
+  for (const [id, sp] of courseShortPaths) courseShortPathsStr.set(String(id), sp);
+  const state = migrateStatePaths(rawState as State, outputDir, courseShortPathsStr);
+  if (state !== rawState) await stateManager.save({ courses: state.courses });
 
   logger.debug("Fetching content trees…");
 
@@ -170,14 +178,16 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   // Build a map from resourceId → Activity for dispatch
-  const activityByResourceId = new Map<string, { activity: Activity; courseName: string; sectionName: string }>();
+  const activityByResourceId = new Map<string, { activity: Activity; courseName: string; sectionName: string; semesterDir?: string }>();
   for (const tree of expandedTrees) {
     for (const section of tree.sections) {
-      const courseName = courseNameMap.get(tree.courseId) ?? String(tree.courseId);
+      const sp = courseShortPaths.get(tree.courseId);
+      const courseName = sp?.shortName ?? (courseNameMap.get(tree.courseId) ?? String(tree.courseId));
+      const semesterDir = sp?.semesterDir;
       const sectionName = sectionNameMap.get(`${tree.courseId}:${section.sectionId}`) ?? "General";
       for (const activity of section.activities) {
         const resourceId = activity.resourceId ?? `${tree.courseId}-${section.sectionId}-${activity.activityName}`;
-        activityByResourceId.set(resourceId, { activity, courseName, sectionName });
+        activityByResourceId.set(resourceId, { activity, courseName, sectionName, semesterDir });
       }
     }
   }
@@ -186,7 +196,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const retryBaseDelayMs = ((await config.get("retryBaseDelayMs")) as number | undefined) ?? 5000;
 
   // Separate binary downloads from special-handling types
-  const binaryItems: DownloadItem[] = [];
+  const binaryItems: Array<{ downloadItem: DownloadItem; planItem: typeof downloads[0] }> = [];
   const specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string; label: string; description?: string }> = [];
 
   const totalItems = downloads.length;
@@ -199,7 +209,9 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
     const resourceId = item.resourceId ?? "";
     const meta = activityByResourceId.get(resourceId);
-    const courseName = meta?.courseName ?? (courseNameMap.get(item.courseId) ?? String(item.courseId));
+    const sp = item.courseId ? courseShortPaths.get(item.courseId) : undefined;
+    const courseName = meta?.courseName ?? sp?.shortName ?? (item.courseId ? (courseNameMap.get(item.courseId) ?? String(item.courseId)) : "Unknown");
+    const semesterDir = meta?.semesterDir ?? sp?.semesterDir;
     const sectionName = meta?.sectionName ?? "General";
     const counter = verbose ? ` (${i + 1}/${totalItems})` : "";
 
@@ -209,24 +221,27 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       const urlPathname = new URL(item.url).pathname;
       const rawSegment = urlPathname.split("/").pop() ?? "";
       const filenameDerived = decodeURIComponent(rawSegment) || resourceId || "file";
-      const destPath = await buildOutputPath({ outputDir, courseName, sectionName, filename: filenameDerived });
-      logger.debug(`[DOWNLOAD] ${courseName} / ${sectionName} / ${filenameDerived}${counter}`);
-      binaryItems.push({ url: item.url, destPath, sessionCookies, retryBaseDelayMs });
+      const destPath = await buildOutputPath({ outputDir, semesterDir, courseName, sectionName, filename: filenameDerived });
+      logger.debug(`[DOWNLOAD] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${filenameDerived}${counter}`);
+      binaryItems.push({ downloadItem: { url: item.url, destPath, sessionCookies, retryBaseDelayMs }, planItem: item });
       continue;
     }
 
-    const planItems = buildDownloadPlan([meta.activity], courseName, sectionName, outputDir);
+    const planItems = buildDownloadPlan([meta.activity], courseName, sectionName, outputDir, semesterDir);
     for (const planItem of planItems) {
       if (planItem.strategy === "binary") {
-        logger.debug(`[DOWNLOAD] ${courseName} / ${sectionName} / ${meta.activity.activityName}${counter}`);
+        logger.debug(`[DOWNLOAD] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${meta.activity.activityName}${counter}`);
         mkdirSync(dirname(planItem.destPath), { recursive: true });
         // onComplete uses bar via closure — bar may not exist yet; check at call time
         binaryItems.push({
-          url: planItem.url,
-          destPath: planItem.destPath,
-          sessionCookies,
-          retryBaseDelayMs,
-          onComplete: (fp) => { if (bar) bar.increment(1, { file: basename(fp) }); },
+          downloadItem: {
+            url: planItem.url,
+            destPath: planItem.destPath,
+            sessionCookies,
+            retryBaseDelayMs,
+            onComplete: (fp) => { if (bar) bar.increment(1, { file: basename(fp) }); },
+          },
+          planItem: item,
         });
       } else {
         logger.debug(`[DOWNLOAD] ${courseName} / ${sectionName} / ${meta.activity.activityName} (${planItem.strategy})${counter}`);
@@ -261,7 +276,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   if (binaryItems.length > 0) {
     const queue = new DownloadQueue({ maxConcurrent });
-    const result = await queue.run(binaryItems);
+    const result = await queue.run(binaryItems.map((b) => b.downloadItem));
     downloadedCount += result.downloaded;
     failedCount += result.failed.length;
 
@@ -311,7 +326,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const updatedCourses: Record<string, CourseState> = { ...(state.courses as Record<string, CourseState>) };
 
   const allDownloadedItems = [
-    ...binaryItems.map((bi, i) => ({ item: downloads[i], destPath: bi.destPath })),
+    ...binaryItems.map((b) => ({ item: b.planItem, destPath: b.downloadItem.destPath })),
     ...specialItems.map((si) => ({ item: si.item, destPath: si.destPath })),
   ];
 
@@ -319,7 +334,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     if (!item || !item.courseId || !item.url) continue;
 
     const courseIdStr = String(item.courseId);
-    const courseName = courseNameMap.get(item.courseId) ?? String(item.courseId);
+    const sp = courseShortPaths.get(item.courseId);
+    const courseName = sp?.shortName ?? (courseNameMap.get(item.courseId) ?? String(item.courseId));
     const resourceId = item.resourceId ?? "";
     const location = resourceSectionMap.get(resourceId);
     const sectionId = location?.sectionId ?? "s0";

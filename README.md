@@ -57,6 +57,7 @@ moodle-scraper --help                Full help
 
 ```
 --dry-run       Show what would be downloaded without writing files
+--check-files   Re-download any files missing from disk (useful if files deleted locally)
 --force         Re-download everything, ignoring cached state
 --quiet         Suppress all output except errors
 --verbose       Debug-level output
@@ -120,6 +121,34 @@ docs/
 ├── TECH_STACK.md         # Technology decisions and rationale
 └── WORKFLOW.md           # Phased development process
 ```
+
+### Output folder structure
+
+Downloaded content is organized by semester and course:
+
+```
+~/moodle-scraper-output/
+├── Semester_1/
+│   ├── Betriebswirtschaftliche_Grundlagen/
+│   │   └── <section_name>/
+│   │       └── <file>
+│   └── Finanzbuchführung/
+│       └── <section_name>/
+│           └── <file>
+├── Semester_2/
+│   └── Rechnersysteme/
+│       └── <section_name>/
+│           └── <file>
+├── Schluesselkompetenzen/
+│   ├── Wissenschaftliches_Arbeiten_I/
+│   └── Digitale_Kompetenzen_-_Betriebssystempraxis/
+└── Sonstiges/
+    └── <other_courses>/
+```
+
+State and metadata:
+- `.moodle-scraper-state.json` — sync state (incrementally updated)
+- `<filename>.meta.json` — metadata sidecar (only if `--metadata` flag passed)
 
 ---
 
