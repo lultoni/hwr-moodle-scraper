@@ -205,6 +205,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Separate binary downloads from special-handling types
   const binaryItems: Array<{ downloadItem: DownloadItem; planItem: typeof downloads[0] }> = [];
   const specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string; label: string; description?: string }> = [];
+  // Items that are acknowledged but not downloadable (e.g. assign, forum, quiz) — save to state so they're not re-planned
+  const acknowledgedItems: Array<typeof downloads[0]> = [];
 
   const totalItems = downloads.length;
 
@@ -223,7 +225,11 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     const counter = verbose ? ` (${i + 1}/${totalItems})` : "";
 
     if (!meta?.activity) {
-      if (!item.url) continue;
+      if (!item.url) {
+        // No activity metadata and no URL — acknowledge so it's not re-planned every run
+        acknowledgedItems.push(item);
+        continue;
+      }
       // Fallback: treat as binary download using URL-derived filename
       const urlPathname = new URL(item.url).pathname;
       const rawSegment = urlPathname.split("/").pop() ?? "";
@@ -235,6 +241,12 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     }
 
     const planItems = buildDownloadPlan([meta.activity], courseName, sectionName, outputDir, semesterDir);
+    if (planItems.length === 0) {
+      // Activity type is not downloadable (assign, forum, quiz, etc.) — acknowledge it
+      logger.debug(`[SKIP-TYPE] ${courseName} / ${sectionName} / ${meta.activity.activityName} (${meta.activity.activityType} — not downloadable)`);
+      acknowledgedItems.push(item);
+      continue;
+    }
     for (const planItem of planItems) {
       if (planItem.strategy === "binary") {
         logger.debug(`[DOWNLOAD] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${meta.activity.activityName}${counter}`);
@@ -335,6 +347,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     ...specialItems
       .filter((si) => si.strategy !== "description-md")  // sidecars share resourceId with parent — skip to avoid overwriting parent's localPath
       .map((si) => ({ item: si.item, destPath: si.destPath })),
+    // Acknowledged non-downloadable items (assign, forum, etc.) — save with empty localPath so they're not re-planned
+    ...acknowledgedItems.map((item) => ({ item, destPath: "" })),
   ];
 
   for (const { item, destPath } of allDownloadedItems) {

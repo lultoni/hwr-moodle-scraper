@@ -77,7 +77,7 @@ export function computeSyncPlan(opts: ComputeSyncPlanOptions): SyncPlanItem[] {
             dryRun,
           });
         } else {
-          plan.push({ action: SyncAction.SKIP, resourceId, dryRun });
+          plan.push({ action: SyncAction.SKIP, resourceId, courseId: tree.courseId, url: activity.url, dryRun });
         }
       }
 

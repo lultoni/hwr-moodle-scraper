@@ -87,4 +87,58 @@ describe("Integration: incremental sync", () => {
     // 0 downloads on second run
     expect(downloadSpy).not.toHaveBeenCalled();
   });
+
+  it("assign activities are acknowledged in state and not re-planned on second run", async () => {
+    // Course page with an assign activity (non-downloadable) + a resource
+    const courseHtml = `
+      <html><body>
+        <li class="section"><h3 class="sectionname">Week 1</h3>
+          <ul class="section">
+            <li class="activity assign modtype_assign" data-resource-id="assign-1">
+              <a href="${BASE}/mod/assign/view.php?id=20">Assignment 1</a>
+            </li>
+            <li class="activity resource modtype_resource" data-resource-id="res-1">
+              <a href="${BASE}/mod/resource/view.php?id=10">Lecture PDF</a>
+            </li>
+          </ul>
+        </li>
+      </body></html>
+    `;
+
+    // First run
+    mockAgent.get(BASE).intercept({ path: "/my/", method: "GET" })
+      .reply(200, "<html><body>Dashboard</body></html>", { headers: { "content-type": "text/html" } });
+    mockAgent.get(BASE).intercept({ path: "/course/view.php?id=1", method: "GET" })
+      .reply(200, courseHtml, { headers: { "content-type": "text/html" } });
+    mockAgent.get(BASE).intercept({ path: "/mod/resource/view.php?id=10", method: "GET" })
+      .reply(303, "", { headers: { location: `${BASE}/pluginfile.php/1/content/lecture.pdf` } });
+    mockAgent.get(BASE).intercept({ path: "/pluginfile.php/1/content/lecture.pdf", method: "GET" })
+      .reply(200, "pdf content", { headers: { "content-type": "application/pdf" } });
+
+    const { runScrape } = await import("../../src/commands/scrape.js");
+    await runScrape({ outputDir: tmpDir, dryRun: false, force: false, baseUrl: BASE, courses: [1] });
+
+    // State must contain both the assign activity AND the resource
+    const state1 = JSON.parse(readFileSync(join(tmpDir, ".moodle-scraper-state.json"), "utf8"));
+    const course1 = Object.values(state1.courses)[0] as { sections: Record<string, { files: Record<string, unknown> }> };
+    const allResourceIds1 = Object.values(course1.sections).flatMap((s) => Object.keys(s.files));
+    expect(allResourceIds1).toContain("assign-1");
+    expect(allResourceIds1).toContain("res-1");
+
+    // Second run — assign and resource should both be SKIP
+    mockAgent.get(BASE).intercept({ path: "/my/", method: "GET" })
+      .reply(200, "<html><body>Dashboard</body></html>", { headers: { "content-type": "text/html" } });
+    mockAgent.get(BASE).intercept({ path: "/course/view.php?id=1", method: "GET" })
+      .reply(200, courseHtml, { headers: { "content-type": "text/html" } });
+    // No download mocks — any download attempt will throw (disableNetConnect)
+
+    await runScrape({ outputDir: tmpDir, dryRun: false, force: false, baseUrl: BASE, courses: [1] });
+
+    // State still has both items after second run
+    const state2 = JSON.parse(readFileSync(join(tmpDir, ".moodle-scraper-state.json"), "utf8"));
+    const course2 = Object.values(state2.courses)[0] as { sections: Record<string, { files: Record<string, unknown> }> };
+    const allResourceIds2 = Object.values(course2.sections).flatMap((s) => Object.keys(s.files));
+    expect(allResourceIds2).toContain("assign-1");
+    expect(allResourceIds2).toContain("res-1");
+  });
 });
