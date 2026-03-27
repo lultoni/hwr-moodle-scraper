@@ -338,8 +338,8 @@ export function parseActivityFromElement(
       activityName: name,
       url,
       isAccessible,
-      resourceId: resourceIdMatch?.[1],
-      hash: hashMatch?.[1],
+      ...(resourceIdMatch?.[1] ? { resourceId: resourceIdMatch[1] } : {}),
+      ...(hashMatch?.[1] ? { hash: hashMatch[1] } : {}),
       ...(description ? { description } : {}),
     };
   } catch (err) {

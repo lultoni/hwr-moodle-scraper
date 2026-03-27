@@ -45,5 +45,5 @@ export async function runWizard(opts: WizardOptions): Promise<void> {
   const outputDir = inputDir.trim() || defaultDir;
   await config.set("outputDir", outputDir);
 
-  await promptAndAuthenticate({ promptFn, httpClient, keychain, logger });
+  await promptAndAuthenticate({ promptFn, httpClient, keychain, ...(logger ? { logger } : {}) });
 }

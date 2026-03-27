@@ -44,7 +44,7 @@ export async function runAuthStatus(opts: AuthStatusOptions): Promise<void> {
   process.stdout.write(`Credentials: stored (username: ${creds.username})\n`);
   if (httpClient) {
     try {
-      await validateOrRefreshSession({ httpClient, keychain, baseUrl });
+      await validateOrRefreshSession({ httpClient, keychain, ...(baseUrl ? { baseUrl } : {}) });
       process.stdout.write("Session: valid\n");
     } catch {
       process.stdout.write("Session: expired or invalid\n");
@@ -75,6 +75,6 @@ export async function runAuthSet(opts: AuthSetOptions): Promise<void> {
     if (answer.trim().toLowerCase() !== "y") return;
   }
   if (httpClient) {
-    await promptAndAuthenticate({ promptFn, httpClient, keychain, baseUrl, logger });
+    await promptAndAuthenticate({ promptFn, httpClient, keychain, ...(baseUrl ? { baseUrl } : {}), ...(logger ? { logger } : {}) });
   }
 }

@@ -76,7 +76,7 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
   let sessionCookie = "";
   try {
     logger?.debug(`[auth] fetching login page: ${baseUrl}/login/index.php`);
-    const loginPage = await httpClient.get(`${baseUrl}/login/index.php`, { logger });
+    const loginPage = await httpClient.get(`${baseUrl}/login/index.php`, logger ? { logger } : {});
     loginToken = extractLoginToken(loginPage.body);
     sessionCookie = extractCookies(loginPage.headers);
     logger?.debug(`[auth] loginToken: ${loginToken ?? "(none)"}`);
@@ -95,7 +95,7 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
     response = await httpClient.post(
       `${baseUrl}/login/index.php`,
       body,
-      { followRedirects: true, cookie: sessionCookie || undefined, logger }
+      { followRedirects: true, ...(sessionCookie ? { cookie: sessionCookie } : {}), ...(logger ? { logger } : {}) }
     ) as typeof response;
     logger?.debug(`[auth] final response URL: ${response.url}`);
   } catch (err) {
@@ -116,8 +116,8 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
       logger?.debug(`[auth] testsession detected — verifying via ${baseUrl}/my/ with cookie: ${finalCookies}`);
       const myPage = await httpClient.get(`${baseUrl}/my/`, {
         followRedirects: true,
-        cookie: finalCookies || undefined,
-        logger,
+        ...(finalCookies ? { cookie: finalCookies } : {}),
+        ...(logger ? { logger } : {}),
       });
       logger?.debug(`[auth] /my/ final URL: ${myPage.url}`);
       isLoggedIn = !myPage.url.includes("/login/");

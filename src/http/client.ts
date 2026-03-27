@@ -110,7 +110,7 @@ export function createHttpClient(): HttpClient {
     const { statusCode, headers: resHeaders, body: resBody } = await request(url, {
       method,
       headers,
-      body: body ? new URLSearchParams(body as Record<string, string>).toString() : undefined,
+      ...(body ? { body: new URLSearchParams(body as Record<string, string>).toString() } : {}),
     });
 
     const text = await resBody.text();
@@ -165,7 +165,7 @@ export function createHttpClient(): HttpClient {
         logger?.debug(`  ↪ redirect → ${absoluteLocation}`);
         return doRequest("GET", absoluteLocation, undefined, {
           ...options,
-          cookie: mergedCookie || undefined,
+          ...(mergedCookie ? { cookie: mergedCookie } : {}),
           maxRedirects: maxRedirects - 1,
         }, mergedCookie || undefined);
       }
@@ -176,7 +176,7 @@ export function createHttpClient(): HttpClient {
       url: statusCode >= 300 && statusCode < 400 ? finalUrl : url,
       body: text,
       headers: resHeaders as Record<string, string | string[]>,
-      effectiveCookies: sentCookies || undefined,
+      ...(sentCookies ? { effectiveCookies: sentCookies } : {}),
     };
   }
 

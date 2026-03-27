@@ -58,7 +58,7 @@ async function silentReAuth(
     const response = await httpClient.post(
       `${baseUrl}/login/index.php`,
       body,
-      { followRedirects: true, cookie: sessionCookie || undefined, ...(logger ? { logger } : {}) }
+      { followRedirects: true, ...(sessionCookie ? { cookie: sessionCookie } : {}), ...(logger ? { logger } : {}) }
     );
 
     // Same testsession logic as promptAndAuthenticate
@@ -66,7 +66,7 @@ async function silentReAuth(
       const finalCookies = extractCookies(response.headers);
       const myPage = await httpClient.get(`${baseUrl}/my/`, {
         followRedirects: true,
-        cookie: finalCookies || undefined,
+        ...(finalCookies ? { cookie: finalCookies } : {}),
         ...(logger ? { logger } : {}),
       });
       if (!myPage.url.includes("/login/")) return myPage.effectiveCookies || finalCookies || extractCookies(myPage.headers) || "";

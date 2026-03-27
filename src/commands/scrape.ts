@@ -189,7 +189,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       const sectionName = sectionNameMap.get(`${tree.courseId}:${section.sectionId}`) ?? "General";
       for (const activity of section.activities) {
         const resourceId = getResourceId(activity, tree.courseId, section.sectionId);
-        activityByResourceId.set(resourceId, { activity, courseName, sectionName, semesterDir });
+        activityByResourceId.set(resourceId, { activity, courseName, sectionName, ...(semesterDir ? { semesterDir } : {}) });
       }
     }
   }
@@ -228,7 +228,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       const urlPathname = new URL(item.url).pathname;
       const rawSegment = urlPathname.split("/").pop() ?? "";
       const filenameDerived = decodeURIComponent(rawSegment) || resourceId || "file";
-      const destPath = await buildOutputPath({ outputDir, semesterDir, courseName, sectionName, filename: filenameDerived });
+      const destPath = await buildOutputPath({ outputDir, ...(semesterDir ? { semesterDir } : {}), courseName, sectionName, filename: filenameDerived });
       logger.debug(`[DOWNLOAD] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${filenameDerived}${counter}`);
       binaryItems.push({ downloadItem: { url: item.url, destPath, sessionCookies, retryBaseDelayMs }, planItem: item });
       continue;
@@ -256,7 +256,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           destPath: planItem.destPath,
           strategy: planItem.strategy,
           label: meta.activity.activityName,
-          description: meta.activity.description,
+          ...(meta.activity.description ? { description: meta.activity.description } : {}),
         });
       }
     }
@@ -353,8 +353,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     const files = { ...(sectionEntry.files ?? {}) };
 
     files[resourceId] = {
-      name: filenameFn(item.url, resourceId),
-      url: item.url,
+      name: filenameFn(item.url ?? "", resourceId),
+      url: item.url ?? "",
       localPath: destPath,
       hash: location?.hash ?? "",
       lastModified: new Date().toISOString(),

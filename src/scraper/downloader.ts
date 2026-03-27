@@ -128,7 +128,7 @@ export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadF
           const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
           chunks.push(buf);
           bytesReceived += buf.length;
-          onProgress?.({ bytesReceived, totalBytes });
+          onProgress?.({ bytesReceived, ...(totalBytes !== undefined ? { totalBytes } : {}) });
         }
 
         mkdirSync(dirname(finalPath), { recursive: true });
