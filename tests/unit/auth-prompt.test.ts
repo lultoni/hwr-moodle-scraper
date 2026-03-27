@@ -114,7 +114,7 @@ describe("STEP-008: Credential prompt — CSRF logintoken", () => {
 
     await promptAndAuthenticate({ promptFn, httpClient: vi.mocked(createHttpClient)() });
 
-    expect(getMock).toHaveBeenCalledWith(expect.stringContaining("/login/index.php"));
+    expect(getMock).toHaveBeenCalledWith(expect.stringContaining("/login/index.php"), expect.anything());
     expect(postMock).toHaveBeenCalledWith(
       expect.stringContaining("/login/index.php"),
       expect.objectContaining({ logintoken: "abc123token" }),

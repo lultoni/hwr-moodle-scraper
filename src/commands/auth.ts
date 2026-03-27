@@ -4,6 +4,7 @@ import type { KeychainAdapter } from "../auth/keychain.js";
 import { deleteSessionFile, validateOrRefreshSession } from "../auth/session.js";
 import { promptAndAuthenticate, AuthError, type PromptFn } from "../auth/prompt.js";
 import type { HttpClient } from "../http/client.js";
+import type { Logger } from "../logger.js";
 
 export interface AuthClearOptions {
   keychain: KeychainAdapter;
@@ -57,10 +58,11 @@ export interface AuthSetOptions {
   nonInteractive?: boolean;
   httpClient?: HttpClient;
   baseUrl?: string;
+  logger?: Logger;
 }
 
 export async function runAuthSet(opts: AuthSetOptions): Promise<void> {
-  const { keychain, promptFn, nonInteractive = false, httpClient, baseUrl } = opts;
+  const { keychain, promptFn, nonInteractive = false, httpClient, baseUrl, logger } = opts;
   const existing = await keychain.readCredentials();
   if (existing) {
     if (nonInteractive) {
@@ -73,6 +75,6 @@ export async function runAuthSet(opts: AuthSetOptions): Promise<void> {
     if (answer.trim().toLowerCase() !== "y") return;
   }
   if (httpClient) {
-    await promptAndAuthenticate({ promptFn, httpClient, keychain, baseUrl });
+    await promptAndAuthenticate({ promptFn, httpClient, keychain, baseUrl, logger });
   }
 }

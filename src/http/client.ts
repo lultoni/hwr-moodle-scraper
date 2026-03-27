@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXIT_CODES } from "../exit-codes.js";
+import type { Logger } from "../logger.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Resolve package.json: works both from src/http/ (../../) and from flat dist/ (../)
@@ -46,6 +47,7 @@ export interface HttpRequestOptions {
   cookie?: string;
   followRedirects?: boolean;
   maxRedirects?: number;
+  logger?: Logger;
 }
 
 function assertHttps(url: string): void {
@@ -63,6 +65,19 @@ export interface HttpClient {
   post(url: string, body?: unknown, options?: HttpRequestOptions): Promise<HttpResponse>;
 }
 
+/** Merge two cookie strings, with later values overriding earlier ones for the same name. */
+function mergeCookies(existing: string, incoming: string): string {
+  const map = new Map<string, string>();
+  for (const part of [existing, incoming]) {
+    for (const pair of part.split(";").map((s) => s.trim()).filter(Boolean)) {
+      const eq = pair.indexOf("=");
+      const name = eq >= 0 ? pair.slice(0, eq).trim() : pair;
+      map.set(name, pair);
+    }
+  }
+  return Array.from(map.values()).join("; ");
+}
+
 export function createHttpClient(): HttpClient {
   async function doRequest(
     method: "GET" | "POST",
@@ -71,6 +86,10 @@ export function createHttpClient(): HttpClient {
     options: HttpRequestOptions = {}
   ): Promise<HttpResponse> {
     assertHttps(url);
+    const { logger } = options;
+
+    logger?.debug(`→ ${method} ${url}`);
+    if (options.cookie) logger?.debug(`  Cookie: ${options.cookie}`);
 
     const headers: Record<string, string> = {
       "user-agent": USER_AGENT,
@@ -90,6 +109,8 @@ export function createHttpClient(): HttpClient {
     });
 
     const text = await resBody.text();
+    logger?.debug(`  ← ${statusCode} (${text.length} bytes)`);
+
     const contentType = (resHeaders["content-type"] as string | undefined) ?? "";
     if (contentType.includes("text/html")) {
       checkMaintenanceMode(text, url);
@@ -131,9 +152,16 @@ export function createHttpClient(): HttpClient {
     if (statusCode >= 300 && statusCode < 400 && options.followRedirects && location) {
       const maxRedirects = options.maxRedirects ?? 5;
       if (maxRedirects > 0) {
-        // Merge cookies: existing + any new ones from this redirect
-        const mergedCookie = [options.cookie, newCookies].filter(Boolean).join("; ");
-        return doRequest("GET", location, undefined, {
+        // Resolve relative Location headers against the request URL
+        const absoluteLocation = location.startsWith("http")
+          ? location
+          : new URL(location, url).toString();
+        // Merge cookies: incoming Set-Cookie values override same-named existing cookies
+        const mergedCookie = newCookies
+          ? mergeCookies(options.cookie ?? "", newCookies)
+          : options.cookie;
+        logger?.debug(`  ↪ redirect → ${absoluteLocation}`);
+        return doRequest("GET", absoluteLocation, undefined, {
           ...options,
           cookie: mergedCookie || undefined,
           maxRedirects: maxRedirects - 1,

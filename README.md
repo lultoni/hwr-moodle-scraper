@@ -83,7 +83,7 @@ npm run test:watch        # watch mode
 npm run test:coverage     # with coverage report
 ```
 
-All 146 tests pass across 24 test files (22 unit + 2 integration).
+All 149 tests pass across 24 test files (22 unit + 2 integration).
 
 ### Type-check
 

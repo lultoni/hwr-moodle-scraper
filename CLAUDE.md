@@ -59,7 +59,7 @@ hwr-moodle-scraper/
 
 ## Current Phase
 **Phase 4 — Implementation: COMPLETE**
-- All 22 timeline steps implemented in `src/` with 146/146 tests passing across 24 test files
+- All 22 timeline steps implemented in `src/` with 149/149 tests passing across 24 test files
 - Full CLI implementation: auth, scrape, status, wizard commands
 - Security & robustness: credential handling, rate limiting, retry logic, incremental sync
 - Next: Phase 5 — iterative improvements based on real-world testing

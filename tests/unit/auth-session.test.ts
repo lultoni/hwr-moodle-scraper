@@ -20,23 +20,31 @@ function makeHttpClient(sessionValid: boolean, reAuthSucceeds = true) {
   return {
     get: vi.fn().mockImplementation(async (url: string) => {
       if (url.includes("/my/")) {
-        // Redirect to login = session expired
         return {
           status: 200,
           url: sessionValid
             ? "https://moodle.example.com/my/"
             : "https://moodle.example.com/login/index.php",
+          body: "",
+          headers: {},
         };
       }
-      return { status: 200, url };
+      // Login page fetch (for logintoken during re-auth)
+      return {
+        status: 200,
+        url,
+        body: '<input type="hidden" name="logintoken" value="faketoken">',
+        headers: { "set-cookie": "MoodleSession=newsession; path=/" },
+      };
     }),
-    post: vi.fn().mockResolvedValue({
+    post: vi.fn().mockImplementation(async () => ({
       status: 200,
       url: reAuthSucceeds
         ? "https://moodle.example.com/my/"
         : "https://moodle.example.com/login/index.php",
-      cookies: [{ name: "MoodleSession", value: "newtoken", domain: "moodle.example.com", path: "/", expires: null }],
-    }),
+      body: "",
+      headers: {},
+    })),
   };
 }
 

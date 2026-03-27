@@ -9,6 +9,7 @@ import { EXIT_CODES } from "./exit-codes.js";
 import { ConfigManager } from "./config.js";
 import { KeychainAdapter } from "./auth/keychain.js";
 import { createHttpClient } from "./http/client.js";
+import { createLogger, LogLevel, type Logger } from "./logger.js";
 import { runScrape } from "./commands/scrape.js";
 import { runAuthSet, runAuthClear, runAuthStatus } from "./commands/auth.js";
 import { runStatus } from "./commands/status.js";
@@ -45,7 +46,18 @@ program
   .name("moodle-scraper")
   .description("Download all content from HWR Berlin Moodle LMS")
   .version(`moodle-scraper ${pkg.version}`, "-V, --version", "Print version and exit")
+  .option("--debug", "Enable verbose debug output (HTTP requests, auth flow)", false)
   .addHelpCommand(false);
+
+function makeLogger(debug: boolean, redact: string[] = []): Logger | undefined {
+  if (!debug) return undefined;
+  return createLogger({ level: LogLevel.DEBUG, redact, logFile: null });
+}
+
+/** Spread only if value is defined — respects exactOptionalPropertyTypes. */
+function withLogger(logger: Logger | undefined): { logger: Logger } | Record<never, never> {
+  return logger ? { logger } : {};
+}
 
 // --- scrape ---
 program
@@ -69,13 +81,16 @@ program
     verbose: boolean;
     nonInteractive: boolean;
   }) => {
+    const globalOpts = program.opts<{ debug: boolean }>();
     const config = new ConfigManager();
     const keychain = new KeychainAdapter();
     const httpClient = createHttpClient();
+    // Password will be added to redact list once collected — logger created first without it
+    const logger = makeLogger(globalOpts.debug);
 
     // First-run wizard
     if (await shouldRunWizard({ keychain, config })) {
-      await runWizard({ keychain, config, promptFn: makePromptFn(), httpClient, nonInteractive: opts.nonInteractive });
+      await runWizard({ keychain, config, promptFn: makePromptFn(), httpClient, nonInteractive: opts.nonInteractive, ...withLogger(logger) });
     }
 
     const outputDir = opts.outputDir ?? (await config.get("outputDir")) as string;
@@ -107,10 +122,12 @@ auth
   .description("Store Moodle credentials in macOS Keychain")
   .option("--non-interactive", "Fail instead of prompting", false)
   .action(async (opts: { nonInteractive: boolean }) => {
+    const globalOpts = program.opts<{ debug: boolean }>();
     const keychain = new KeychainAdapter();
     const httpClient = createHttpClient();
+    const logger = makeLogger(globalOpts.debug);
     try {
-      await runAuthSet({ keychain, promptFn: makePromptFn(), nonInteractive: opts.nonInteractive, httpClient });
+      await runAuthSet({ keychain, promptFn: makePromptFn(), nonInteractive: opts.nonInteractive, httpClient, ...withLogger(logger) });
     } catch (err) {
       const code = (err as { exitCode?: number }).exitCode ?? EXIT_CODES.ERROR;
       process.stderr.write(`Error: ${(err as Error).message}\n`);
