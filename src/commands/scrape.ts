@@ -273,12 +273,15 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Execute binary downloads via queue
   let downloadedCount = 0;
   let failedCount = 0;
+  // finalPaths[i] holds the actual on-disk path (may have extension appended) for binaryItems[i]
+  let binaryFinalPaths: Array<string | undefined> = [];
 
   if (binaryItems.length > 0) {
     const queue = new DownloadQueue({ maxConcurrent });
     const result = await queue.run(binaryItems.map((b) => b.downloadItem));
     downloadedCount += result.downloaded;
     failedCount += result.failed.length;
+    binaryFinalPaths = result.finalPaths;
 
     for (const { item: failedItem, error } of result.failed) {
       logger.warn(`  Failed to download ${failedItem.url}: ${error.message}`);
@@ -326,7 +329,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const updatedCourses: Record<string, CourseState> = { ...(state.courses as Record<string, CourseState>) };
 
   const allDownloadedItems = [
-    ...binaryItems.map((b) => ({ item: b.planItem, destPath: b.downloadItem.destPath })),
+    ...binaryItems.map((b, i) => ({ item: b.planItem, destPath: binaryFinalPaths[i] ?? b.downloadItem.destPath })),
     ...specialItems
       .filter((si) => si.strategy !== "description-md")  // sidecars share resourceId with parent — skip to avoid overwriting parent's localPath
       .map((si) => ({ item: si.item, destPath: si.destPath })),

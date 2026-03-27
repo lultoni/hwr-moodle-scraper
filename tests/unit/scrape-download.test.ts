@@ -228,6 +228,25 @@ describe("STEP-014: DownloadQueue — per-item error isolation", () => {
     expect(result.downloaded).toBe(1);
     expect(existsSync(join(tmpDir, "ok.pdf"))).toBe(true);
   });
+
+  it("returns finalPaths with actual on-disk path (including extension) for each item", async () => {
+    // Item uses view.php URL that redirects, Content-Disposition gives .pdf extension
+    mockAgent.get(BASE)
+      .intercept({ path: "/mod/resource/view.php?id=99", method: "GET" })
+      .reply(200, "pdf bytes", {
+        headers: { "content-disposition": 'attachment; filename="Lecture.pdf"' },
+      });
+
+    const queue = new DownloadQueue({ maxConcurrent: 1 });
+    const destPath = join(tmpDir, "Lecture");  // no extension
+    const result = await queue.run([
+      { url: `${BASE}/mod/resource/view.php?id=99`, destPath, sessionCookies: "" },
+    ]);
+
+    expect(result.downloaded).toBe(1);
+    expect(result.finalPaths[0]).toBe(destPath + ".pdf");
+    expect(existsSync(destPath + ".pdf")).toBe(true);
+  });
 });
 
 describe("extractFilename — unit tests", () => {

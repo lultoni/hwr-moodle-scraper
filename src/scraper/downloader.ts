@@ -154,6 +154,8 @@ export interface DownloadItem {
 
 export interface DownloadQueueResult {
   downloaded: number;
+  /** Per-item final paths (index matches input items array). undefined if the item failed. */
+  finalPaths: Array<string | undefined>;
   failed: Array<{ item: DownloadItem; error: Error }>;
 }
 
@@ -175,17 +177,19 @@ export class DownloadQueue {
     );
 
     const failed: DownloadQueueResult["failed"] = [];
+    const finalPaths: Array<string | undefined> = new Array(items.length).fill(undefined);
     let downloaded = 0;
 
     for (let i = 0; i < results.length; i++) {
       const r = results[i]!;
       if (r.status === "fulfilled") {
         downloaded++;
+        finalPaths[r.value.index] = r.value.result.finalPath;
       } else {
         failed.push({ item: items[i]!, error: r.reason as Error });
       }
     }
 
-    return { downloaded, failed };
+    return { downloaded, finalPaths, failed };
   }
 }
