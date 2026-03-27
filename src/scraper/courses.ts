@@ -14,6 +14,11 @@ export interface Activity {
   hash?: string;
 }
 
+export interface FolderFile {
+  name: string;
+  url: string;
+}
+
 export interface Section {
   sectionId: string;
   sectionName: string;
@@ -28,6 +33,15 @@ export interface ContentTree {
 export interface FetchOptions {
   baseUrl: string;
   sessionCookies: string;
+}
+
+/** Strip <span class="accesshide"> (and contents) from HTML then strip remaining tags. */
+function stripAccessHide(html: string): string {
+  // Remove accesshide spans and their text content
+  return html
+    .replace(/<span[^>]+class="[^"]*accesshide[^"]*"[^>]*>[\s\S]*?<\/span>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .trim();
 }
 
 /** Parse course search results page HTML into a Course list. */
@@ -45,59 +59,123 @@ function parseCourseSearchHtml(html: string, baseUrl: string): Course[] {
   return courses;
 }
 
+/** Fetch with basic redirect following (up to maxRedirects hops). */
+async function fetchWithRedirects(
+  url: string,
+  headers: Record<string, string>,
+  maxRedirects = 5,
+): Promise<{ statusCode: number; body: string; finalUrl: string }> {
+  const { request } = await import("undici");
+  let currentUrl = url;
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const { statusCode, headers: resHeaders, body } = await request(currentUrl, {
+      method: "GET",
+      headers,
+    });
+
+    if (statusCode >= 300 && statusCode < 400) {
+      const location = resHeaders["location"];
+      if (!location) break;
+      const loc = Array.isArray(location) ? location[0]! : location;
+      // Resolve relative redirects
+      currentUrl = loc.startsWith("http") ? loc : new URL(loc, currentUrl).toString();
+      await body.dump(); // drain to avoid memory leak
+      continue;
+    }
+
+    const text = await body.text();
+    return { statusCode, body: text, finalUrl: currentUrl };
+  }
+
+  // Exhausted redirects — return last response
+  const { statusCode, body } = await request(currentUrl, { method: "GET", headers });
+  return { statusCode, body: await body.text(), finalUrl: currentUrl };
+}
+
 export async function fetchCourseList(opts: FetchOptions & { searchQuery?: string }): Promise<Course[]> {
   const { baseUrl, sessionCookies, searchQuery } = opts;
-  const { request } = await import("undici");
 
   if (!searchQuery) return [];
 
   // Use perpage=all to fetch all results in a single request
   const url = `${baseUrl}/course/search.php?search=${encodeURIComponent(searchQuery)}&perpage=all`;
-  const { statusCode, body } = await request(url, {
-    method: "GET",
-    headers: { cookie: sessionCookies },
-  });
+  const { statusCode, body } = await fetchWithRedirects(url, { cookie: sessionCookies });
 
   if (statusCode >= 400) throw new Error(`Course list fetch failed: HTTP ${statusCode}`);
 
-  const html = await body.text();
-  return parseCourseSearchHtml(html, baseUrl);
+  return parseCourseSearchHtml(body, baseUrl);
 }
 
 export async function fetchContentTree(opts: FetchOptions & { courseId: number }): Promise<ContentTree> {
   const { baseUrl, courseId, sessionCookies } = opts;
-  const { request } = await import("undici");
 
-  const { statusCode, body } = await request(`${baseUrl}/course/view.php?id=${courseId}`, {
-    method: "GET",
-    headers: { cookie: sessionCookies },
-  });
+  const { statusCode, body } = await fetchWithRedirects(
+    `${baseUrl}/course/view.php?id=${courseId}`,
+    { cookie: sessionCookies },
+  );
 
   if (statusCode >= 400) throw new Error(`Content tree fetch failed: HTTP ${statusCode}`);
 
-  const html = await body.text();
-  return parseContentTree(html, courseId, baseUrl);
+  return parseContentTree(body, courseId, baseUrl);
+}
+
+/** Fetch a folder page and return all downloadable file links. */
+export async function fetchFolderFiles(
+  opts: FetchOptions & { folderUrl: string },
+): Promise<FolderFile[]> {
+  const { folderUrl, sessionCookies } = opts;
+
+  const { statusCode, body } = await fetchWithRedirects(folderUrl, { cookie: sessionCookies });
+  if (statusCode >= 400) return [];
+
+  return parseFolderFiles(body);
+}
+
+function parseFolderFiles(html: string): FolderFile[] {
+  const files: FolderFile[] = [];
+  // Moodle folder pages list files with pluginfile.php links or forcedownload links
+  const linkRe = /<a[^>]+href="([^"]*(?:pluginfile\.php|forcedownload)[^"]*)"[^>]*>[\s\S]*?<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = linkRe.exec(html)) !== null) {
+    const url = m[0]!;
+    const href = m[1]!;
+    // Extract filename from fp-filename span, or from URL
+    const nameMatch = /<span[^>]+class="[^"]*fp-filename[^"]*"[^>]*>([\s\S]*?)<\/span>/i.exec(url);
+    const rawName = nameMatch
+      ? nameMatch[1]!.replace(/<[^>]+>/g, "").trim()
+      : decodeURIComponent(href.split("/").pop()?.split("?")[0] ?? "") || "file";
+    files.push({ name: rawName, url: href });
+  }
+  return files;
 }
 
 function parseContentTree(html: string, courseId: number, baseUrl: string): ContentTree {
   const sections: Section[] = [];
   let sectionIndex = 0;
 
-  // Split by section boundaries using a section header pattern
-  // Moodle HTML: <li class="section ..."> ... <h3 class="sectionname">...</h3> ... activities ...
-  // We split on section headers and process each chunk
+  // Split by section boundaries — handles both old (class="section") and new Moodle HTML
+  // where the <li> tag spans multiple lines with data-sectionname attribute
   const sectionChunks = html.split(/<li[^>]+class="[^"]*\bsection\b[^"]*"/i);
 
   for (let i = 1; i < sectionChunks.length; i++) {
     const chunk = sectionChunks[i] ?? "";
-    const nameMatch = /<h3[^>]+class="[^"]*sectionname[^"]*"[^>]*>([\s\S]*?)<\/h3>/i.exec(chunk);
-    const sectionName = nameMatch
-      ? nameMatch[1]!.replace(/<[^>]+>/g, "").trim()
-      : `Section ${sectionIndex}`;
+
+    // Prefer data-sectionname attribute (new Moodle), fall back to <h3 class="sectionname">
+    const dataNameMatch = /data-sectionname="([^"]+)"/i.exec(chunk);
+    let sectionName: string;
+    if (dataNameMatch) {
+      sectionName = dataNameMatch[1]!;
+    } else {
+      const h3Match = /<h[1-6][^>]+class="[^"]*sectionname[^"]*"[^>]*>([\s\S]*?)<\/h[1-6]>/i.exec(chunk);
+      sectionName = h3Match
+        ? h3Match[1]!.replace(/<[^>]+>/g, "").trim()
+        : `Section ${sectionIndex}`;
+    }
 
     const activities: Activity[] = [];
 
-    // Find all activity items using an index-based approach to preserve the opening tag
+    // Find all activity items — <li class="activity ...">
     const activityOpenRe = /<li([^>]+class="[^"]*\bactivity\b[^"]*"[^>]*)>/gi;
     let actMatch: RegExpExecArray | null;
     while ((actMatch = activityOpenRe.exec(chunk)) !== null) {
@@ -117,6 +195,22 @@ function parseContentTree(html: string, courseId: number, baseUrl: string): Cont
   return { courseId, sections };
 }
 
+/** Map a Moodle URL path to an activity type string. */
+function activityTypeFromUrl(url: string): string {
+  if (url.includes("/mod/url/")) return "url";
+  if (url.includes("/mod/assign/")) return "assign";
+  if (url.includes("/mod/forum/")) return "forum";
+  if (url.includes("/mod/folder/")) return "folder";
+  if (url.includes("/mod/page/")) return "page";
+  if (url.includes("/mod/label/")) return "label";
+  if (url.includes("/mod/quiz/")) return "quiz";
+  if (url.includes("/mod/glossary/")) return "glossary";
+  if (url.includes("/mod/grouptool/")) return "grouptool";
+  if (url.includes("/mod/bigbluebuttonbn/")) return "bigbluebuttonbn";
+  if (url.includes("/mod/resource/")) return "resource";
+  return "resource";
+}
+
 export function parseActivityFromElement(
   element: string | null,
   pageUrl: string
@@ -129,17 +223,18 @@ export function parseActivityFromElement(
   try {
     const linkMatch = /<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/.exec(element);
     const url = linkMatch?.[1] ?? "";
-    const rawName = (linkMatch?.[2] ?? "").replace(/<[^>]+>/g, "").trim();
-    // Fall back to span text for restricted (no-link) activities
-    const spanMatch = !rawName ? /<span[^>]*>([\s\S]*?)<\/span>/i.exec(element) : null;
-    const name = rawName || (spanMatch?.[1] ?? "").replace(/<[^>]+>/g, "").trim() || "Unnamed activity";
+    const rawLinkHtml = linkMatch?.[2] ?? "";
 
-    // Determine activity type from URL pattern
-    let activityType = "resource";
-    if (url.includes("/mod/url/")) activityType = "url";
-    else if (url.includes("/mod/assign/")) activityType = "assign";
-    else if (url.includes("/mod/forum/")) activityType = "forum";
-    else if (url.includes("/mod/resource/")) activityType = "resource";
+    // Strip accesshide spans before deriving name, then strip remaining tags
+    const name = rawLinkHtml
+      ? stripAccessHide(rawLinkHtml)
+      : (() => {
+          // Fall back to span text for restricted (no-link) activities
+          const spanMatch = /<span[^>]*>([\s\S]*?)<\/span>/i.exec(element);
+          return spanMatch ? stripAccessHide(spanMatch[1]!) : "";
+        })() || "Unnamed activity";
+
+    const activityType = activityTypeFromUrl(url);
 
     // Check accessibility: dimmed_text class indicates restricted — check attrs (before content)
     const attrsEnd = element.indexOf(">");

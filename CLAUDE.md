@@ -58,11 +58,17 @@ hwr-moodle-scraper/
 | Update docs before commit | `agents/doc-updater.md` |
 
 ## Current Phase
-**Phase 4 — Implementation: COMPLETE**
-- All 22 timeline steps implemented in `src/` with 149/149 tests passing across 24 test files
+**Phase 5 — Iterative Improvements**
+- All 22 timeline steps implemented + Phase 5 fixes; 171/171 tests passing across 26 test files
 - Full CLI implementation: auth, scrape, status, wizard commands
-- Security & robustness: credential handling, rate limiting, retry logic, incremental sync
-- Next: Phase 5 — iterative improvements based on real-world testing
+- **Phase 5 fixes applied** (2026-03-27):
+  - Fixed redirect handling in `fetchContentTree` and `downloadFile` (root cause of "0 to download")
+  - Fixed activity name pollution from `<span class="accesshide">` text leaking into names
+  - Added all modtypes: `folder`, `page`, `label`, `quiz`, `glossary`, `grouptool`, `bigbluebuttonbn`
+  - Implemented folder expansion (`fetchFolderFiles`) — enumerates files inside Moodle folders
+  - Added `src/scraper/dispatch.ts` — type-aware download strategy (binary/url-txt/page-md)
+  - Added `agents/html-analyzer.md` — agent for analyzing Moodle HTML structure
+  - Added per-course debug logging in scrape command
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.
