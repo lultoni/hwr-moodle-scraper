@@ -44,6 +44,8 @@ export interface HttpRequestOptions {
   retry?: boolean;
   maxRetries?: number;
   cookie?: string;
+  followRedirects?: boolean;
+  maxRedirects?: number;
 }
 
 function assertHttps(url: string): void {
@@ -116,7 +118,28 @@ export function createHttpClient(): HttpClient {
     }
 
     // Resolve final URL (undici doesn't auto-follow redirects by default; handle 3xx)
-    const finalUrl = (resHeaders["location"] as string | undefined) ?? url;
+    const location = (resHeaders["location"] as string | undefined);
+    const finalUrl = location ?? url;
+
+    // Collect any new session cookies from this response
+    const resCookies = resHeaders["set-cookie"];
+    const newCookies = resCookies
+      ? (Array.isArray(resCookies) ? resCookies : [resCookies]).map(c => c.split(";")[0]).join("; ")
+      : "";
+
+    // Follow redirects if requested
+    if (statusCode >= 300 && statusCode < 400 && options.followRedirects && location) {
+      const maxRedirects = options.maxRedirects ?? 5;
+      if (maxRedirects > 0) {
+        // Merge cookies: existing + any new ones from this redirect
+        const mergedCookie = [options.cookie, newCookies].filter(Boolean).join("; ");
+        return doRequest("GET", location, undefined, {
+          ...options,
+          cookie: mergedCookie || undefined,
+          maxRedirects: maxRedirects - 1,
+        });
+      }
+    }
 
     return {
       status: statusCode,

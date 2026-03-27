@@ -118,7 +118,7 @@ describe("STEP-008: Credential prompt — CSRF logintoken", () => {
     expect(postMock).toHaveBeenCalledWith(
       expect.stringContaining("/login/index.php"),
       expect.objectContaining({ logintoken: "abc123token" }),
-      expect.objectContaining({ cookie: "MoodleSession=abc" })
+      expect.objectContaining({ followRedirects: true, cookie: "MoodleSession=abc" })
     );
   });
 
@@ -136,7 +136,7 @@ describe("STEP-008: Credential prompt — CSRF logintoken", () => {
     expect(postMock).toHaveBeenCalledWith(
       expect.stringContaining("/login/index.php"),
       expect.not.objectContaining({ logintoken: expect.anything() }),
-      undefined
+      expect.objectContaining({ followRedirects: true })
     );
   });
 });

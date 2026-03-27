@@ -80,7 +80,7 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
     response = await httpClient.post(
       `${baseUrl}/login/index.php`,
       body,
-      sessionCookie ? { cookie: sessionCookie } : undefined
+      { followRedirects: true, cookie: sessionCookie || undefined }
     ) as typeof response;
   } catch (err) {
     const msg = `Login failed: network error — ${(err as Error).message}.`;
