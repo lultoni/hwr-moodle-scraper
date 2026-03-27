@@ -65,10 +65,11 @@
 
 **Checklist**:
 - [x] All 22 steps implemented
-- [x] All 149 tests passing (24 test files)
+- [x] All 171 tests passing (26 test files)
 - [x] Full CLI with auth, scrape, status, wizard commands
 - [x] Security: keychain integration, credential handling, HTTPS + retry logic
 - [x] Sync: rate limiting, incremental updates, state management
+- [x] Phase 5 improvements: redirect handling, folder expansion, type-aware dispatch
 
 ---
 

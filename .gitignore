@@ -13,3 +13,4 @@ build/
 session.json
 cookies.json
 .claude/settings.local.json
+example_course_html

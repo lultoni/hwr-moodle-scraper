@@ -1,10 +1,11 @@
 # Feature Timeline — HWR Moodle Scraper
 
 - **Status**: COMPLETE
-- **Last updated**: 2026-03-26
+- **Last updated**: 2026-03-27
 - **Traceability audit**: PASS (75/75)
 - **Total steps**: 22
 - **Requirements coverage**: 75/75
+- **Phase 5 improvements**: Redirect handling, activity name cleanup, folder expansion, type-aware dispatch, debug logging
 
 ---
 
