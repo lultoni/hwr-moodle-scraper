@@ -59,7 +59,7 @@ hwr-moodle-scraper/
 
 ## Current Phase
 **Phase 5 — Iterative Improvements**
-- All 22 timeline steps implemented + Phase 5 fixes; 171/171 tests passing across 26 test files
+- All 22 timeline steps implemented + Phase 5 fixes; 192/192 tests passing across 26 test files
 - Full CLI implementation: auth, scrape, status, wizard commands
 - **Phase 5 fixes applied** (2026-03-27):
   - Fixed redirect handling in `fetchContentTree` and `downloadFile` (root cause of "0 to download")
@@ -69,6 +69,9 @@ hwr-moodle-scraper/
   - Added `src/scraper/dispatch.ts` — type-aware download strategy (binary/url-txt/page-md)
   - Added `agents/html-analyzer.md` — agent for analyzing Moodle HTML structure
   - Added per-course debug logging in scrape command
+  - Progress bar fixes: added `onComplete` callback to `DownloadFileOptions` and `DownloadItem` for accurate incremental progress tracking
+  - Onetopic section names: `parseOnetopicTabs(html)` builds sectionNumber→name map from tab nav, used as 3rd fallback in `parseContentTree`
+  - Label content + activity descriptions: extract `activity-altcontent` to `Activity.description`, produce `label-md` items and `description-md` sidecars with HTML-to-Markdown conversion
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.

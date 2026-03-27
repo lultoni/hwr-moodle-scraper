@@ -176,6 +176,22 @@ describe("STEP-014: Download progress display", () => {
     expect(progressEvents.length).toBeGreaterThan(0);
     expect(progressEvents[progressEvents.length - 1]?.bytesReceived).toBeGreaterThan(0);
   });
+
+  it("calls onComplete callback after successful download", async () => {
+    const tmpDir2 = mkdtempSync(join(tmpdir(), "msc-complete-test-"));
+    mockAgent.get(BASE).intercept({ path: "/oncomplete.pdf", method: "GET" }).reply(200, "content");
+
+    let completedPath = "";
+    await downloadFile({
+      url: `${BASE}/oncomplete.pdf`,
+      destPath: join(tmpDir2, "oncomplete.pdf"),
+      sessionCookies: "",
+      onComplete: (p) => { completedPath = p; },
+    });
+
+    rmSync(tmpDir2, { recursive: true, force: true });
+    expect(completedPath).toContain("oncomplete");
+  });
 });
 
 describe("STEP-014: DownloadQueue — per-item error isolation", () => {

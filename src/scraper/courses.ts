@@ -12,6 +12,8 @@ export interface Activity {
   isAccessible: boolean;
   resourceId?: string;
   hash?: string;
+  /** Raw inner HTML of activity-altcontent (label content or activity description). */
+  description?: string;
 }
 
 export interface FolderFile {
@@ -54,6 +56,22 @@ function decodeHtmlEntities(s: string): string {
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&apos;/gi, "'");
+}
+
+/**
+ * Parse onetopic-format tab nav to build sectionNumber → name map.
+ * Matches: <li id="onetabid-NNN"...><a href="...section=N...">Name</a>
+ */
+function parseOnetopicTabs(html: string): Map<number, string> {
+  const map = new Map<number, string>();
+  const tabRe = /id="onetabid-\d+"[\s\S]*?href="[^"]*[?&]section=(\d+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = tabRe.exec(html)) !== null) {
+    const sectionNum = parseInt(m[1]!, 10);
+    const name = decodeHtmlEntities(m[2]!.replace(/<[^>]+>/g, "").trim());
+    if (name && !map.has(sectionNum)) map.set(sectionNum, name);
+  }
+  return map;
 }
 
 /** Parse course search results page HTML into a Course list. */
@@ -166,6 +184,9 @@ function parseContentTree(html: string, courseId: number, baseUrl: string): Cont
   const sections: Section[] = [];
   let sectionIndex = 0;
 
+  // Pre-parse onetopic tab names once (used as 3rd fallback)
+  const onetopicTabs = parseOnetopicTabs(html);
+
   // Split by section boundaries — handles both old (class="section") and new Moodle HTML
   // where the <li> tag spans multiple lines with data-sectionname attribute
   const sectionChunks = html.split(/<li[^>]+class="[^"]*\bsection\b[^"]*"/i);
@@ -173,16 +194,23 @@ function parseContentTree(html: string, courseId: number, baseUrl: string): Cont
   for (let i = 1; i < sectionChunks.length; i++) {
     const chunk = sectionChunks[i] ?? "";
 
-    // Prefer data-sectionname attribute (new Moodle), fall back to <h3 class="sectionname">
+    // 1. data-sectionname attribute (new Moodle)
+    // 2. <h3 class="sectionname"> heading
+    // 3. Onetopic tab nav (data-number → tab map)
     const dataNameMatch = /data-sectionname="([^"]+)"/i.exec(chunk);
     let sectionName: string;
     if (dataNameMatch) {
       sectionName = decodeHtmlEntities(dataNameMatch[1]!);
     } else {
       const h3Match = /<h[1-6][^>]+class="[^"]*sectionname[^"]*"[^>]*>([\s\S]*?)<\/h[1-6]>/i.exec(chunk);
-      sectionName = h3Match
-        ? decodeHtmlEntities(h3Match[1]!.replace(/<[^>]+>/g, "").trim())
-        : `Section ${sectionIndex}`;
+      if (h3Match) {
+        sectionName = decodeHtmlEntities(h3Match[1]!.replace(/<[^>]+>/g, "").trim());
+      } else {
+        // Onetopic: use data-number to look up tab name
+        const dataNumMatch = /data-number="(\d+)"/i.exec(chunk);
+        const sectionNum = dataNumMatch ? parseInt(dataNumMatch[1]!, 10) : -1;
+        sectionName = (sectionNum >= 0 && onetopicTabs.get(sectionNum)) || `Section ${sectionIndex}`;
+      }
     }
 
     const activities: Activity[] = [];
@@ -238,15 +266,23 @@ export function parseActivityFromElement(
     const rawLinkHtml = linkMatch?.[2] ?? "";
 
     // Strip accesshide spans before deriving name, then strip remaining tags, then decode entities
-    const name = rawLinkHtml
+    let name = rawLinkHtml
       ? decodeHtmlEntities(stripAccessHide(rawLinkHtml))
       : (() => {
           // Fall back to span text for restricted (no-link) activities
           const spanMatch = /<span[^>]*>([\s\S]*?)<\/span>/i.exec(element);
           return spanMatch ? decodeHtmlEntities(stripAccessHide(spanMatch[1]!)) : "";
-        })() || "Unnamed activity";
+        })() || "";
 
-    const activityType = activityTypeFromUrl(url);
+    // For labels (no URL): get name from data-activityname attribute
+    if (!url && !name) {
+      const dataNameMatch = /data-activityname="([^"]+)"/i.exec(element);
+      if (dataNameMatch) name = decodeHtmlEntities(dataNameMatch[1]!);
+    }
+
+    if (!name) name = "Unnamed activity";
+
+    const activityType = url ? activityTypeFromUrl(url) : "label";
 
     // Check accessibility: dimmed_text class indicates restricted — check attrs (before content)
     const attrsEnd = element.indexOf(">");
@@ -256,6 +292,14 @@ export function parseActivityFromElement(
     const resourceIdMatch = /data-resource-id="([^"]+)"/.exec(element);
     const hashMatch = /data-hash="([^"]+)"/.exec(element);
 
+    // Extract activity-altcontent (label inline content or activity description sidecar)
+    let description: string | undefined;
+    const altcontentMatch = /<div[^>]+class="[^"]*activity-altcontent[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?:<\/div>|$)/i.exec(element);
+    if (altcontentMatch?.[1]?.trim()) {
+      // Strip outer wrapper divs but keep inner HTML for turndown conversion
+      description = altcontentMatch[1].trim();
+    }
+
     return {
       activityType,
       activityName: name,
@@ -263,6 +307,7 @@ export function parseActivityFromElement(
       isAccessible,
       resourceId: resourceIdMatch?.[1],
       hash: hashMatch?.[1],
+      ...(description ? { description } : {}),
     };
   } catch (err) {
     process.stderr.write(

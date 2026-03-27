@@ -92,4 +92,35 @@ describe("buildDownloadPlan: activity type dispatch", () => {
     const items = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
     expect(items[0]?.destPath).toMatch(/\.url\.txt$/);
   });
+
+  it("label with description → label-md strategy, destPath ends in .md", () => {
+    const act = makeActivity({ activityType: "label", url: "", description: "<p>Dauer: 120 Minuten</p>" });
+    const items = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
+    expect(items).toHaveLength(1);
+    expect(items[0]?.strategy).toBe("label-md");
+    expect(items[0]?.destPath).toMatch(/\.md$/);
+  });
+
+  it("label without description → skip (no download item)", () => {
+    const act = makeActivity({ activityType: "label", url: "", description: undefined });
+    const items = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
+    expect(items).toHaveLength(0);
+  });
+
+  it("resource with description → binary item plus description-md sidecar", () => {
+    const act = makeActivity({
+      activityType: "resource",
+      activityName: "Aufgaben",
+      url: "https://moodle.example.com/mod/resource/view.php?id=99",
+      description: "<p>Liebe Studierende, hier die Aufgaben.</p>",
+    });
+    const items = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
+    // Should have binary item + description sidecar
+    expect(items).toHaveLength(2);
+    const binary = items.find(i => i.strategy === "binary");
+    const desc = items.find(i => i.strategy === "description-md");
+    expect(binary).toBeDefined();
+    expect(desc).toBeDefined();
+    expect(desc?.destPath).toMatch(/\.description\.md$/);
+  });
 });

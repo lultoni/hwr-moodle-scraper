@@ -431,3 +431,132 @@ describe("Parsing: HTML entity decoding in names", () => {
   });
 });
 
+describe("Parsing: Onetopic format — section names from tab nav", () => {
+  it("extracts section names from onetopic tab nav when data-sectionname is absent", async () => {
+    const html = `
+      <html><body>
+        <ul class="nav nav-tabs format_onetopic-tabs">
+          <li class="nav-item" id="onetabid-100">
+            <a href="https://moodle.example.com/course/view.php?id=5&section=1" class="nav-link">Informationen</a>
+          </li>
+          <li class="nav-item" id="onetabid-101">
+            <a href="https://moodle.example.com/course/view.php?id=5&section=2">Stichwort "Wissenschaft"</a>
+          </li>
+        </ul>
+        <ul class="topics section-list">
+          <li id="section-1"
+              class="section course-section main clearfix"
+              data-sectionid="1"
+              data-for="section"
+              data-id="100"
+              data-number="1"
+          >
+            <ul>
+              <li class="activity resource">
+                <a href="${BASE}/mod/resource/view.php?id=1">Skript</a>
+              </li>
+            </ul>
+          </li>
+          <li id="section-2"
+              class="section course-section main clearfix"
+              data-sectionid="2"
+              data-for="section"
+              data-id="101"
+              data-number="2"
+          >
+            <ul>
+              <li class="activity resource">
+                <a href="${BASE}/mod/resource/view.php?id=2">Folien</a>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </body></html>`;
+
+    mockAgent.get(BASE)
+      .intercept({ path: `/course/view.php?id=5`, method: "GET" })
+      .reply(200, html);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 5, sessionCookies: "" });
+
+    expect(tree.sections[0]?.sectionName).toBe("Informationen");
+    expect(tree.sections[1]?.sectionName).toBe('Stichwort "Wissenschaft"');
+  });
+});
+
+describe("Parsing: Label inline content extraction", () => {
+  it("extracts label activity-altcontent HTML as description", async () => {
+    const html = `
+      <html><body>
+        <li class="section" data-sectionname="Klausur">
+          <ul>
+            <li class="activity label modtype_label" id="module-999">
+              <div class="activity-item focus-control activityinline" data-activityname="Klausurinfo" data-region="activity-card">
+                <div class="activity-grid noname-grid">
+                  <div class="activity-altcontent text-break ">
+                    <div class="no-overflow"><div class="no-overflow"><p>Dauer: 120 Minuten</p><p>Hilfsmittel: Taschenrechner</p></div></div>
+                  </div>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </li>
+      </body></html>`;
+
+    mockAgent.get(BASE)
+      .intercept({ path: `/course/view.php?id=10`, method: "GET" })
+      .reply(200, html);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 10, sessionCookies: "" });
+    const label = tree.sections[0]?.activities[0];
+
+    expect(label?.activityType).toBe("label");
+    expect(label?.activityName).toBe("Klausurinfo");
+    expect(label?.description).toContain("Dauer: 120 Minuten");
+  });
+
+  it("label name falls back to data-activityname when no link present", () => {
+    const element = `
+      class="activity label modtype_label"
+    >
+      <div class="activity-item activityinline" data-activityname="Wichtige Hinweise">
+        <div class="activity-grid noname-grid">
+          <div class="activity-altcontent text-break">
+            <div class="no-overflow"><div class="no-overflow"><p>Bitte pünktlich erscheinen.</p></div></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const result = parseActivityFromElement(element, `${BASE}/course/view.php?id=1`);
+    expect(result?.activityName).toBe("Wichtige Hinweise");
+    expect(result?.activityType).toBe("label");
+    expect(result?.description).toContain("Bitte pünktlich erscheinen");
+  });
+});
+
+describe("Parsing: Activity description extraction", () => {
+  it("extracts activity-description HTML from resource with attached description", () => {
+    const element = `
+      class="activity resource modtype_resource"
+    >
+      <div class="activity-item">
+        <div class="activity-grid">
+          <div class="activityname">
+            <a href="${BASE}/mod/resource/view.php?id=50">
+              <span class="instancename">Aufgaben Asynchron <span class="accesshide"> Datei</span></span>
+            </a>
+          </div>
+          <div class="activity-altcontent text-break activity-description">
+            <div class="no-overflow"><div class="no-overflow"><p>Liebe Studierende, hier die Aufgaben.</p></div></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const result = parseActivityFromElement(element, `${BASE}/course/view.php?id=1`);
+    expect(result?.activityType).toBe("resource");
+    expect(result?.activityName).toBe("Aufgaben Asynchron");
+    expect(result?.description).toContain("Liebe Studierende");
+  });
+});
+
+

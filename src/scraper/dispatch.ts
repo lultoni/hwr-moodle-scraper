@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { sanitiseFilename } from "../fs/sanitise.js";
 import type { Activity } from "./courses.js";
 
-export type DownloadStrategy = "binary" | "url-txt" | "page-md";
+export type DownloadStrategy = "binary" | "url-txt" | "page-md" | "label-md" | "description-md";
 
 export interface DownloadPlanItem {
   activity: Activity;
@@ -23,7 +23,6 @@ const SKIP_TYPES = new Set([
   "glossary",
   "grouptool",
   "bigbluebuttonbn",
-  "label",
 ]);
 
 /**
@@ -40,8 +39,11 @@ export function buildDownloadPlan(
 
   for (const activity of activities) {
     if (!activity.isAccessible) continue;
-    if (!activity.url) continue;
     if (SKIP_TYPES.has(activity.activityType)) continue;
+
+    // Labels have no URL — only save if they have description content
+    if (!activity.url && activity.activityType !== "label") continue;
+    if (activity.activityType === "label" && !activity.description) continue;
 
     const safeName = sanitiseFilename(activity.activityName || "unnamed");
     const safeSection = sanitiseFilename(sectionName);
@@ -60,6 +62,10 @@ export function buildDownloadPlan(
         destPath = join(sectionDir, `${safeName}.md`);
         strategy = "page-md";
         break;
+      case "label":
+        destPath = join(sectionDir, `${safeName}.md`);
+        strategy = "label-md";
+        break;
       default:
         // resource, folder files (already expanded), and unknown types → binary
         destPath = join(sectionDir, safeName);
@@ -75,6 +81,18 @@ export function buildDownloadPlan(
       courseName,
       sectionName,
     });
+
+    // Sidecar: save description as .description.md alongside binary/url/page items
+    if (activity.description && strategy !== "label-md") {
+      items.push({
+        activity,
+        url: activity.url,
+        destPath: join(sectionDir, `${safeName}.description.md`),
+        strategy: "description-md",
+        courseName,
+        sectionName,
+      });
+    }
   }
 
   return items;

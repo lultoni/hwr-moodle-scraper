@@ -5,7 +5,7 @@
 - **Traceability audit**: PASS (75/75)
 - **Total steps**: 22
 - **Requirements coverage**: 75/75
-- **Phase 5 improvements**: Redirect handling, activity name cleanup, folder expansion, type-aware dispatch, debug logging
+- **Phase 5 improvements**: Redirect handling, activity name cleanup, folder expansion, type-aware dispatch, debug logging, progress bar fixes, onetopic section names, label content + activity descriptions
 
 ---
 

@@ -19,6 +19,7 @@ export interface ScrapeOptions {
   outputDir: string;
   dryRun: boolean;
   force: boolean;
+  checkFiles?: boolean;
   baseUrl?: string;
   nonInteractive?: boolean;
   quiet?: boolean;
@@ -33,6 +34,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     outputDir,
     dryRun,
     force,
+    checkFiles = false,
     baseUrl = "https://moodle.hwr-berlin.de",
     quiet = false,
     verbose = false,
@@ -145,7 +147,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   // Sync plan
-  const plan = computeSyncPlan({ state, currentTree: expandedTrees, force, dryRun });
+  const plan = computeSyncPlan({ state, currentTree: expandedTrees, force, checkFiles, dryRun });
 
   const downloads = plan.filter((p) => p.action === SyncAction.DOWNLOAD);
   const skipped = plan.filter((p) => p.action === SyncAction.SKIP);
@@ -185,13 +187,15 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   // Separate binary downloads from special-handling types
   const binaryItems: DownloadItem[] = [];
-  const specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string; label: string }> = [];
+  const specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string; label: string; description?: string }> = [];
 
   const totalItems = downloads.length;
 
   for (let i = 0; i < downloads.length; i++) {
     const item = downloads[i]!;
-    if (!item.url || !item.courseId) continue;
+    if (!item.courseId) continue;
+    // Labels have no URL — still process via activity meta
+    if (!item.url && !item.resourceId) continue;
 
     const resourceId = item.resourceId ?? "";
     const meta = activityByResourceId.get(resourceId);
@@ -200,6 +204,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     const counter = verbose ? ` (${i + 1}/${totalItems})` : "";
 
     if (!meta?.activity) {
+      if (!item.url) continue;
       // Fallback: treat as binary download using URL-derived filename
       const urlPathname = new URL(item.url).pathname;
       const rawSegment = urlPathname.split("/").pop() ?? "";
@@ -210,16 +215,29 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       continue;
     }
 
-    const [planItem] = buildDownloadPlan([meta.activity], courseName, sectionName, outputDir);
-    if (!planItem) continue;
-
-    if (planItem.strategy === "binary") {
-      logger.debug(`[DOWNLOAD] ${courseName} / ${sectionName} / ${meta.activity.activityName}${counter}`);
-      mkdirSync(dirname(planItem.destPath), { recursive: true });
-      binaryItems.push({ url: planItem.url, destPath: planItem.destPath, sessionCookies, retryBaseDelayMs });
-    } else {
-      logger.debug(`[DOWNLOAD] ${courseName} / ${sectionName} / ${meta.activity.activityName} (${planItem.strategy})${counter}`);
-      specialItems.push({ item, destPath: planItem.destPath, strategy: planItem.strategy, label: meta.activity.activityName });
+    const planItems = buildDownloadPlan([meta.activity], courseName, sectionName, outputDir);
+    for (const planItem of planItems) {
+      if (planItem.strategy === "binary") {
+        logger.debug(`[DOWNLOAD] ${courseName} / ${sectionName} / ${meta.activity.activityName}${counter}`);
+        mkdirSync(dirname(planItem.destPath), { recursive: true });
+        // onComplete uses bar via closure — bar may not exist yet; check at call time
+        binaryItems.push({
+          url: planItem.url,
+          destPath: planItem.destPath,
+          sessionCookies,
+          retryBaseDelayMs,
+          onComplete: (fp) => { if (bar) bar.increment(1, { file: basename(fp) }); },
+        });
+      } else {
+        logger.debug(`[DOWNLOAD] ${courseName} / ${sectionName} / ${meta.activity.activityName} (${planItem.strategy})${counter}`);
+        specialItems.push({
+          item,
+          destPath: planItem.destPath,
+          strategy: planItem.strategy,
+          label: meta.activity.activityName,
+          description: meta.activity.description,
+        });
+      }
     }
   }
 
@@ -237,37 +255,15 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     bar.start(binaryItems.length + specialItems.length, 0, { file: "" });
   }
 
-  // Attach progress callbacks to binary items for the bar
-  const binaryItemsWithProgress: DownloadItem[] = binaryItems.map((bi) => ({
-    ...bi,
-    onProgress: bar
-      ? () => { /* progress tracked per-file completion below */ }
-      : undefined,
-  }));
-
   // Execute binary downloads via queue
   let downloadedCount = 0;
   let failedCount = 0;
 
-  if (binaryItemsWithProgress.length > 0) {
+  if (binaryItems.length > 0) {
     const queue = new DownloadQueue({ maxConcurrent });
-
-    // Wrap each item to update bar on completion
-    const wrappedItems: DownloadItem[] = binaryItemsWithProgress.map((bi) => ({
-      ...bi,
-      onProgress: (e) => {
-        // Update bar filename on first progress event for this file
-        if (bar && e.bytesReceived > 0) {
-          bar.update({ file: basename(bi.destPath) });
-        }
-      },
-    }));
-
-    const result = await queue.run(wrappedItems);
+    const result = await queue.run(binaryItems);
     downloadedCount += result.downloaded;
     failedCount += result.failed.length;
-
-    if (bar) bar.update(result.downloaded, { file: "" });
 
     for (const { item: failedItem, error } of result.failed) {
       logger.warn(`  Failed to download ${failedItem.url}: ${error.message}`);
@@ -276,7 +272,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   // Execute special-type downloads sequentially
   let TurndownService: typeof import("turndown") | undefined;
-  for (const { item, destPath, strategy, label } of specialItems) {
+  for (const { item, destPath, strategy, label, description } of specialItems) {
     try {
       mkdirSync(dirname(destPath), { recursive: true });
       if (strategy === "url-txt") {
@@ -288,6 +284,11 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         if (!TurndownService) TurndownService = (await import("turndown")).default;
         const td = new TurndownService();
         const md = td.turndown(html);
+        await writeFile(destPath, md, { mode: 0o600 });
+      } else if (strategy === "label-md" || strategy === "description-md") {
+        if (!TurndownService) TurndownService = (await import("turndown")).default;
+        const td = new TurndownService();
+        const md = td.turndown(description ?? "");
         await writeFile(destPath, md, { mode: 0o600 });
       }
       downloadedCount++;

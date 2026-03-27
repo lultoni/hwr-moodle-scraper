@@ -14,6 +14,7 @@ export interface DownloadFileOptions {
   destPath: string;
   sessionCookies: string;
   onProgress?: (e: ProgressEvent) => void;
+  onComplete?: (finalPath: string) => void;
   /** Base delay in ms for exponential backoff retries. Default 5000. */
   retryBaseDelayMs?: number;
 }
@@ -67,7 +68,7 @@ export function extractFilename(
 }
 
 export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadFileResult> {
-  const { url, destPath, sessionCookies, onProgress, retryBaseDelayMs = 5000 } = opts;
+  const { url, destPath, sessionCookies, onProgress, onComplete, retryBaseDelayMs = 5000 } = opts;
 
   let finalPath = destPath;
 
@@ -138,6 +139,7 @@ export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadF
     },
   );
 
+  onComplete?.(finalPath);
   return { finalPath };
 }
 
@@ -146,6 +148,7 @@ export interface DownloadItem {
   destPath: string;
   sessionCookies: string;
   onProgress?: (e: ProgressEvent) => void;
+  onComplete?: (finalPath: string) => void;
   retryBaseDelayMs?: number;
 }
 
