@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { sanitiseFilename } from "../fs/sanitise.js";
 import type { Activity } from "./courses.js";
 
-export type DownloadStrategy = "binary" | "url-txt" | "page-md" | "label-md" | "description-md";
+export type DownloadStrategy = "binary" | "url-txt" | "page-md" | "label-md" | "description-md" | "info-md";
 
 export interface DownloadPlanItem {
   activity: Activity;
@@ -16,12 +16,37 @@ export interface DownloadPlanItem {
   sectionName: string;
 }
 
-/** Activity types that are not directly downloadable. */
-const SKIP_TYPES = new Set([
-  "assign",
+/**
+ * Activity types whose pages are worth fetching and converting to Markdown.
+ * These serve HTML with readable content (discussion threads, quiz overviews, etc.).
+ */
+const PAGE_MD_TYPES = new Set([
   "forum",
   "quiz",
   "glossary",
+  "book",
+  "lesson",
+  "wiki",
+  "workshop",
+]);
+
+/**
+ * Activity types that are interactive or embed external content — not fetchable as plain HTML.
+ * These are saved as a structured info card (.md) containing the activity title, URL, and description.
+ */
+const INFO_MD_TYPES = new Set([
+  "assign",
+  "feedback",
+  "choice",
+  "vimp",        // Video player (HWR-specific)
+  "hvp",         // H5P interactive content
+  "h5pactivity", // H5P activity (Moodle 4.x native)
+  "scorm",       // SCORM packages
+  "flashcard",   // Flashcard module
+  "survey",      // Survey module
+  "chat",        // Chat module
+  "lti",         // External Tool (LTI)
+  "imscp",       // IMS Content Package
   "grouptool",
   "bigbluebuttonbn",
 ]);
@@ -32,12 +57,15 @@ const SKIP_TYPES = new Set([
  * Strategy selection:
  *   - `binary`        — `resource` activities and expanded folder files; content downloaded as-is
  *   - `url-txt`       — `url` activities; target URL saved as a `.url.txt` text file
- *   - `page-md`       — `page` activities; HTML fetched and converted to Markdown
+ *   - `page-md`       — `page`, `forum`, `quiz`, `glossary`, `book`, `lesson`, `wiki`, `workshop`;
+ *                       HTML fetched and converted to Markdown
  *   - `label-md`      — `label` activities with a `description`; HTML description saved as `.md`
  *   - `description-md`— sidecar `.description.md` file generated for any non-label activity
  *                       that has a `description` field (activity details/metadata HTML)
+ *   - `info-md`       — interactive/embed types (`assign`, `feedback`, `choice`, `vimp`, `hvp`, etc.);
+ *                       a structured Markdown info card with title, Moodle URL, and description is saved
  *
- * Inaccessible activities and non-downloadable types (assign, forum, quiz, etc.) are excluded.
+ * Inaccessible activities are excluded.
  * Labels without description content are also excluded (nothing to save).
  */
 export function buildDownloadPlan(
@@ -51,7 +79,6 @@ export function buildDownloadPlan(
 
   for (const activity of activities) {
     if (!activity.isAccessible) continue;
-    if (SKIP_TYPES.has(activity.activityType)) continue;
 
     // Labels have no URL — only save if they have description content
     if (!activity.url && activity.activityType !== "label") continue;
@@ -81,9 +108,17 @@ export function buildDownloadPlan(
         strategy = "label-md";
         break;
       default:
-        // resource, folder files (already expanded), and unknown types → binary
-        destPath = join(sectionDir, safeName);
-        strategy = "binary";
+        if (PAGE_MD_TYPES.has(activity.activityType)) {
+          destPath = join(sectionDir, `${safeName}.md`);
+          strategy = "page-md";
+        } else if (INFO_MD_TYPES.has(activity.activityType)) {
+          destPath = join(sectionDir, `${safeName}.md`);
+          strategy = "info-md";
+        } else {
+          // resource, folder files (already expanded), and unknown types → binary
+          destPath = join(sectionDir, safeName);
+          strategy = "binary";
+        }
         break;
     }
 
@@ -96,7 +131,7 @@ export function buildDownloadPlan(
       sectionName,
     });
 
-    // Sidecar: save description as .description.md alongside binary/url/page items
+    // Sidecar: save description as .description.md alongside non-label items
     if (activity.description && strategy !== "label-md") {
       items.push({
         activity,

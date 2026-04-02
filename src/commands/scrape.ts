@@ -1,11 +1,11 @@
 // REQ-CLI-002, REQ-CLI-008, REQ-CLI-009, REQ-CLI-010
 import { validateOrRefreshSession } from "../auth/session.js";
-import { fetchCourseList, fetchContentTree, fetchFolderFiles, type Course, type ContentTree, type Activity, type Section } from "../scraper/courses.js";
+import { fetchCourseList, fetchEnrolledCourses, fetchContentTree, fetchFolderFiles, type Course, type ContentTree, type Activity, type Section } from "../scraper/courses.js";
 import { buildDownloadPlan } from "../scraper/dispatch.js";
-import { buildCourseShortPaths } from "../scraper/course-naming.js";
+import { buildCourseShortPaths, resolveSemesterDir } from "../scraper/course-naming.js";
 import { getResourceId } from "../scraper/resource-id.js";
 import { computeSyncPlan, SyncAction } from "../sync/incremental.js";
-import { StateManager, migrateStatePaths, type CourseState, type State } from "../sync/state.js";
+import { StateManager, migrateStatePaths, relocateFiles, type CourseState, type State } from "../sync/state.js";
 import { KeychainAdapter } from "../auth/keychain.js";
 import { createHttpClient } from "../http/client.js";
 import { createLogger, LogLevel, type Logger } from "../logger.js";
@@ -62,17 +62,19 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Course search query from config (e.g. "WI24A")
   const searchQuery = (await config.get("courseSearch")) as string | undefined;
 
-  // Course list
+  // Course list — prefer dashboard (all enrolled courses) over search query
   const courses: Course[] = opts.courses
     ? opts.courses.map((id) => ({ courseId: id, courseName: String(id), courseUrl: `${baseUrl}/course/view.php?id=${id}` }))
-    : await fetchCourseList({
-        baseUrl,
-        sessionCookies,
-        ...(searchQuery ? { searchQuery } : {}),
-      });
+    : searchQuery
+      ? await fetchCourseList({ baseUrl, sessionCookies, searchQuery })
+      : await fetchEnrolledCourses({ baseUrl, sessionCookies });
 
   if (courses.length === 0) {
-    logger.info("No courses found. Set a search query with: moodle-scraper config set courseSearch <query>");
+    if (searchQuery) {
+      logger.info("No courses found matching the search query. Try: msc config set courseSearch <keyword>");
+    } else {
+      logger.info("No enrolled courses found on the Moodle dashboard. Make sure you are enrolled in at least one course.");
+    }
     return;
   }
 
@@ -85,14 +87,26 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   // Build courseId → { semesterDir, shortName } for organised folder structure
-  const courseShortPaths = buildCourseShortPaths(courses);
+  const skPlacement = ((await config.get("skPlacement")) as "separate" | "in-semester" | undefined) ?? "separate";
+  const skSemester = ((await config.get("skSemester")) as string | undefined) ?? "";
+  const rawCourseShortPaths = buildCourseShortPaths(courses);
+  // Apply SK placement resolution
+  const courseShortPaths = new Map<number, { semesterDir: string; shortName: string }>();
+  for (const [id, sp] of rawCourseShortPaths) {
+    courseShortPaths.set(id, { ...sp, semesterDir: resolveSemesterDir(sp.semesterDir, skPlacement, skSemester) });
+  }
 
   // Load state and auto-migrate any old-style localPaths to new short paths
   const rawState = await stateManager.load() ?? { courses: {} };
   const courseShortPathsStr = new Map<string, { semesterDir: string; shortName: string }>();
   for (const [id, sp] of courseShortPaths) courseShortPathsStr.set(String(id), sp);
-  const { state, changed } = migrateStatePaths(rawState as State, outputDir, courseShortPathsStr);
-  if (changed) await stateManager.save({ courses: state.courses });
+  const { state: migratedState, changed: pathsChanged } = migrateStatePaths(rawState as State, outputDir, courseShortPathsStr);
+  // Relocate files on disk if semesterDir has changed (e.g. skPlacement toggle)
+  const { state, changed: relocateChanged } = relocateFiles(migratedState, outputDir, courseShortPathsStr);
+  if (pathsChanged || relocateChanged) {
+    await stateManager.save({ courses: state.courses });
+    if (relocateChanged) logger.info("Moved files to updated folder layout.");
+  }
 
   logger.debug("Fetching content trees…");
 
@@ -213,7 +227,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   // Separate binary downloads from special-handling types
   const binaryItems: Array<{ downloadItem: DownloadItem; planItem: typeof downloads[0] }> = [];
-  const specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string; label: string; description?: string }> = [];
+  const specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string; label: string; description?: string; activityType?: string }> = [];
   // Items that are acknowledged but not downloadable (e.g. assign, forum, quiz) — save to state so they're not re-planned
   const acknowledgedItems: Array<typeof downloads[0]> = [];
 
@@ -251,8 +265,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
     const planItems = buildDownloadPlan([meta.activity], courseName, sectionName, outputDir, semesterDir);
     if (planItems.length === 0) {
-      // Activity type is not downloadable (assign, forum, quiz, etc.) — acknowledge it
-      logger.debug(`[SKIP-TYPE] ${courseName} / ${sectionName} / ${meta.activity.activityName} (${meta.activity.activityType} — not downloadable)`);
+      // Nothing to save (e.g. label with no description) — acknowledge so it's not re-planned
+      logger.debug(`[SKIP-TYPE] ${courseName} / ${sectionName} / ${meta.activity.activityName} (${meta.activity.activityType} — nothing to save)`);
       acknowledgedItems.push(item);
       continue;
     }
@@ -271,12 +285,14 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           planItem: item,
         });
       } else {
-        logger.debug(`[DOWNLOAD] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${meta.activity.activityName} (${planItem.strategy})${counter}`);
+        const strategyLabel = planItem.strategy === "info-md" ? "info-md" : planItem.strategy;
+        logger.debug(`[DOWNLOAD] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${meta.activity.activityName} (${strategyLabel})${counter}`);
         specialItems.push({
           item,
           destPath: planItem.destPath,
           strategy: planItem.strategy,
           label: meta.activity.activityName,
+          activityType: meta.activity.activityType,
           ...(meta.activity.description ? { description: meta.activity.description } : {}),
         });
       }
@@ -313,7 +329,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   // Execute special-type downloads sequentially
   let TurndownService: typeof import("turndown") | undefined;
-  for (const { item, destPath, strategy, label, description } of specialItems) {
+  for (const { item, destPath, strategy, label, description, activityType } of specialItems) {
     try {
       mkdirSync(dirname(destPath), { recursive: true });
       if (strategy === "url-txt") {
@@ -326,6 +342,21 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         const td = new TurndownService();
         const md = td.turndown(html);
         await writeFile(destPath, md, { mode: 0o600 });
+      } else if (strategy === "info-md") {
+        if (!TurndownService) TurndownService = (await import("turndown")).default;
+        const td = new TurndownService();
+        const descMd = description ? td.turndown(description) : "";
+        const lines = [
+          `# ${label}`,
+          ``,
+          `**Type:** ${activityType ?? "unknown"}`,
+          `**URL:** ${item.url ?? ""}`,
+        ];
+        if (descMd) {
+          lines.push(``, `## Description`, ``, descMd);
+        }
+        lines.push(``);
+        await writeFile(destPath, lines.join("\n"), { mode: 0o600 });
       } else if (strategy === "label-md" || strategy === "description-md") {
         if (!TurndownService) TurndownService = (await import("turndown")).default;
         const td = new TurndownService();

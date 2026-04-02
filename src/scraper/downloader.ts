@@ -39,6 +39,43 @@ function isNetworkError(err: unknown): boolean {
 }
 
 /**
+ * Map common MIME types to file extensions.
+ * Only maps types that represent downloadable binary/document files.
+ * text/html is intentionally excluded — it means we received a Moodle page, not a file.
+ */
+const MIME_TO_EXT: Record<string, string> = {
+  "application/pdf": ".pdf",
+  "application/zip": ".zip",
+  "application/x-zip-compressed": ".zip",
+  "application/msword": ".doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.ms-excel": ".xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/vnd.ms-powerpoint": ".ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  "application/vnd.oasis.opendocument.text": ".odt",
+  "application/vnd.oasis.opendocument.spreadsheet": ".ods",
+  "application/vnd.oasis.opendocument.presentation": ".odp",
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/gif": ".gif",
+  "image/svg+xml": ".svg",
+  "text/plain": ".txt",
+  "text/csv": ".csv",
+  "text/markdown": ".md",
+  "application/json": ".json",
+  "application/xml": ".xml",
+  "text/xml": ".xml",
+  "audio/mpeg": ".mp3",
+  "video/mp4": ".mp4",
+  "application/octet-stream": ".bin",
+  "application/x-tar": ".tar",
+  "application/gzip": ".gz",
+  "application/x-7z-compressed": ".7z",
+  "application/x-rar-compressed": ".rar",
+};
+
+/**
  * Extract the best filename from response headers and/or the final URL.
  * Returns null if nothing useful is found.
  */
@@ -62,13 +99,33 @@ export function extractFilename(
   }
 
   // 2. Final URL pathname (strip query string, decode)
+  // Skip .php URLs — they are Moodle dispatch pages, not actual files.
+  // Content-Type fallback (step 3) handles the real extension in those cases.
   try {
     const u = new URL(finalUrl);
     const seg = u.pathname.split("/").pop() ?? "";
     const decoded = decodeURIComponent(seg);
-    if (decoded && decoded !== "/" && extname(decoded)) return decoded;
+    const ext = extname(decoded).toLowerCase();
+    if (decoded && decoded !== "/" && ext && ext !== ".php") return decoded;
   } catch {
     // ignore invalid URLs
+  }
+
+  // 3. Derive extension from Content-Type header (last resort for extensionless Moodle view URLs)
+  const ct = headers["content-type"];
+  const ctStr = Array.isArray(ct) ? ct[0] : ct;
+  if (ctStr) {
+    const mimeType = ctStr.split(";")[0]?.trim().toLowerCase();
+    if (mimeType && MIME_TO_EXT[mimeType]) {
+      // Use the last URL path segment as a basename, stripping query params
+      try {
+        const u = new URL(finalUrl);
+        const seg = decodeURIComponent(u.pathname.split("/").pop() ?? "").replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^_+|_+$/g, "") || "file";
+        return seg + MIME_TO_EXT[mimeType]!;
+      } catch {
+        return "file" + MIME_TO_EXT[mimeType]!;
+      }
+    }
   }
 
   return null;

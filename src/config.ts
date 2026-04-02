@@ -12,6 +12,10 @@ const DEFAULTS = {
   requestJitterMs: 200,
   retryBaseDelayMs: 5000,
   logFile: null as string | null,
+  /** Where to place Schlüsselkompetenzen courses: "separate" = Schluesselkompetenzen/ top-level, "in-semester" = <skSemester>/Schluesselkompetenzen/ */
+  skPlacement: "separate" as "separate" | "in-semester",
+  /** Target semester dir for SK courses when skPlacement is "in-semester" (e.g. "Semester_3"). Empty = no nesting. */
+  skSemester: "" as string,
 } as const;
 
 export type ConfigKey = keyof typeof DEFAULTS;

@@ -1,6 +1,6 @@
 // REQ-SYNC-001, REQ-SYNC-002, REQ-SEC-007
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmdirSync, renameSync as fsRenameSync } from "node:fs";
+import { join, relative, sep, dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { renameSync } from "node:fs";
 import { sanitiseFilename } from "../fs/sanitise.js";
@@ -118,6 +118,94 @@ export function migrateStatePaths(
         // else: keep old path; file will be re-downloaded to new path on next run
       }
     }
+  }
+
+  return { state, changed: anyChanged };
+}
+
+/**
+ * Remove empty directories recursively, starting from the deepest level.
+ * Stops at `stopDir` — never removes `stopDir` itself or any ancestor.
+ */
+export function removeEmptyDirs(dir: string, stopDir: string): void {
+  if (dir === stopDir || !dir.startsWith(stopDir)) return;
+  if (!existsSync(dir)) return;
+  try {
+    const entries = readdirSync(dir);
+    if (entries.length === 0) {
+      rmdirSync(dir);
+      // Recurse upward
+      removeEmptyDirs(dirname(dir), stopDir);
+    }
+  } catch {
+    // ignore errors (e.g. permission denied)
+  }
+}
+
+/**
+ * Physically move files from old localPaths to new localPaths when the state contains
+ * paths that no longer match the expected layout (e.g. after changing skPlacement).
+ *
+ * Strategy: find the safeCourse folder name within the existing localPath, then reconstruct
+ * the expected path using the new semesterDir. Only moves files that actually exist on disk.
+ *
+ * Returns { state, changed } — caller is responsible for saving state if changed.
+ */
+export function relocateFiles(
+  state: State,
+  outputDir: string,
+  courseShortPaths: Map<string, { semesterDir: string; shortName: string }>,
+): { state: State; changed: boolean } {
+  let anyChanged = false;
+  const movedFrom = new Set<string>();
+
+  for (const [courseId, courseState] of Object.entries(state.courses)) {
+    const shortPath = courseShortPaths.get(courseId);
+    if (!shortPath) continue;
+
+    const safeCourse = sanitiseFilename(shortPath.shortName).replace(/\s+/g, "_");
+    // Expected base dir under outputDir
+    const expectedCourseDir = join(outputDir, ...shortPath.semesterDir.split("/"), safeCourse);
+
+    for (const sectionState of Object.values(courseState.sections ?? {})) {
+      for (const fileState of Object.values(sectionState.files ?? {})) {
+        const lp = fileState.localPath;
+        if (!lp || !existsSync(lp)) continue;
+
+        // Find the course folder in the existing path.
+        // The path looks like: <outputDir>/<oldSemesterDirs>/<safeCourse>/<section>/<file>
+        // We locate safeCourse by splitting relative path and finding its position.
+        const relToOutput = relative(outputDir, lp);
+        const parts = relToOutput.split(sep);
+
+        // Find the index of the course folder (safeCourse) in parts
+        const courseIdx = parts.indexOf(safeCourse);
+        if (courseIdx < 0) continue;
+
+        // suffix = everything after the course folder
+        const suffix = parts.slice(courseIdx + 1).join(sep);
+        if (!suffix) continue;
+
+        const expectedPath = join(expectedCourseDir, suffix);
+        if (expectedPath === lp) continue;
+
+        // Move the file
+        try {
+          mkdirSync(dirname(expectedPath), { recursive: true });
+          fsRenameSync(lp, expectedPath);
+          movedFrom.add(dirname(lp));
+          fileState.localPath = expectedPath;
+          anyChanged = true;
+        } catch {
+          // If rename fails (e.g. cross-device), skip — file will be re-downloaded
+        }
+      }
+    }
+  }
+
+  // Remove directories that became empty after moves
+  for (const dir of movedFrom) {
+    removeEmptyDirs(dir, outputDir);
   }
 
   return { state, changed: anyChanged };

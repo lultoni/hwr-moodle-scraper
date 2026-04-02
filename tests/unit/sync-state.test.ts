@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { StateManager, migrateStatePaths, type State } from "../../src/sync/state.js";
+import { StateManager, migrateStatePaths, relocateFiles, removeEmptyDirs, type State } from "../../src/sync/state.js";
 
 describe("STEP-016: State file management", () => {
   let tmpDir: string;
@@ -199,5 +199,68 @@ describe("migrateStatePaths — state file path migration", () => {
     const { state: migrated } = migrateStatePaths(state, tmpDir, courseShortPaths);
 
     expect(migrated.courses["1"]!.sections["s1"]!.files["res1"]!.localPath).toBe(oldPath);
+  });
+});
+
+describe("relocateFiles — SK placement file moves", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "msc-relocate-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("moves a file from Schluesselkompetenzen/ to Semester_3/Schluesselkompetenzen/ when semesterDir changes", () => {
+    const oldPath = join(tmpDir, "Schluesselkompetenzen", "MeinKurs", "Abschnitt", "skript.pdf");
+    mkdirSync(join(tmpDir, "Schluesselkompetenzen", "MeinKurs", "Abschnitt"), { recursive: true });
+    writeFileSync(oldPath, "content");
+
+    const state: State = {
+      version: 1, lastSyncAt: "2026-01-01T00:00:00.000Z",
+      courses: {
+        "42": {
+          name: "SK Kurs", sections: {
+            "s0": { files: { "res1": { name: "skript.pdf", url: "https://x/1", localPath: oldPath, hash: "", lastModified: "", status: "ok" } } }
+          }
+        }
+      }
+    };
+
+    // After config change: SK goes into Semester_3/Schluesselkompetenzen
+    const courseShortPaths = new Map([["42", { semesterDir: "Semester_3/Schluesselkompetenzen", shortName: "MeinKurs" }]]);
+    const { state: updated, changed } = relocateFiles(state, tmpDir, courseShortPaths);
+
+    expect(changed).toBe(true);
+    const newPath = join(tmpDir, "Semester_3", "Schluesselkompetenzen", "MeinKurs", "Abschnitt", "skript.pdf");
+    expect(existsSync(newPath)).toBe(true);
+    expect(existsSync(oldPath)).toBe(false);
+    expect(updated.courses["42"]!.sections["s0"]!.files["res1"]!.localPath).toBe(newPath);
+  });
+
+  it("removes empty directories left behind after file moves", () => {
+    const dir = join(tmpDir, "EmptyParent", "EmptyChild");
+    mkdirSync(dir, { recursive: true });
+
+    removeEmptyDirs(dir, tmpDir);
+
+    expect(existsSync(dir)).toBe(false);
+    expect(existsSync(join(tmpDir, "EmptyParent"))).toBe(false);
+    // stopDir itself (tmpDir) must not be removed
+    expect(existsSync(tmpDir)).toBe(true);
+  });
+
+  it("does not change state when file paths are already at the expected location", () => {
+    const correctPath = join(tmpDir, "Semester_3", "Schluesselkompetenzen", "MeinKurs", "s0", "skript.pdf");
+    const state: State = {
+      version: 1, lastSyncAt: "", courses: {
+        "42": { name: "SK", sections: { "s0": { files: { "r": { name: "skript.pdf", url: "", localPath: correctPath, hash: "", lastModified: "", status: "ok" } } } } }
+      }
+    };
+    const courseShortPaths = new Map([["42", { semesterDir: "Semester_3/Schluesselkompetenzen", shortName: "MeinKurs" }]]);
+    const { changed } = relocateFiles(state, tmpDir, courseShortPaths);
+    expect(changed).toBe(false);
   });
 });

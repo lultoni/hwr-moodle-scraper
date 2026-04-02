@@ -5,7 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { MockAgent, setGlobalDispatcher, getGlobalDispatcher, Dispatcher } from "undici";
-import { fetchCourseList, fetchContentTree } from "../../src/scraper/courses.js";
+import { fetchCourseList, fetchEnrolledCourses, fetchContentTree } from "../../src/scraper/courses.js";
 
 let mockAgent: MockAgent;
 let originalDispatcher: Dispatcher;
@@ -65,6 +65,54 @@ describe("STEP-013: Course listing", () => {
     await expect(fetchCourseList({ baseUrl: BASE, sessionCookies: "", searchQuery: "TEST" })).rejects.toThrow();
   });
 });
+
+describe("STEP-013: Enrolled courses from dashboard", () => {
+  const DASHBOARD_HTML = `
+<html><body>
+  <div class="courses-view">
+    <div class="coursebox clearfix" data-courseid="10" data-type="1">
+      <div class="info"><h3 class="coursename">
+        <a class="aalink" href="${BASE}/course/view.php?id=10">WI-M01-WI1011-F01-WiSe-2024-35267 WI24A Betriebswirtschaftliche Grundlagen WiSe-2024</a>
+      </h3></div>
+    </div>
+    <div class="coursebox clearfix" data-courseid="20" data-type="1">
+      <div class="info"><h3 class="coursename">
+        <a class="aalink" href="${BASE}/course/view.php?id=20">Fachbereich Dokumentensammlung</a>
+      </h3></div>
+    </div>
+  </div>
+</body></html>`;
+
+  it("returns all enrolled courses from the Moodle dashboard page", async () => {
+    mockAgent.get(BASE)
+      .intercept({ path: /\/my\/courses\.php/, method: "GET" })
+      .reply(200, DASHBOARD_HTML, { headers: { "content-type": "text/html" } });
+
+    const courses = await fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "MoodleSession=abc" });
+
+    expect(courses).toHaveLength(2);
+    expect(courses[0]).toMatchObject({ courseId: 10, courseUrl: `${BASE}/course/view.php?id=10` });
+    expect(courses[1]).toMatchObject({ courseId: 20, courseName: "Fachbereich Dokumentensammlung" });
+  });
+
+  it("returns empty array when dashboard has no course boxes", async () => {
+    mockAgent.get(BASE)
+      .intercept({ path: /\/my\/courses\.php/, method: "GET" })
+      .reply(200, "<html><body><p>Welcome</p></body></html>", { headers: { "content-type": "text/html" } });
+
+    const courses = await fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "" });
+    expect(courses).toEqual([]);
+  });
+
+  it("throws when the dashboard endpoint returns an error", async () => {
+    mockAgent.get(BASE)
+      .intercept({ path: /\/my\/courses\.php/, method: "GET" })
+      .reply(500, "Server Error");
+
+    await expect(fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "" })).rejects.toThrow();
+  });
+});
+
 
 describe("STEP-013: Content tree traversal", () => {
   // REQ-SCRAPE-002

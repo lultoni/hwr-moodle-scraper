@@ -4,7 +4,7 @@
 // from raw Moodle course names using the HWR WI module numbering scheme.
 
 import { describe, it, expect } from "vitest";
-import { parseCourseNameParts, buildCourseShortPaths } from "../../src/scraper/course-naming.js";
+import { parseCourseNameParts, buildCourseShortPaths, resolveSemesterDir } from "../../src/scraper/course-naming.js";
 
 describe("parseCourseNameParts — semester detection", () => {
   it("WI2032 → Semester_3, shortName Datenbanken", () => {
@@ -131,6 +131,26 @@ describe("parseCourseNameParts — short name extraction", () => {
     const r = parseCourseNameParts("WI-22/2-M06-WI1041-F01-SoSe-2026-59384 59420 59421 WI24ABC Kostenrechnung und Controlling SoSe-2026");
     expect(r.semesterDir).toBe("Semester_4");
     expect(r.shortName).toBe("Kostenrechnung und Controlling");
+  });
+});
+
+describe("resolveSemesterDir — skPlacement option", () => {
+  it("returns 'Schluesselkompetenzen' by default (skPlacement: separate)", () => {
+    expect(resolveSemesterDir("Schluesselkompetenzen", "separate", "")).toBe("Schluesselkompetenzen");
+  });
+
+  it("returns nested path when skPlacement is in-semester and skSemester is set", () => {
+    const result = resolveSemesterDir("Schluesselkompetenzen", "in-semester", "Semester_3");
+    expect(result).toBe("Semester_3/Schluesselkompetenzen");
+  });
+
+  it("falls back to separate when skPlacement is in-semester but skSemester is empty", () => {
+    expect(resolveSemesterDir("Schluesselkompetenzen", "in-semester", "")).toBe("Schluesselkompetenzen");
+  });
+
+  it("does not affect non-SK semester dirs (e.g. Semester_2)", () => {
+    expect(resolveSemesterDir("Semester_2", "in-semester", "Semester_3")).toBe("Semester_2");
+    expect(resolveSemesterDir("Sonstiges", "in-semester", "Semester_3")).toBe("Sonstiges");
   });
 });
 

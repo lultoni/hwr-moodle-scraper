@@ -126,6 +126,21 @@ function parseCourseSearchHtml(html: string, baseUrl: string): Course[] {
   return courses;
 }
 
+/**
+ * Fetch all enrolled courses from the Moodle dashboard.
+ * Uses /my/courses.php?myoverviewfilter=all which shows every enrolled course.
+ */
+export async function fetchEnrolledCourses(opts: FetchOptions): Promise<Course[]> {
+  const { baseUrl, sessionCookies } = opts;
+
+  const url = `${baseUrl}/my/courses.php?myoverviewfilter=all`;
+  const { statusCode, body } = await fetchWithRedirects(url, { cookie: sessionCookies });
+
+  if (statusCode >= 400) throw new Error(`Enrolled courses fetch failed: HTTP ${statusCode}`);
+
+  return parseCourseSearchHtml(body, baseUrl);
+}
+
 /** Fetch with basic redirect following (up to maxRedirects hops). */
 async function fetchWithRedirects(
   url: string,

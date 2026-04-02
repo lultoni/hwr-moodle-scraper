@@ -132,3 +132,25 @@ export function buildCourseShortPaths(
 
   return result;
 }
+
+/**
+ * Resolve the final semester directory for a course, taking into account the
+ * skPlacement config option for Schlüsselkompetenzen courses.
+ *
+ * @param semesterDir - The raw semester dir from parseCourseNameParts (e.g. "Schluesselkompetenzen")
+ * @param skPlacement - "separate" (default): SK courses go into Schluesselkompetenzen/ top-level.
+ *                      "in-semester": SK courses go into <skSemester>/Schluesselkompetenzen/
+ * @param skSemester  - Target semester dir for in-semester placement (e.g. "Semester_3").
+ *                      Ignored when skPlacement is "separate" or when empty.
+ */
+export function resolveSemesterDir(
+  semesterDir: string,
+  skPlacement: "separate" | "in-semester",
+  skSemester: string,
+): string {
+  if (semesterDir !== "Schluesselkompetenzen") return semesterDir;
+  if (skPlacement === "in-semester" && skSemester) {
+    return `${skSemester}/Schluesselkompetenzen`;
+  }
+  return semesterDir;
+}

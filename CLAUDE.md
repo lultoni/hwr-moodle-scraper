@@ -35,7 +35,9 @@ hwr-moodle-scraper/
 │   ├── test-writer.md
 │   ├── developer.md
 │   ├── doc-updater.md
-│   └── requirements-checker.md
+│   ├── requirements-checker.md
+│   ├── html-analyzer.md
+│   └── debug-workflow.md
 ├── docs/
 │   ├── REQUIREMENTS.md     # Full gap-free requirements
 │   ├── FEATURE_TIMELINE.md # Step-by-step implementation plan
@@ -56,13 +58,21 @@ hwr-moodle-scraper/
 | Write tests | `agents/test-writer.md` |
 | Write implementation code | `agents/developer.md` |
 | Update docs before commit | `agents/doc-updater.md` |
+| Analyze HTML parsing issues | `agents/html-analyzer.md` |
+| Debug scraping errors / file anomalies | `agents/debug-workflow.md` |
+
+## Debug Workflow
+When a user reports broken files or before ending a session:
+1. Follow `agents/debug-workflow.md` — capture HTML in `debug/` (gitignored), locate bug, write test, fix, re-scrape
+2. Run `node scripts/file-checker.js` — must exit 0 before session ends (also runs automatically via Stop hook)
+3. Clean `debug/` after file-checker passes
 
 ## Current Phase
 **Phase 5 — Iterative Improvements — COMPLETE**
-- All 22 timeline steps fully implemented with 12 comprehensive cleanup passes
-- **Final status**: 240/240 tests passing (15 new tests added in cleanup passes)
+- All 22 timeline steps fully implemented with 13 comprehensive cleanup passes
+- **Final status**: 273/273 tests passing (33 new tests added in cleanup/improvement passes)
 - Full CLI implementation: auth, scrape, status, wizard commands
-- **12 cleanup passes completed** (2026-03-27 to 2026-03-28):
+- **13 cleanup/improvement passes completed** (2026-03-27 to 2026-04-02):
   1. **Bug Fixes** — fd leak in logger, dead else-if in downloader, redirect exhaustion, migrateStatePaths not saving, 403/5xx logging
   2. **Security** — Path traversal guard in extractFilename, HTTPS check in redirects, symlink check in deleteSessionFile
   3. **Deduplication** — extractCookies→src/http/cookies.ts, getResourceId→src/scraper/resource-id.ts
@@ -75,6 +85,7 @@ hwr-moodle-scraper/
   10. **Agents** — developer.md shared utilities, html-analyzer.md label/onetopic patterns
   11. **Bug Fix** — Non-downloadable activities (assign, forum, quiz) acknowledged in state to prevent infinite re-planning
   12. **HTML Parsing & Course Formats** — balanced-div depth-counter replaces regex for altcontent, fp-filename span variant for Moodle 4.x folders, format-grid multi-page section fetching, format-onetopic multi-tab fetching, modtype CSS class as primary activity type detection, duplicate folder name deduplication in scrape.ts
+  13. **Save-What-You-Can** — Replaced SKIP_TYPES silent-skip with `page-md` (forum/quiz/glossary/book/lesson/wiki/workshop) and `info-md` (assign/feedback/choice/vimp/hvp/scorm/flashcard/survey/chat/lti/imscp/grouptool/bigbluebuttonbn) strategies; zero information loss
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.

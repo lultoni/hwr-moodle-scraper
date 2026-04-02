@@ -30,10 +30,17 @@ npm run build
 npm link
 ```
 
-After `npm link`, two commands are available: `moodle-scraper` and the shorthand `msc`.
+After `npm link`, two commands are available:
+
+| Command | Description |
+|---------|-------------|
+| `msc` | Short alias — use this for everyday use |
+| `moodle-scraper` | Full name — same as `msc` |
+
+> **Note:** If `msc` is already taken by another globally installed tool, `npm link` will silently overwrite it. To check first: `which msc`. If it's taken, you can still use the full `moodle-scraper` command which is less likely to conflict.
 
 ```bash
-moodle-scraper --version
+msc --version   # quick check
 ```
 
 ---
@@ -42,15 +49,17 @@ moodle-scraper --version
 
 ### Commands
 
+All commands are available via the short alias `msc` (or the full `moodle-scraper`):
+
 ```bash
-moodle-scraper scrape                Download / sync Moodle content to local folder
-moodle-scraper auth set              Store credentials in macOS Keychain
-moodle-scraper auth clear            Remove stored credentials
-moodle-scraper auth status           Check if credentials and session are valid
-moodle-scraper config get/set/list   Get, set, or list configuration
-moodle-scraper config reset          Reset configuration to defaults
-moodle-scraper status [--issues]     Show last sync summary (with optional issue details)
-moodle-scraper --help                Full help
+msc scrape                       Download / sync Moodle content to local folder
+msc auth set                     Store credentials in macOS Keychain
+msc auth clear                   Remove stored credentials
+msc auth status                  Check if credentials and session are valid
+msc config get/set/list          Get, set, or list configuration
+msc config reset                 Reset configuration to defaults
+msc status [--issues]            Show last sync summary (with optional issue details)
+msc --help                       Full help
 ```
 
 ### Key flags (scrape)
@@ -69,7 +78,7 @@ moodle-scraper --help                Full help
 ```bash
 # On first run the setup wizard prompts for output directory and Moodle credentials.
 # Credentials are stored in macOS Keychain — never written to disk in plaintext.
-moodle-scraper scrape
+msc scrape
 ```
 
 ---
@@ -84,7 +93,7 @@ npm run test:watch        # watch mode
 npm run test:coverage     # with coverage report
 ```
 
-All 240 tests pass across 28 test files.
+All 273 tests pass across 27 test files.
 
 ### Type-check
 
@@ -173,21 +182,21 @@ npm install
 ### "No courses found"
 The `courseSearch` config key must be set to a keyword that matches your course names on Moodle.
 ```bash
-moodle-scraper config set courseSearch "WI"
+msc config set courseSearch "WI"
 ```
 
 ### "0 files to download" on every run
 All files are already up to date according to the sync state. To verify:
-- `moodle-scraper status` — shows last sync summary
-- `moodle-scraper scrape --check-files` — re-downloads any files that are missing from disk
-- `moodle-scraper scrape --force` — re-downloads everything regardless of state
+- `msc status` — shows last sync summary
+- `msc scrape --check-files` — re-downloads any files that are missing from disk
+- `msc scrape --force` — re-downloads everything regardless of state
 
 ### macOS Keychain dialog appears on first run
-This is expected. macOS asks for permission the first time `moodle-scraper` accesses the Keychain.
+This is expected. macOS asks for permission the first time `msc` accesses the Keychain.
 Select **Always Allow** to prevent the dialog on subsequent runs.
 
 ### Session expires during a long scrape
-The scraper automatically re-authenticates using stored Keychain credentials. If re-auth fails after 3 attempts, run `moodle-scraper auth set` to refresh your credentials.
+The scraper automatically re-authenticates using stored Keychain credentials. If re-auth fails after 3 attempts, run `msc auth set` to refresh your credentials.
 
 ---
 

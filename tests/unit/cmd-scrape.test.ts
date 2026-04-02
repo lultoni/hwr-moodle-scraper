@@ -15,6 +15,9 @@ vi.mock("../../src/scraper/courses.js", () => ({
   fetchCourseList: vi.fn().mockResolvedValue([
     { courseId: 1, courseName: "Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
   ]),
+  fetchEnrolledCourses: vi.fn().mockResolvedValue([
+    { courseId: 1, courseName: "Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+  ]),
   fetchContentTree: vi.fn().mockResolvedValue({ courseId: 1, sections: [] }),
   parseActivityFromElement: vi.fn().mockReturnValue(null),
 }));
@@ -31,6 +34,7 @@ vi.mock("../../src/sync/state.js", () => ({
     statePath: "/tmp/test/.moodle-scraper-state.json",
   })),
   migrateStatePaths: vi.fn().mockImplementation((state: unknown) => ({ state, changed: false })),
+  relocateFiles: vi.fn().mockImplementation((state: unknown) => ({ state, changed: false })),
 }));
 
 import { runScrape } from "../../src/commands/scrape.js";

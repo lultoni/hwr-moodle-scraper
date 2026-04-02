@@ -281,6 +281,34 @@ describe("extractFilename — unit tests", () => {
     expect(name).toBeNull();
   });
 
+  it("derives extension from Content-Type when URL has no extension (e.g. Moodle view.php?id=N)", () => {
+    const name = extractFilename(
+      { "content-type": "application/pdf" },
+      "https://moodle.example.com/mod/resource/view.php?id=1234"
+    );
+    // Should return something ending in .pdf derived from MIME type
+    expect(name).not.toBeNull();
+    expect(name).toMatch(/\.pdf$/);
+  });
+
+  it("derives .docx extension from application/vnd.openxmlformats-officedocument.wordprocessingml.document", () => {
+    const name = extractFilename(
+      { "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+      "https://moodle.example.com/mod/resource/view.php?id=5678"
+    );
+    expect(name).not.toBeNull();
+    expect(name).toMatch(/\.docx$/);
+  });
+
+  it("does not derive extension from text/html Content-Type (not a downloadable file)", () => {
+    const name = extractFilename(
+      { "content-type": "text/html; charset=utf-8" },
+      "https://moodle.example.com/mod/resource/view.php?id=9999"
+    );
+    // text/html means we got a page, not a file — should not create a .html file
+    expect(name).toBeNull();
+  });
+
   it("strips path traversal sequences from Content-Disposition filename", () => {
     const name = extractFilename(
       { "content-disposition": 'attachment; filename="../../../../.zshrc"' },
