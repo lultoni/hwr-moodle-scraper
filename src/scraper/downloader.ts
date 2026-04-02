@@ -148,6 +148,9 @@ function extractEmbeddedPluginfileUrl(html: string, baseUrl: string): string | n
   // Fallback: iframe src without ?embed=1
   const iframeM = /id="resourceobject"\s[^>]*src="(https?:\/\/[^"]*pluginfile\.php\/[^"?]+)"/.exec(html);
   if (iframeM?.[1]) return iframeM[1]!;
+  // Fallback: resourceworkaround popup link — <div class="resourceworkaround"><a href="...pluginfile.php/...">
+  const workaroundM = /class="resourceworkaround"[\s\S]{0,500}?<a\s[^>]*href="(https?:\/\/[^"]*pluginfile\.php\/[^"?]+)"/.exec(html);
+  if (workaroundM?.[1]) return workaroundM[1]!;
   return null;
 }
 

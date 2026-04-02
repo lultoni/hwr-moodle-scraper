@@ -43,38 +43,48 @@ function timeAgo(iso: string): string {
   }
 }
 
-/** Build a simple tree view from a list of absolute paths relative to a base dir. */
+/** Build a tree view from a list of absolute paths relative to a base dir, with box-drawing chars. */
 function buildTreeLines(paths: string[], baseDir: string): string[] {
-  // Group by directory
-  const tree = new Map<string, string[]>();
+  // Build a nested map: dir-path-parts → leaf file names
+  type TreeNode = { children: Map<string, TreeNode>; files: string[] };
+  const root: TreeNode = { children: new Map(), files: [] };
+
   for (const p of paths) {
     const rel = relative(baseDir, p);
     const parts = rel.split("/");
-    const dir = parts.slice(0, -1).join("/") || ".";
-    const file = parts[parts.length - 1] ?? p;
-    const list = tree.get(dir) ?? [];
-    list.push(file);
-    tree.set(dir, list);
+    const fileName = parts.pop()!;
+    let node = root;
+    for (const part of parts) {
+      if (!node.children.has(part)) {
+        node.children.set(part, { children: new Map(), files: [] });
+      }
+      node = node.children.get(part)!;
+    }
+    node.files.push(fileName);
   }
+
   const lines: string[] = [];
-  for (const [dir, files] of tree) {
-    if (dir !== ".") {
-      // Indent each path component
-      const parts = dir.split("/");
-      for (let i = 0; i < parts.length; i++) {
-        const indent = "  ".repeat(i + 1);
-        if (i === parts.length - 1) {
-          lines.push(`${indent}${parts[i]}/`);
-        } else {
-          // Only print parent dirs once — they appear when we process subdirs
-        }
+
+  function renderNode(node: TreeNode, prefix: string): void {
+    const allEntries: Array<{ name: string; isDir: boolean; node?: TreeNode }> = [
+      ...Array.from(node.children.entries()).map(([name, child]) => ({ name, isDir: true, node: child })),
+      ...node.files.map((f) => ({ name: f, isDir: false })),
+    ];
+    for (let i = 0; i < allEntries.length; i++) {
+      const entry = allEntries[i]!;
+      const isLast = i === allEntries.length - 1;
+      const connector = isLast ? "└── " : "├── ";
+      const childPrefix = isLast ? "    " : "│   ";
+      if (entry.isDir) {
+        lines.push(`${prefix}${connector}${entry.name}/`);
+        renderNode(entry.node!, prefix + childPrefix);
+      } else {
+        lines.push(`${prefix}${connector}${entry.name}`);
       }
     }
-    const fileIndent = "  ".repeat(dir === "." ? 1 : dir.split("/").length + 1);
-    for (const f of files) {
-      lines.push(`${fileIndent}${f}`);
-    }
   }
+
+  renderNode(root, "");
   return lines;
 }
 
@@ -119,6 +129,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
         if (file.localPath) {
           knownPaths.add(file.localPath);
           if (file.sidecarPath) knownPaths.add(file.sidecarPath);
+          for (const sp of file.submissionPaths ?? []) knownPaths.add(sp);
           if (file.status !== "orphan" && existsSync(file.localPath)) {
             try {
               const st = statSync(file.localPath);

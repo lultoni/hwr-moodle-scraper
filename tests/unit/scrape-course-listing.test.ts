@@ -111,7 +111,8 @@ describe("STEP-013: Enrolled courses from dashboard", () => {
 
     expect(courses).toHaveLength(2);
     expect(courses[0]).toMatchObject({ courseId: 10, courseUrl: `${BASE}/course/view.php?id=10` });
-    expect(courses[1]).toMatchObject({ courseId: 20, courseName: "Fachbereich Dokumentensammlung" });
+    expect(courses[0]!.courseName).toContain("Betriebswirtschaftliche Grundlagen");
+    expect(courses[1]!.courseName).toContain("Fachbereich Dokumentensammlung");
   });
 
   it("falls back to static HTML when no sesskey found in dashboard", async () => {
@@ -192,6 +193,20 @@ describe("STEP-013: Enrolled courses from dashboard", () => {
     const ids = courses.map((c) => c.courseId);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it("does not double course name when shortname equals fullname", async () => {
+    const pool = mockAgent.get(BASE);
+    pool.intercept({ path: "/my/", method: "GET" })
+      .reply(200, DASH_WITH_SESSKEY, { headers: { "content-type": "text/html" } });
+    pool.intercept({ path: /\/lib\/ajax\/service\.php/, method: "POST" })
+      .reply(200, ajaxResponse([
+        { id: 99, fullname: "Bibliothek benutzen", shortname: "Bibliothek benutzen" },
+      ]), { headers: { "content-type": "application/json" } });
+
+    const courses = await fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "" });
+    expect(courses[0]!.courseName).toBe("Bibliothek benutzen");
+    expect(courses[0]!.courseName).not.toContain("Bibliothek benutzen  Bibliothek benutzen");
+  });
 });
 
 // Regression test: verifies that all 42 courses enrolled at HWR Berlin are parsed from
@@ -256,12 +271,12 @@ describe("STEP-013: Full HWR Berlin course list (42 courses)", () => {
     const courses = await fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "MoodleSession=abc" });
 
     expect(courses).toHaveLength(42);
-    // Spot-check a few course names
+    // Spot-check a few course names (courseName = shortname + " " + fullname)
     const names = courses.map((c) => c.courseName);
-    expect(names).toContain("IT-Sicherheit");
-    expect(names).toContain("Datenbanken");
-    expect(names).toContain("Wissenschaftliches Arbeiten I");
-    expect(names).toContain("Fachrichtungsbüro WI - Infos der Fachrichtung");
+    expect(names.some((n) => n.includes("IT-Sicherheit"))).toBe(true);
+    expect(names.some((n) => n.includes("Datenbanken"))).toBe(true);
+    expect(names.some((n) => n.includes("Wissenschaftliches Arbeiten I"))).toBe(true);
+    expect(names.some((n) => n.includes("Fachrichtungsbüro WI - Infos der Fachrichtung"))).toBe(true);
     // All have correct courseUrl format
     for (const c of courses) {
       expect(c.courseUrl).toBe(`${BASE}/course/view.php?id=${c.courseId}`);
@@ -325,6 +340,47 @@ describe("STEP-013: Content tree traversal", () => {
     expect(restricted).toBeDefined();
     expect(restricted?.isAccessible).toBe(false);
   });
+
+  it("extracts section summary from <div class='summarytext'>", async () => {
+    const pool = mockAgent.get(BASE);
+    pool
+      .intercept({ path: `/course/view.php?id=5`, method: "GET" })
+      .reply(200, `
+        <html><body>
+          <li class="section"><h3 class="sectionname">Dein Abenteuer beginnt hier</h3>
+            <div class="summarytext">
+              <div class="no-overflow"><p>Dieser interaktive Moodle-Kurs unterstützt Dich dabei.</p></div>
+            </div>
+            <ul class="section img-text">
+              <li class="activity resource"><a href="${BASE}/mod/resource/view.php?id=10">Datei</a></li>
+            </ul>
+          </li>
+        </body></html>
+      `);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 5, sessionCookies: "" });
+    expect(tree.sections).toHaveLength(1);
+    expect(tree.sections[0]?.summary).toBeDefined();
+    expect(tree.sections[0]?.summary).toContain("Moodle-Kurs");
+  });
+
+  it("does not include section.summary when summarytext block is absent", async () => {
+    const pool = mockAgent.get(BASE);
+    pool
+      .intercept({ path: `/course/view.php?id=6`, method: "GET" })
+      .reply(200, `
+        <html><body>
+          <li class="section"><h3 class="sectionname">Section A</h3>
+            <ul class="section img-text">
+              <li class="activity resource"><a href="${BASE}/mod/resource/view.php?id=20">Doc</a></li>
+            </ul>
+          </li>
+        </body></html>
+      `);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 6, sessionCookies: "" });
+    expect(tree.sections[0]?.summary).toBeUndefined();
+  });
 });
 
 describe("extractCourseDescription — unit tests", () => {
@@ -361,5 +417,36 @@ describe("extractCourseDescription — unit tests", () => {
     const result = extractCourseDescription(html);
     expect(result).not.toBeNull();
     expect(result).toContain("Kurzbeschreibung");
+  });
+
+  it("extracts multi-paragraph summary with nested divs (balanced-div)", () => {
+    const html = `<html><body>
+      <div class="summary">
+        <div class="no-overflow">
+          <p>Herzlich Willkommen!</p>
+          <div class="inner"><p>Dieser Kurs umfasst die Inhalte der Einheit.</p></div>
+          <p>Prof. Dr. Claudia Lemke</p>
+        </div>
+      </div>
+    </body></html>`;
+    const result = extractCourseDescription(html);
+    expect(result).not.toBeNull();
+    expect(result).toContain("Herzlich Willkommen");
+    expect(result).toContain("Claudia Lemke");
+  });
+
+  it("extracts description from <div class='summarytext'> (Moodle 4.x section-0 variant)", () => {
+    const html = `<html><body>
+      <div class="summarytext">
+        <div class="no-overflow">
+          <p>Herzlich Willkommen Jahrgang 2024!</p>
+          <p>Dieser Moodle-Kurs umfasst die Inhalte der Einheit Strategisches GPM.</p>
+        </div>
+      </div>
+    </body></html>`;
+    const result = extractCourseDescription(html);
+    expect(result).not.toBeNull();
+    expect(result).toContain("Herzlich Willkommen Jahrgang 2024");
+    expect(result).toContain("Strategisches GPM");
   });
 });

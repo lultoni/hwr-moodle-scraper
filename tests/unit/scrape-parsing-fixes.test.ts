@@ -795,4 +795,49 @@ describe("Parsing: folder fp-filename span (Moodle 4.x real structure)", () => {
   });
 });
 
+describe("Parsing: data-activityname preferred over link text", () => {
+  it("uses data-activityname as primary name source, ignoring cross-reference links inside the element", () => {
+    // Regression test for customcert activities: a customcert <li> contains a link
+    // to the paired scorm activity (with the scorm's name as link text). Without the
+    // fix, both activities would get the scorm's name and share a resourceId.
+    const element = `
+      class="activity customcert modtype_customcert hasinfo "
+      id="module-1660995"
+      data-for="cmitem"
+      data-id="1660995"
+    >
+      <div class="activity-item focus-control" data-activityname="Teilnahme Vorbereitungskurs Outgoing" data-region="activity-card">
+        <div class="activity-name-area">
+          <div class="activitytitle modtype_customcert position-relative">
+            <div class="activityname">
+              <a href="https://moodle.hwr-berlin.de/mod/scorm/view.php?id=1660992" class="aalink stretched-link">
+                <span class="instancename">🌍Hallo Welt <span class="accesshide">Lernpaket</span></span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    const result = parseActivityFromElement(element, "https://moodle.hwr-berlin.de/course/view.php?id=78323");
+    // Must use data-activityname, not the scorm link text
+    expect(result?.activityName).toBe("Teilnahme Vorbereitungskurs Outgoing");
+    expect(result?.activityType).toBe("customcert");
+    expect(result?.url).toBe("https://moodle.hwr-berlin.de/mod/scorm/view.php?id=1660992");
+  });
+
+  it("falls back to link text when data-activityname is absent", () => {
+    // Ensure existing behaviour is preserved for older Moodle HTML without data-activityname
+    const element = `
+      class="activity resource modtype_resource"
+    >
+      <a href="${BASE}/mod/resource/view.php?id=999">
+        <span class="instancename">Lecture Notes <span class="accesshide"> Datei</span></span>
+      </a>
+    `;
+    const result = parseActivityFromElement(element, `${BASE}/course/view.php?id=1`);
+    expect(result?.activityName).toBe("Lecture Notes");
+    expect(result?.activityType).toBe("resource");
+  });
+});
+
 

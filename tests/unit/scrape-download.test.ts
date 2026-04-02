@@ -143,6 +143,29 @@ describe("STEP-014: File download — streaming", () => {
     expect(readFileSync(finalPath, "utf8")).toBe(pdfContent);
   });
 
+  it("follows pluginfile.php link in Moodle resourceworkaround popup link (no iframe/resourceobject)", async () => {
+    const pdfContent = "pdf via resourceworkaround";
+    // Moodle "display in popup" page — uses class="resourceworkaround" with <a href>
+    const htmlPage = `<!DOCTYPE html><html><body>
+      <div role="main">
+        <div class="resourceworkaround">Klicken Sie auf den Link '<a href="${BASE}/pluginfile.php/4840268/mod_resource/content/1/zb%2025.pdf" onclick="window.open('${BASE}/pluginfile.php/4840268/mod_resource/content/1/zb%2025.pdf','','width=620'); return false;">zb 25.pdf</a>', um die Datei anzuzeigen.</div>
+      </div></body></html>`;
+    mockAgent.get(BASE)
+      .intercept({ path: "/mod/resource/view.php?id=200", method: "GET" })
+      .reply(200, htmlPage, { headers: { "content-type": "text/html; charset=utf-8" } });
+    mockAgent.get(BASE)
+      .intercept({ path: "/pluginfile.php/4840268/mod_resource/content/1/zb%2025.pdf", method: "GET" })
+      .reply(200, pdfContent, { headers: { "content-type": "application/pdf" } });
+
+    const dest = join(tmpDir, "AM_Zahlungsbilanz");
+    const { finalPath } = await downloadFile({ url: `${BASE}/mod/resource/view.php?id=200`, destPath: dest, sessionCookies: "" });
+
+    expect(extname(finalPath)).toBe(".pdf");
+    expect(existsSync(finalPath)).toBe(true);
+    const { readFileSync } = await import("node:fs");
+    expect(readFileSync(finalPath, "utf8")).toBe(pdfContent);
+  });
+
   it("retries on 'other side closed' network error and succeeds on second attempt", async () => {
     const content = "retry content";
     let attempts = 0;

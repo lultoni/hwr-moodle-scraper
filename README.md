@@ -119,7 +119,7 @@ npm run test:watch        # watch mode
 npm run test:coverage     # with coverage report
 ```
 
-All 365 tests pass across 32 test files (Phase 5: 20 cleanup/improvement passes, including bug fixes for course listing via AJAX, stderr handling, and TUI refinements).
+All 377 tests pass across 33 test files (Phase 5: 22 cleanup/improvement passes, including section description extraction for Moodle 4.x, course listing via AJAX, stderr handling, TUI refinements, legacy mis-classification auto-promotion, and data-activityname parsing fixes).
 
 ### Type-check
 

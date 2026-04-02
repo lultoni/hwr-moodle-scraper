@@ -69,10 +69,10 @@ When a user reports broken files or before ending a session:
 
 ## Current Phase
 **Phase 5 — Iterative Improvements — COMPLETE**
-- All 22 timeline steps fully implemented with 20 comprehensive cleanup passes
-- **Final status**: 365/365 tests passing across 32 test files
+- All 22 timeline steps fully implemented with 22 comprehensive cleanup passes
+- **Final status**: 377/377 tests passing across 33 test files
 - Full CLI implementation: auth, scrape, status, wizard, reset, tui commands with first-run wizard
-- **20 cleanup/improvement passes completed** (2026-03-27 to 2026-04-02):
+- **22 cleanup/improvement passes completed** (2026-03-27 to 2026-04-02):
   1. **Bug Fixes** — fd leak in logger, dead else-if in downloader, redirect exhaustion, migrateStatePaths not saving, 403/5xx logging
   2. **Security** — Path traversal guard in extractFilename, HTTPS check in redirects, symlink check in deleteSessionFile
   3. **Deduplication** — extractCookies→src/http/cookies.ts, getResourceId→src/scraper/resource-id.ts
@@ -93,6 +93,8 @@ When a user reports broken files or before ending a session:
   18. **TUI + User-Files-Move** — `msc tui` command: full interactive terminal UI with arrow-key navigation (built-in readline/tty, zero new deps); screens for Scrape, Status, Reset, Auth, Config; `src/tui/keys.ts` (raw-mode keyboard), `src/tui/select.ts` (arrow-key selector, non-TTY promptFn fallback), `src/tui/menu.ts` (box-drawing main menu), `src/tui/screens/`; `msc reset --move-user-files` flag: detects user-owned files, groups by top-level dir, interactively asks per group (output-root / parent / custom / skip); `src/fs/collect.ts` extracted from status.ts (`collectFiles` + `groupUserFiles`)
   19. **TUI + SK Refinements** — SK folder structure fixed: `detectSkSemester()` returns plain `"Semester_N"`, new `isSkCourse()` helper detects WI6xxx and MSK/SK prefix courses, `parseCourseNameParts()` prefixes `SK_` on shortName for SK courses; dead code removed (`skPlacement`, `skSemester` defaults, `resolveSemesterDir()`); full-screen TUI: `menu.ts` uses full clear (`\u001b[2J\u001b[H`), cursor management (`\u001b[?25l`/`\u001b[?25h`), `keys.ts` cursor restoration before exit; two-step scrape flow (mode selector → options sub-menu with `[x]` toggles); status screen selector (Summary vs Issues)
   20. **HWR Courses AJAX + stderr Silencing** — Courses bug fix: HWR Berlin's Moodle uses AJAX-rendered `block_myoverview` (courses not in static HTML); fixed `src/scraper/courses.ts` to: (1) fetch `/my/` for fresh `sesskey` from inline JS config, (2) POST to `/lib/ajax/service.php` with `core_course_get_enrolled_courses_by_timeline_classification` to get all 42 enrolled courses as JSON, (3) fallback to old `/my/courses.php` HTML parser for compatibility. TUI exit: removed "Goodbye." message (silent exit via q/Escape). Stderr fix: added `{ stdio: "pipe" }` to `execSync` in `src/fs/output.ts` so `df` errors when outputDir doesn't exist are silently swallowed instead of polluting terminal. Tests: rewritten 6 broken course-listing tests to mock new AJAX flow, added 42-course regression test.
+  21. **Scrape Bug Fixes** — `.description.md` sidecars no longer shown as user-added files (status.ts: add `sidecarPath` to `knownPaths`); sync count clarified to "activities" not "files"; `resourceworkaround` popup-link pattern added to `extractEmbeddedPluginfileUrl` in downloader (fixes VWL + Fachrichtungsbüro extensionless HTML files); legacy mis-classified entries (scorm/info-md types saved as extensionless binary) auto-promoted to DOWNLOAD in scrape.ts on next run.
+  22. **Section Descriptions (Moodle 4.x)** — Fixed extraction of section-level summaries (`<div class="summarytext">`) which were missing in earlier passes. Added `summary?: string` to Section interface; `parseContentTree` now extracts and balances section summaries with depth counter; `extractCourseDescription` tries `summarytext` as fallback. Result: 38 `_Abschnittsbeschreibung.md` files written across courses (GPM "Herzlich Willkommen Jahrgang 2024!", RTG course introductions). Tests: +4 new tests for section summary extraction, absent case, `summarytext` fallback → **377/377 tests passing**.
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.

@@ -1,5 +1,7 @@
+// @vitest-pool forks
 // Covers: STEP-017 (incremental sync integration)
 //         Full incremental sync: first run downloads, second run skips unchanged files.
+// Runs in a forked process to prevent setGlobalDispatcher races with parallel unit tests.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
@@ -61,7 +63,7 @@ describe("Integration: incremental sync", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("second run with no changes: 0 files downloaded", async () => {
+  it("second run with no changes: 0 files downloaded", { timeout: 15000 }, async () => {
     // First run
     setupMocks("hash-v1");
     mockAgent.get(BASE).intercept({ path: "/mod/resource/view.php?id=10", method: "GET" })
@@ -88,7 +90,7 @@ describe("Integration: incremental sync", () => {
     expect(downloadSpy).not.toHaveBeenCalled();
   });
 
-  it("assign activities are acknowledged in state and not re-planned on second run", async () => {
+  it("assign activities are acknowledged in state and not re-planned on second run", { timeout: 15000 }, async () => {
     // Course page with an assign activity (non-downloadable) + a resource
     const courseHtml = `
       <html><body>

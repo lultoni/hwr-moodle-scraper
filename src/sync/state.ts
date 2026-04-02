@@ -14,6 +14,8 @@ export interface FileState {
   status: "ok" | "orphan" | "error";
   /** Sidecar .description.md path, if one was written alongside this file. */
   sidecarPath?: string;
+  /** Submission file paths downloaded alongside an assignment info card. */
+  submissionPaths?: string[];
 }
 
 export interface SectionState {

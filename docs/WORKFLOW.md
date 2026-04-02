@@ -65,11 +65,11 @@
 
 **Checklist**:
 - [x] All 22 steps implemented
-- [x] All 365 tests passing (32 test files)
+- [x] All 377 tests passing (33 test files)
 - [x] Full CLI with auth, scrape, status, wizard, reset, tui commands
 - [x] Security: keychain integration, credential handling, HTTPS + retry logic
 - [x] Sync: rate limiting, incremental updates, state management
-- [x] Phase 5 improvements: 20 cleanup/enhancement passes completed
+- [x] Phase 5 improvements: 22 cleanup/enhancement passes completed
 
 ---
 
@@ -81,7 +81,7 @@
 4. Developer implements changes
 5. Doc updater runs before commit
 
-**Completion**: All 20 cleanup passes (Pass 1–20) completed (2026-03-27 to 2026-04-02). 365/365 tests passing across 32 test files.
+**Completion**: All 22 cleanup passes (Pass 1–22) completed (2026-03-27 to 2026-04-02). 377/377 tests passing across 33 test files.
 
 ---
 

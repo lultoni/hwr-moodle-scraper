@@ -49,6 +49,7 @@ const INFO_MD_TYPES = new Set([
   "imscp",       // IMS Content Package
   "grouptool",
   "bigbluebuttonbn",
+  "customcert",  // Course completion certificate (links to completion criteria, not downloadable)
 ]);
 
 /**
@@ -90,33 +91,35 @@ export function buildDownloadPlan(
     const sectionDir = semesterDir
       ? join(outputDir, semesterDir, safeCourse, safeSection)
       : join(outputDir, safeCourse, safeSection);
+    // Optional subfolder (e.g. when two folders contain same-named files)
+    const fileDir = activity.subDir ? join(sectionDir, sanitiseFilename(activity.subDir)) : sectionDir;
 
     let destPath: string;
     let strategy: DownloadStrategy;
 
     switch (activity.activityType) {
       case "url":
-        destPath = join(sectionDir, `${safeName}.url.txt`);
+        destPath = join(fileDir, `${safeName}.url.txt`);
         strategy = "url-txt";
         break;
       case "page":
-        destPath = join(sectionDir, `${safeName}.md`);
+        destPath = join(fileDir, `${safeName}.md`);
         strategy = "page-md";
         break;
       case "label":
-        destPath = join(sectionDir, `${safeName}.md`);
+        destPath = join(fileDir, `${safeName}.md`);
         strategy = "label-md";
         break;
       default:
         if (PAGE_MD_TYPES.has(activity.activityType)) {
-          destPath = join(sectionDir, `${safeName}.md`);
+          destPath = join(fileDir, `${safeName}.md`);
           strategy = "page-md";
         } else if (INFO_MD_TYPES.has(activity.activityType)) {
-          destPath = join(sectionDir, `${safeName}.md`);
+          destPath = join(fileDir, `${safeName}.md`);
           strategy = "info-md";
         } else {
           // resource, folder files (already expanded), and unknown types → binary
-          destPath = join(sectionDir, safeName);
+          destPath = join(fileDir, safeName);
           strategy = "binary";
         }
         break;
@@ -136,7 +139,7 @@ export function buildDownloadPlan(
       items.push({
         activity,
         url: activity.url,
-        destPath: join(sectionDir, `${safeName}.description.md`),
+        destPath: join(fileDir, `${safeName}.description.md`),
         strategy: "description-md",
         courseName,
         sectionName,

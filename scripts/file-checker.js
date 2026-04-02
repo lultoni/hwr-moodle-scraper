@@ -71,6 +71,8 @@ if (existsSync(stateFile)) {
       for (const section of Object.values(course.sections ?? {})) {
         for (const file of Object.values(section.files ?? {})) {
           if (file.localPath) knownPaths.add(file.localPath);
+          if (file.sidecarPath) knownPaths.add(file.sidecarPath);
+          for (const sp of file.submissionPaths ?? []) knownPaths.add(sp);
         }
       }
     }

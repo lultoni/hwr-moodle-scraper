@@ -12,7 +12,7 @@ import { createLogger, LogLevel, type Logger } from "../logger.js";
 import { ConfigManager } from "../config.js";
 import { buildOutputPath, checkDiskSpace, atomicWrite } from "../fs/output.js";
 import { sanitiseFilename } from "../fs/sanitise.js";
-import { extractForumThreadUrls } from "../scraper/forum.js";
+import { extractForumThreadUrls, extractPageContent } from "../scraper/forum.js";
 import { extractAssignmentFeedback } from "../scraper/assign.js";
 import { DownloadQueue, type DownloadItem } from "../scraper/downloader.js";
 import { writeUrlFile } from "../scraper/content-types.js";
@@ -141,6 +141,25 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     })
   );
 
+  // ── README.md + _Abschnittsbeschreibung.md ────────────────────────────────
+  // These files are written OUTSIDE the sync-state system (no FileState entry,
+  // no hash tracking). They are refreshed on every run from the live Moodle HTML,
+  // so they stay current without user intervention.
+  //
+  // course README.md  → ContentTree.summary  (from extractCourseDescription)
+  //   Written to: <outputDir>/<semesterDir?>/<courseDir>/README.md
+  //   Source:     <div class="summary">, <div class="course-summary-section">,
+  //               or <div class="summarytext"> (Moodle 4.x onetopic courses)
+  //
+  // _Abschnittsbeschreibung.md → Section.summary  (from parseContentTree summarytext)
+  //   Written to: <outputDir>/.../<courseDir>/<sectionDir>/_Abschnittsbeschreibung.md
+  //   Source:     <div class="summarytext"> inside each <li class="section">
+  //   Moodle 4.x shows rich section descriptions (text, images, formatted HTML) here.
+  //   Example: GPM "Herzlich Willkommen Jahrgang 2024!", RTG course intro text.
+  //
+  // DO NOT move these into the sync-state/download-plan flow. They are auxiliary
+  // metadata files, not scraped Moodle resources, and must not appear in msc status
+  // as "user files" or be deleted by msc reset.
   // Write course README.md files for courses that have a summary description
   if (!dryRun) {
     let TurndownServiceForDesc: typeof import("turndown") | undefined;
@@ -155,6 +174,24 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       mkdirSync(dirname(readmePath), { recursive: true });
       await atomicWrite(readmePath, Buffer.from(descMd + "\n", "utf8"));
     }
+
+    // Write section description files (_Abschnittsbeschreibung.md) for sections with summarytext
+    for (const tree of trees) {
+      const sp = courseShortPaths.get(tree.courseId);
+      const courseDirName = sanitiseFilename(sp?.shortName ?? courseNameMap.get(tree.courseId) ?? String(tree.courseId));
+      const courseDir = join(outputDir, ...(sp?.semesterDir ? [sp.semesterDir] : []), courseDirName);
+      let TdSect: typeof import("turndown") | undefined;
+      for (const section of tree.sections) {
+        if (!section.summary) continue;
+        if (!TdSect) TdSect = (await import("turndown")).default;
+        const summaryMd = new TdSect().turndown(section.summary).trim();
+        if (!summaryMd) continue;
+        const sectionDirName = sanitiseFilename(section.sectionName);
+        const summaryPath = join(courseDir, sectionDirName, "_Abschnittsbeschreibung.md");
+        mkdirSync(dirname(summaryPath), { recursive: true });
+        await atomicWrite(summaryPath, Buffer.from(summaryMd + "\n", "utf8"));
+      }
+    }
   }
 
   // Expand folders: replace folder activities with their contained files
@@ -165,27 +202,53 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           const expandedActivities: Activity[] = [];
           // Track folder names seen in this section to detect duplicates and deduplicate paths
           const folderNameCount = new Map<string, number>();
+
+          // Pre-fetch all folder contents so we can detect cross-folder filename collisions
+          type FolderEntry = { activity: Activity; folderId: string; files: Array<{ name: string; url: string }> };
+          const folderEntries: FolderEntry[] = [];
           for (const activity of section.activities) {
             if (activity.activityType === "folder" && activity.url) {
-              logger.debug(`  Expanding folder: ${activity.activityName}`);
               const files = await fetchFolderFiles({ baseUrl, folderUrl: activity.url, sessionCookies });
-              // Use the activity URL's ?id= param as a stable unique key, falling back to name
               const folderIdMatch = /[?&]id=(\d+)/.exec(activity.url);
               const folderId = folderIdMatch ? folderIdMatch[1]! : activity.activityName;
+              folderEntries.push({ activity, folderId, files });
+              logger.debug(`  Expanding folder: ${activity.activityName} (${files.length} files)`);
+            }
+          }
+
+          // Count how many folders each filename appears in (to detect collisions)
+          const fileNameFolderCount = new Map<string, number>();
+          for (const { files } of folderEntries) {
+            const seen = new Set<string>();
+            for (const f of files) {
+              if (!seen.has(f.name)) {
+                fileNameFolderCount.set(f.name, (fileNameFolderCount.get(f.name) ?? 0) + 1);
+                seen.add(f.name);
+              }
+            }
+          }
+
+          for (const activity of section.activities) {
+            if (activity.activityType === "folder" && activity.url) {
+              const entry = folderEntries.find((e) => e.activity === activity);
+              if (!entry) continue;
+              const { folderId, files } = entry;
               // Track duplicate folder names to produce distinct destPaths
               const prev = folderNameCount.get(activity.activityName) ?? 0;
               folderNameCount.set(activity.activityName, prev + 1);
               const nameSuffix = prev > 0 ? ` (${prev + 1})` : "";
               for (const f of files) {
+                // If this filename appears in multiple folders, put it in a subfolder named after the folder activity
+                const collides = (fileNameFolderCount.get(f.name) ?? 0) > 1;
                 expandedActivities.push({
                   activityType: "resource",
                   activityName: nameSuffix ? `${f.name}${nameSuffix}` : f.name,
                   url: f.url,
                   isAccessible: true,
                   resourceId: `folder-${folderId}-${f.name}`,
+                  ...(collides ? { subDir: activity.activityName + nameSuffix } : {}),
                 });
               }
-              logger.debug(`    → ${files.length} file(s) in folder`);
             } else {
               expandedActivities.push(activity);
             }
@@ -223,6 +286,41 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   // Sync plan
   const plan = computeSyncPlan({ state, currentTree: expandedTrees, force, checkFiles, dryRun });
+
+  // Promote SKIP → DOWNLOAD for any state entries where the localPath has no .md extension
+  // but the current activity type maps to a text/md strategy (info-md, page-md, url-txt).
+  // This corrects legacy mis-classified entries (e.g. scorm activities saved as extensionless binary).
+  const INFO_MD_ACTIVITY_TYPES = new Set(["assign","feedback","choice","vimp","hvp","h5pactivity","scorm","flashcard","survey","chat","lti","imscp","grouptool","bigbluebuttonbn","customcert"]);
+  const PAGE_MD_ACTIVITY_TYPES = new Set(["page","forum","quiz","glossary","book","lesson","wiki","workshop"]);
+  for (const item of plan) {
+    if (item.action !== SyncAction.SKIP || !item.resourceId || !item.courseId) continue;
+    const courseIdStr = String(item.courseId);
+    // Find the activity in the current tree to know its type
+    let activityType: string | undefined;
+    for (const tree of expandedTrees) {
+      if (String(tree.courseId) !== courseIdStr) continue;
+      for (const section of tree.sections) {
+        const found = section.activities.find(
+          (a) => getResourceId(a, tree.courseId, section.sectionId) === item.resourceId
+        );
+        if (found) { activityType = found.activityType; break; }
+      }
+      if (activityType) break;
+    }
+    if (!activityType) continue;
+    const shouldBeMd = INFO_MD_ACTIVITY_TYPES.has(activityType) || PAGE_MD_ACTIVITY_TYPES.has(activityType) || activityType === "url";
+    if (!shouldBeMd) continue;
+    // Check if state has a localPath without .md extension
+    const fileState = state.courses[courseIdStr]?.sections;
+    let existingPath: string | undefined;
+    for (const section of Object.values(fileState ?? {})) {
+      const f = section.files?.[item.resourceId];
+      if (f) { existingPath = f.localPath; break; }
+    }
+    if (existingPath && !existingPath.endsWith(".md") && !existingPath.endsWith(".url.txt")) {
+      item.action = SyncAction.DOWNLOAD;
+    }
+  }
 
   const downloads = plan.filter((p) => p.action === SyncAction.DOWNLOAD);
   const skipped = plan.filter((p) => p.action === SyncAction.SKIP);
@@ -272,9 +370,39 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Use a container so onComplete callbacks can reference bar after it's created
   const progress: { bar?: import("cli-progress").SingleBar } = {};
 
+  // ── Download classification ────────────────────────────────────────────────
+  // Downloads are split into three buckets:
+  //
+  //   binaryItems      – raw file downloads (strategy="binary"). Executed in
+  //                      parallel via DownloadQueue with a progress bar.
+  //
+  //   specialItems     – non-binary content (page-md, info-md, label-md,
+  //                      description-md, url-txt). Executed sequentially because
+  //                      they may involve HTML fetching + Turndown conversion.
+  //
+  //   acknowledgedItems – activities that produce nothing on disk (e.g. a label
+  //                       with no description, or a type with no saveable content).
+  //                       Stored in state so the sync planner doesn't re-add them
+  //                       on the next run.
+  //
+  // isSidecar flag (specialItems only):
+  //   `description-md` items are SIDECAR files — `.description.md` companions
+  //   written alongside the main activity file. They are generated from the
+  //   activity's inline description HTML, not downloaded from Moodle.
+  //   They are EXCLUDED from:
+  //     - `totalItems` (verbose counter) — "(N/1173)" counts real activities
+  //     - `downloadedCount` final summary — shown separately as ", 218 sidecars"
+  //     - progress bar total — bar reflects files fetched from Moodle only
+  //   They ARE included in:
+  //     - `sidecarCount` — shown in final "Done:" line for transparency
+  //     - FileState.sidecarPath — tracked so msc reset and msc status handle them
+  //
+  // Verbose counter format: " (N/totalItems)" appended to [DOWNLOAD] log lines.
+  // Sidecar items log as "[SIDECAR] ..." without a counter (they have no position
+  // in the activity list because they're generated, not planned from Moodle data).
   // Separate binary downloads from special-handling types
   const binaryItems: Array<{ downloadItem: DownloadItem; planItem: typeof downloads[0] }> = [];
-  const specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string; label: string; description?: string; activityType?: string }> = [];
+  const specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string; label: string; description?: string; activityType?: string; isSidecar: boolean }> = [];
   // Items that are acknowledged but not downloadable (e.g. assign, forum, quiz) — save to state so they're not re-planned
   const acknowledgedItems: Array<typeof downloads[0]> = [];
 
@@ -333,13 +461,19 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         });
       } else {
         const strategyLabel = planItem.strategy === "info-md" ? "info-md" : planItem.strategy;
-        logger.debug(`[DOWNLOAD] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${meta.activity.activityName} (${strategyLabel})${counter}`);
+        const isSidecar = planItem.strategy === "description-md";
+        if (isSidecar) {
+          logger.debug(`[SIDECAR] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${meta.activity.activityName} (description-md)`);
+        } else {
+          logger.debug(`[DOWNLOAD] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${meta.activity.activityName} (${strategyLabel})${counter}`);
+        }
         specialItems.push({
           item,
           destPath: planItem.destPath,
           strategy: planItem.strategy,
           label: meta.activity.activityName,
           activityType: meta.activity.activityType,
+          isSidecar,
           ...(meta.activity.description ? { description: meta.activity.description } : {}),
         });
       }
@@ -353,11 +487,12 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       clearOnComplete: false,
       hideCursor: true,
     }, cliProgress.Presets.shades_classic);
-    progress.bar.start(binaryItems.length + specialItems.length, 0, { file: "" });
+    progress.bar.start(binaryItems.length + specialItems.filter((s) => !s.isSidecar).length, 0, { file: "" });
   }
 
   // Execute binary downloads via queue
   let downloadedCount = 0;
+  let sidecarCount = 0;
   let failedCount = 0;
   // finalPaths[i] holds the actual on-disk path + hash for binaryItems[i]
   let binaryFinalPaths: Array<{ path: string; hash: string } | undefined> = [];
@@ -374,9 +509,35 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     }
   }
 
+  // ── Special-items execution ────────────────────────────────────────────────
+  // Each item in specialItems is processed sequentially.
+  //
+  // Strategy dispatch:
+  //   "url-txt"       → writes a plain-text .url.txt file with the URL
+  //   "page-md"       → fetches the activity page, extracts <div role="main">
+  //                     via extractPageContent(), converts with Turndown.
+  //                     Forum special case: also iterates all discussion threads
+  //                     (extractForumThreadUrls → per-thread fetch → per-thread
+  //                     section in the .md). extractPageContent is CRITICAL here
+  //                     — without it, the full 200 KB Moodle page HTML (nav, JS,
+  //                     CSS, sidebar) goes into the .md file.
+  //   "info-md"       → builds an info card: Type / URL / Description.
+  //                     For assign: also fetches grade, Dozenten-Feedback, and
+  //                     own submission file URLs from the assignment page.
+  //   "label-md"      → converts activity-altcontent HTML to Markdown
+  //   "description-md"→ same as label-md; written as a .description.md sidecar
+  //                     alongside the main file (tracked via FileState.sidecarPath)
+  //
+  // Counter tracking:
+  //   downloadedCount  incremented for all non-sidecar items that succeed
+  //   sidecarCount     incremented for description-md items (isSidecar=true)
+  //   failedCount      incremented on exception (warning logged; run continues)
+  //   progress.bar     incremented only for non-sidecar items (bar total matches)
   // Execute special-type downloads sequentially
   // specialItemHashes[i] stores the SHA-256 hash of the written content for specialItems[i]
   const specialItemHashes: Array<string> = new Array(specialItems.length).fill("");
+  // specialItemSubmissionPaths[i] stores any submission files downloaded for assign items
+  const specialItemSubmissionPaths: Array<string[]> = specialItems.map(() => []);
   let TurndownService: typeof import("turndown") | undefined;
   for (let si = 0; si < specialItems.length; si++) {
     const { item, destPath, strategy, label, description, activityType } = specialItems[si]!;
@@ -398,14 +559,14 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           const threads = extractForumThreadUrls(html, baseUrl);
           const sections: string[] = [`# ${label}`, ``];
           if (threads.length === 0) {
-            sections.push(td.turndown(html));
+            sections.push(td.turndown(extractPageContent(html)));
           } else {
             const delayMs = ((await config.get("requestDelayMs")) as number | undefined) ?? 500;
             for (const thread of threads) {
               try {
                 const { body: threadBody } = await request(thread.url, { headers: { cookie: sessionCookies } });
                 const threadHtml = await threadBody.text();
-                sections.push(`## [${thread.title}](${thread.url})`, ``, td.turndown(threadHtml), ``);
+                sections.push(`## [${thread.title}](${thread.url})`, ``, td.turndown(extractPageContent(threadHtml)), ``);
                 if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
               } catch {
                 sections.push(`## [${thread.title}](${thread.url})`, ``, `*(Konnte nicht geladen werden)*`, ``);
@@ -414,7 +575,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           }
           content = sections.join("\n");
         } else {
-          content = td.turndown(html);
+          content = td.turndown(extractPageContent(html));
         }
       } else if (strategy === "info-md") {
         if (!TurndownService) TurndownService = (await import("turndown")).default;
@@ -451,6 +612,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
                   try {
                     const { downloadFile } = await import("../scraper/downloader.js");
                     const { finalPath } = await downloadFile({ url: subUrl, destPath: subDest, sessionCookies, retryBaseDelayMs: 0 });
+                    specialItemSubmissionPaths[si]!.push(finalPath);
                     lines.push(`- [${fname}](${finalPath})`);
                   } catch {
                     lines.push(`- [${fname}](${subUrl}) *(Download fehlgeschlagen)*`);
@@ -474,8 +636,12 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         const { hash } = await atomicWrite(destPath, buf);
         specialItemHashes[si] = hash;
       }
-      downloadedCount++;
-      progress.bar?.increment(1, { file: label });
+      if (specialItems[si]!.isSidecar) {
+        sidecarCount++;
+      } else {
+        downloadedCount++;
+        progress.bar?.increment(1, { file: label });
+      }
     } catch (err) {
       failedCount++;
       logger.info(`  Warning: failed to save ${item.url} — ${(err as Error).message}`);
@@ -488,7 +654,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   const failedMsg = failedCount > 0 ? `, ${failedCount} failed` : "";
-  logger.info(`Done: ${downloadedCount} downloaded, ${skipped.length} skipped${failedMsg}.`);
+  const sidecarMsg = sidecarCount > 0 ? `, ${sidecarCount} sidecar${sidecarCount === 1 ? "" : "s"}` : "";
+  logger.info(`Done: ${downloadedCount} downloaded${sidecarMsg}, ${skipped.length} skipped${failedMsg}.`);
 
   // One-time hint to enable log file (only after a real download run, only once)
   const logHintShown = (await config.get("logHintShown")) as boolean | undefined;
@@ -503,9 +670,16 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   // Build sidecar map: resourceId → sidecar destPath (for description-md items)
   const sidecarPaths = new Map<string, string>();
-  for (const si of specialItems) {
+  // Build submission paths map: resourceId → submission file paths (for assign items)
+  const submissionPathsMap = new Map<string, string[]>();
+  for (let i = 0; i < specialItems.length; i++) {
+    const si = specialItems[i]!;
     if (si.strategy === "description-md") {
       sidecarPaths.set(si.item.resourceId ?? "", si.destPath);
+    }
+    const subPaths = specialItemSubmissionPaths[i];
+    if (subPaths && subPaths.length > 0) {
+      submissionPathsMap.set(si.item.resourceId ?? "", subPaths);
     }
   }
 
@@ -539,6 +713,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     const files = { ...(sectionEntry.files ?? {}) };
 
     const sidecarPath = sidecarPaths.get(resourceId);
+    const submissionPaths = submissionPathsMap.get(resourceId);
     files[resourceId] = {
       name: filenameFn(item.url ?? "", resourceId),
       url: item.url ?? "",
@@ -548,6 +723,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       lastModified: new Date().toISOString(),
       status: "ok" as const,
       ...(sidecarPath ? { sidecarPath } : {}),
+      ...(submissionPaths && submissionPaths.length > 0 ? { submissionPaths } : {}),
     };
 
     sections[sectionId] = { files };

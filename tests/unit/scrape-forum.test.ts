@@ -6,7 +6,7 @@ import { MockAgent, setGlobalDispatcher, getGlobalDispatcher, Dispatcher } from 
 import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { extractForumThreadUrls } from "../../src/scraper/forum.js";
+import { extractForumThreadUrls, extractPageContent } from "../../src/scraper/forum.js";
 
 const BASE = "https://moodle.example.com";
 
@@ -85,5 +85,49 @@ describe("extractForumThreadUrls — unit tests", () => {
     const html = `<html><body>${links}</body></html>`;
     const threads = extractForumThreadUrls(html, BASE);
     expect(threads).toHaveLength(100);
+  });
+});
+
+describe("extractPageContent — unit tests", () => {
+  const MOODLE_CHROME = `<html><head><style>body{}</style></head><body>
+    <nav>Navigation bar</nav>
+    <div role="main"><h1>Forum Title</h1><p>Actual content</p></div>
+    <footer>Footer stuff</footer>
+    <script>var x = 1;</script>
+  </body></html>`;
+
+  it("extracts content from <div role=\"main\">", () => {
+    const result = extractPageContent(MOODLE_CHROME);
+    expect(result).toContain("Actual content");
+    expect(result).not.toContain("Navigation bar");
+    expect(result).not.toContain("Footer stuff");
+  });
+
+  it("falls back to <div id=\"page-content\"> when role=main absent", () => {
+    const html = `<html><body>
+      <div id="page-content"><p>Page content here</p></div>
+      <footer>Footer</footer>
+    </body></html>`;
+    const result = extractPageContent(html);
+    expect(result).toContain("Page content here");
+    expect(result).not.toContain("Footer");
+  });
+
+  it("falls back to full HTML when no known container found", () => {
+    const html = `<html><body><p>No known container</p></body></html>`;
+    const result = extractPageContent(html);
+    expect(result).toContain("No known container");
+  });
+
+  it("correctly handles nested divs inside role=main", () => {
+    const html = `<html><body>
+      <div role="main">
+        <div class="outer"><div class="inner"><p>Deep content</p></div></div>
+      </div>
+      <aside>Sidebar</aside>
+    </body></html>`;
+    const result = extractPageContent(html);
+    expect(result).toContain("Deep content");
+    expect(result).not.toContain("Sidebar");
   });
 });

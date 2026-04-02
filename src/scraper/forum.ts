@@ -1,12 +1,104 @@
-// Forum thread URL extraction for deep-dive scraping.
+// Forum thread URL extraction and Moodle page content extraction for deep-dive scraping.
 // REQ-SCRAPE-002 (extended: forum thread content)
+//
+// WHY THIS FILE EXISTS
+// --------------------
+// Moodle renders forum index pages and individual discussion pages as full HTML documents
+// with navigation chrome, scripts, sidebars, and footer — typically 200+ KB per page.
+// Converting raw page HTML with Turndown produces enormous .md files filled with nav links,
+// breadcrumbs, and JavaScript snippets, obscuring the actual content.
+//
+// `extractPageContent` solves this by isolating the main content region before conversion.
+// It is used by `runScrape` for ALL page-md strategy types (page, forum, quiz, book, etc.)
+// and by the forum deep-dive loop for individual thread pages.
+//
+// `extractForumThreadUrls` drives the forum deep-dive: it extracts all discussion thread
+// links from the forum index page so `runScrape` can fetch and include each thread's
+// content in the single .md file written for the forum activity.
 
 const MAX_THREADS = 100;
 
 /**
+ * Extract only the main content region from a full Moodle page HTML, stripping
+ * navigation chrome, scripts, headers, and footers.
+ *
+ * WHY NOT A SIMPLE REGEX:
+ *   The main content div (`<div role="main">` etc.) contains deeply nested child divs.
+ *   A non-greedy `[\s\S]*?` pattern stops at the very first `</div>` it encounters,
+ *   truncating the content. The balanced-div depth counter walks forward counting every
+ *   `<div` open (+1) and `</div` close (-1), stopping only when depth returns to 0 —
+ *   i.e. the matching closing tag of the container we opened.
+ *
+ * Tries in order:
+ *   1. `<div role="main">` — Moodle 4.x / boost_union theme (primary)
+ *   2. `<div id="page-content">` — classic Moodle themes
+ *   3. `<div id="region-main">` — some older HWR theme variants
+ *   4. Falls back to the full HTML if none of the above is found.
+ *
+ * Used by `runScrape` for:
+ *   - All `page-md` strategy activities (page, forum, quiz, book, lesson, wiki, workshop)
+ *   - Individual forum thread pages in the forum deep-dive loop
+ *
+ * DO NOT replace the balanced-div loop with a regex — Moodle main content is always
+ * multi-level nested and the regex approach has been proven to break on real HWR pages.
+ */
+export function extractPageContent(html: string): string {
+  const candidates = [
+    /<div[^>]+role="main"[^>]*>/i,
+    /<div[^>]+id="page-content"[^>]*>/i,
+    /<div[^>]+id="region-main"[^>]*>/i,
+  ];
+
+  for (const openRe of candidates) {
+    const openMatch = openRe.exec(html);
+    if (!openMatch) continue;
+
+    const innerStart = openMatch.index + openMatch[0].length;
+    let depth = 1;
+    let pos = innerStart;
+
+    while (pos < html.length && depth > 0) {
+      const nextOpen = html.indexOf("<div", pos);
+      const nextClose = html.indexOf("</div", pos);
+      if (nextClose < 0) break;
+      if (nextOpen >= 0 && nextOpen < nextClose) {
+        depth++;
+        pos = nextOpen + 4;
+      } else {
+        depth--;
+        pos = nextClose + 5;
+      }
+    }
+
+    const inner = html.slice(innerStart, pos - 5).trim();
+    if (inner) return inner;
+  }
+
+  return html;
+}
+
+/**
  * Extract all discussion thread URLs from a Moodle forum index page.
  * Returns an array of { title, url } objects, capped at MAX_THREADS.
- * Handles both absolute and relative hrefs.
+ *
+ * Matching strategy:
+ *   Scans all `<a href="...discuss.php?d=N...">` links in the HTML.
+ *   The `d=` parameter uniquely identifies a discussion thread in Moodle.
+ *   Profile, user, and navigation links lack `discuss.php` and are ignored.
+ *
+ * Deduplication:
+ *   The same thread URL can appear multiple times in a forum page (e.g. in the
+ *   subject column and the "last post" column). The dedup key is the href with
+ *   any `#anchor` fragment stripped so `discuss.php?d=42` and
+ *   `discuss.php?d=42#p123` are treated as the same thread.
+ *
+ * Relative URL resolution:
+ *   HWR Moodle consistently uses absolute hrefs, but relative paths starting
+ *   with `/` are resolved against `baseUrl` as a safety measure.
+ *
+ * The 100-thread cap (MAX_THREADS) prevents pathological cases where a forum
+ * index lists hundreds of entries — the deep-dive fetch loop would take too long.
+ * Announcement forums at HWR typically have < 20 threads.
  */
 export function extractForumThreadUrls(
   indexHtml: string,

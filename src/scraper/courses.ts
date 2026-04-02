@@ -16,6 +16,8 @@ export interface Activity {
   hash?: string;
   /** Raw inner HTML of activity-altcontent (label content or activity description). */
   description?: string;
+  /** Optional subdirectory inside the section dir (used when folder files collide across folders). */
+  subDir?: string;
 }
 
 export interface FolderFile {
@@ -27,6 +29,17 @@ export interface Section {
   sectionId: string;
   sectionName: string;
   activities: Activity[];
+  /**
+   * Raw inner HTML of the section's `<div class="summarytext">` block, if present.
+   *
+   * Moodle 4.x (boost_union theme) places a rich-text section description directly
+   * above the activity list inside each `<li class="section">`. It is extracted in
+   * `parseContentTree` using a balanced-div depth counter and written to disk by
+   * `runScrape` as `_Abschnittsbeschreibung.md` in the section directory.
+   *
+   * This is DIFFERENT from `ContentTree.summary`, which is the course-level description.
+   */
+  summary?: string;
 }
 
 export interface ContentTree {
@@ -192,7 +205,13 @@ export async function fetchEnrolledCourses(opts: FetchOptions): Promise<Course[]
         if (result && !result.error && result.data?.courses) {
           return result.data.courses.map((c) => ({
             courseId: c.id,
-            courseName: c.fullname,
+            // Combine shortname + fullname so parseCourseNameParts() can find the WI#### module
+            // code embedded in the shortname (e.g. "WI-22/2-M13-WI2032-F01-WiSe-2025-51413").
+            // Only prepend shortname when it differs from fullname — identical values (e.g.
+            // "Bibliothek benutzen" / "Bibliothek benutzen") would produce a doubled folder name.
+            courseName: (c.shortname && c.shortname !== c.fullname)
+              ? `${c.shortname} ${c.fullname}`
+              : c.fullname,
             courseUrl: `${baseUrl}/course/view.php?id=${c.id}`,
           }));
         }
@@ -256,23 +275,55 @@ async function fetchWithRedirects(
 /**
  * Extract course summary/description from the course homepage HTML.
  * Returns the raw inner HTML of the summary block, or null if absent/empty.
- * Handles multiple Moodle theme variants:
- *   - <div class="summary"> inside <div class="course-description">
- *   - <div class="course-summary-section">
+ *
+ * Handles multiple Moodle theme variants (tried in order):
+ *   1. `<div class="summary">` — classic Moodle, nested inside `<div class="course-description">`
+ *   2. `<div class="course-summary-section">` — some HWR-specific theme variants
+ *   3. `<div class="summarytext">` — Moodle 4.x boost_union theme; used in onetopic-format
+ *      courses where the "course description" is the section-0 summary text (e.g. GPM, RTG).
+ *      NOTE: `\bsummary\b` does NOT match "summarytext" (no word boundary after "summary" in
+ *      "summarytext"), so candidate 1 and 3 are distinct.
+ *
+ * Why balanced-div instead of a non-greedy regex:
+ *   Course descriptions commonly contain nested `<div>` elements (e.g. `<div class="no-overflow">`,
+ *   inline image wrappers, formatted text blocks). A non-greedy `[\s\S]*?` regex stops at the
+ *   very first `</div>` — truncating multi-paragraph content. The balanced-div depth counter
+ *   correctly walks to the matching closing tag regardless of nesting depth.
+ *
+ * Returns null if the block is missing, blank, or contains only HTML tags with no text.
  */
 export function extractCourseDescription(html: string): string | null {
-  // Variant 1: boost_union / standard Moodle — <div class="summary"> inside course-description
-  const summaryM = /<div[^>]+class="[^"]*\bsummary\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(html);
-  if (summaryM?.[1]) {
-    const inner = summaryM[1].replace(/<[^>]+>/g, "").trim();
-    if (inner) return summaryM[1];
+  const candidates = [
+    /<div[^>]+class="[^"]*\bsummary\b[^"]*"[^>]*>/i,
+    /<div[^>]+class="[^"]*\bcourse-summary-section\b[^"]*"[^>]*>/i,
+    /<div[^>]+class="[^"]*\bsummarytext\b[^"]*"[^>]*>/i,
+  ];
+
+  for (const openRe of candidates) {
+    const openMatch = openRe.exec(html);
+    if (!openMatch) continue;
+
+    const innerStart = openMatch.index + openMatch[0].length;
+    let depth = 1;
+    let pos = innerStart;
+
+    while (pos < html.length && depth > 0) {
+      const nextOpen = html.indexOf("<div", pos);
+      const nextClose = html.indexOf("</div", pos);
+      if (nextClose < 0) break;
+      if (nextOpen >= 0 && nextOpen < nextClose) {
+        depth++;
+        pos = nextOpen + 4;
+      } else {
+        depth--;
+        pos = nextClose + 5;
+      }
+    }
+
+    const inner = html.slice(innerStart, pos - 5).trim();
+    if (inner.replace(/<[^>]+>/g, "").trim()) return inner;
   }
-  // Variant 2: <div class="course-summary-section">
-  const secM = /<div[^>]+class="[^"]*\bcourse-summary-section\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(html);
-  if (secM?.[1]) {
-    const inner = secM[1].replace(/<[^>]+>/g, "").trim();
-    if (inner) return secM[1];
-  }
+
   return null;
 }
 
@@ -434,6 +485,14 @@ function parseFolderFiles(html: string): FolderFile[] {
  *
  * Activity names are extracted from the link text with `<span class="accesshide">` stripped
  * to prevent Moodle's screenreader-only labels ("Datei", "Forum", etc.) from polluting names.
+ *
+ * Section summaries (`Section.summary`):
+ *   Each section chunk is scanned for `<div class="summarytext">`, which Moodle 4.x uses to
+ *   display a rich-text description above the activity list. The content is extracted with a
+ *   balanced-div depth counter (same technique as `extractCourseDescription`) and stored in
+ *   `Section.summary`. The caller (`runScrape`) writes this to `_Abschnittsbeschreibung.md`
+ *   in the section directory. Do NOT simplify the balanced-div loop to a regex — section
+ *   descriptions routinely contain nested divs (image wrappers, formatting containers).
  */
 function parseContentTree(html: string, courseId: number, baseUrl: string, logger?: Logger): ContentTree {
   const sections: Section[] = [];
@@ -485,7 +544,26 @@ function parseContentTree(html: string, courseId: number, baseUrl: string, logge
       if (result) activities.push(result);
     }
 
-    sections.push({ sectionId: `s${sectionIndex}`, sectionName, activities });
+    // Extract section description from <div class="summarytext"> using balanced-div counter
+    let sectionSummary: string | undefined;
+    const summaryOpenRe = /<div[^>]+class="[^"]*\bsummarytext\b[^"]*"[^>]*>/i;
+    const summaryMatch = summaryOpenRe.exec(chunk);
+    if (summaryMatch) {
+      const innerStart = summaryMatch.index + summaryMatch[0].length;
+      let depth = 1;
+      let pos = innerStart;
+      while (pos < chunk.length && depth > 0) {
+        const nextOpen = chunk.indexOf("<div", pos);
+        const nextClose = chunk.indexOf("</div", pos);
+        if (nextClose < 0) break;
+        if (nextOpen >= 0 && nextOpen < nextClose) { depth++; pos = nextOpen + 4; }
+        else { depth--; pos = nextClose + 5; }
+      }
+      const inner = chunk.slice(innerStart, pos - 5).trim();
+      if (inner.replace(/<[^>]+>/g, "").trim()) sectionSummary = inner;
+    }
+
+    sections.push({ sectionId: `s${sectionIndex}`, sectionName, activities, ...(sectionSummary ? { summary: sectionSummary } : {}) });
     sectionIndex++;
   }
 
@@ -537,19 +615,20 @@ export function parseActivityFromElement(
     const url = linkMatch?.[1] ?? "";
     const rawLinkHtml = linkMatch?.[2] ?? "";
 
-    // Strip accesshide spans before deriving name, then strip remaining tags, then decode entities
-    let name = rawLinkHtml
-      ? decodeHtmlEntities(stripAccessHide(rawLinkHtml))
-      : (() => {
-          // Fall back to span text for restricted (no-link) activities
-          const spanMatch = /<span[^>]*>([\s\S]*?)<\/span>/i.exec(element);
-          return spanMatch ? decodeHtmlEntities(stripAccessHide(spanMatch[1]!)) : "";
-        })() || "";
-
-    // For labels (no URL): get name from data-activityname attribute
-    if (!url && !name) {
-      const dataNameMatch = /data-activityname="([^"]+)"/i.exec(element);
-      if (dataNameMatch) name = decodeHtmlEntities(dataNameMatch[1]!);
+    // Prefer the canonical data-activityname attribute (set by Moodle on the activity-item div).
+    // This avoids mis-naming activities whose <li> contains links to other activities
+    // (e.g. a customcert certificate li that links to the paired scorm activity by name).
+    const dataNameMatch = /data-activityname="([^"]+)"/i.exec(element);
+    let name: string;
+    if (dataNameMatch?.[1]) {
+      name = decodeHtmlEntities(dataNameMatch[1]!);
+    } else if (rawLinkHtml) {
+      // Strip accesshide spans before deriving name, then strip remaining tags, then decode entities
+      name = decodeHtmlEntities(stripAccessHide(rawLinkHtml));
+    } else {
+      // Fall back to span text for restricted (no-link) activities
+      const spanMatch = /<span[^>]*>([\s\S]*?)<\/span>/i.exec(element);
+      name = spanMatch ? decodeHtmlEntities(stripAccessHide(spanMatch[1]!)) : "";
     }
 
     if (!name) name = "Unnamed activity";
