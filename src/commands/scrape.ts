@@ -229,7 +229,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   logger.info("");
   logger.info("Syncing...");
-  logger.info(`  ${downloads.length} new, ${skipped.length} up to date.`);
+  logger.info(`  ${downloads.length} new activit${downloads.length === 1 ? "y" : "ies"}, ${skipped.length} up to date.`);
   logger.info("");
 
   if (dryRun) {

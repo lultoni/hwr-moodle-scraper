@@ -118,6 +118,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
 
         if (file.localPath) {
           knownPaths.add(file.localPath);
+          if (file.sidecarPath) knownPaths.add(file.sidecarPath);
           if (file.status !== "orphan" && existsSync(file.localPath)) {
             try {
               const st = statSync(file.localPath);
