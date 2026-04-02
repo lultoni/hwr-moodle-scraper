@@ -50,7 +50,28 @@ describe("STEP-002: Config management", () => {
     await cfg.set("outputDir", "/custom");
     await cfg.reset();
     const val = await cfg.get("outputDir");
-    expect(val).toMatch(/moodle-scraper-output/);
+    expect(val).toBe("");
+  });
+
+  it("outputDir default is empty string when not set", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    expect(await cfg.get("outputDir")).toBe("");
+  });
+
+  it("minFreeDiskMb defaults to 1000", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    expect(await cfg.get("minFreeDiskMb")).toBe(1000);
+  });
+
+  it("logHintShown defaults to false", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    expect(await cfg.get("logHintShown")).toBe(false);
+  });
+
+  it("logHintShown can be set to true and retrieved", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    await cfg.set("logHintShown", true);
+    expect(await cfg.get("logHintShown")).toBe(true);
   });
 
   // REQ-FS-001 — config dir created with 0700

@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 const DEFAULTS = {
-  get outputDir() { return join(homedir(), "moodle-scraper-output"); },
+  get outputDir() { return ""; },
   courseSearch: "" as string,
-  minFreeDiskMb: 100,
+  minFreeDiskMb: 1000,
   maxConcurrentDownloads: 3,
   requestDelayMs: 500,
   requestJitterMs: 200,
@@ -16,10 +16,12 @@ const DEFAULTS = {
   skPlacement: "separate" as "separate" | "in-semester",
   /** Target semester dir for SK courses when skPlacement is "in-semester" (e.g. "Semester_3"). Empty = no nesting. */
   skSemester: "" as string,
+  /** Set to true after the one-time log-file hint has been shown. */
+  logHintShown: false as boolean,
 } as const;
 
 export type ConfigKey = keyof typeof DEFAULTS;
-export type ConfigValue = string | number | null;
+export type ConfigValue = string | number | boolean | null;
 
 export class ConfigManager {
   private readonly configDir: string;

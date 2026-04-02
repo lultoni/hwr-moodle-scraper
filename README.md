@@ -6,6 +6,29 @@ First run pulls everything; subsequent runs are incremental (only new or changed
 
 ---
 
+## Quick Start
+
+| Scenario | Command |
+|----------|---------|
+| First time setup + download everything | `msc scrape` |
+| Download new / changed files only | `msc scrape` |
+| Re-download everything from scratch | `msc scrape --force` |
+| Re-download only files missing from disk | `msc scrape --check-files` |
+| See what would be downloaded (no files written) | `msc scrape --dry-run` |
+| Scrape specific courses only | `msc scrape --courses 12345,67890` |
+| Override low-disk-space warning | `msc scrape --skip-disk-check` |
+| See sync summary and per-course breakdown | `msc status` |
+| Find missing or orphaned files | `msc status --issues` |
+| Change output folder | `msc config set outputDir ~/Documents/Moodle` |
+| Enable a log file | `msc config set logFile ~/moodle-scraper.log` |
+| See all config values | `msc config list` |
+
+> **Your output folder is yours** — feel free to add your own notes, highlights, and files
+> alongside the downloaded content. The scraper only manages files it downloaded and will
+> never delete your personal additions. `msc status` shows how many user-added files you have.
+
+---
+
 ## Requirements
 
 | Requirement | Notes |

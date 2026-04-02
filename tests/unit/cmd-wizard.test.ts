@@ -61,8 +61,8 @@ describe("STEP-022: First-run wizard — flow", () => {
     const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
     const promptFn = vi.fn()
       .mockResolvedValueOnce("/custom/output") // outputDir input
-      .mockResolvedValueOnce("alice")           // username
-      .mockResolvedValueOnce("password123");    // password
+      .mockResolvedValueOnce("")               // skPlacement (→ separate)
+      .mockResolvedValueOnce("");              // logFile (→ null)
 
     await runWizard({ keychain, config, promptFn, httpClient: {} as never });
 
@@ -74,9 +74,9 @@ describe("STEP-022: First-run wizard — flow", () => {
     const keychain = new (vi.mocked(KeychainAdapter))() as never;
     const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
     const promptFn = vi.fn()
-      .mockResolvedValueOnce("") // empty → use default
-      .mockResolvedValueOnce("alice")
-      .mockResolvedValueOnce("pass");
+      .mockResolvedValueOnce("") // empty → use default hint
+      .mockResolvedValueOnce("") // skPlacement
+      .mockResolvedValueOnce(""); // logFile
 
     await runWizard({ keychain, config, promptFn, httpClient: {} as never });
 
@@ -104,5 +104,63 @@ describe("STEP-022: First-run wizard — flow", () => {
 
     const result = await shouldRunWizard({ keychain, config });
     expect(result).toBe(false);
+  });
+});
+
+describe("STEP-022: Wizard — skPlacement + logFile prompts", () => {
+  it("saves skPlacement=separate and no skSemester when user presses Enter", async () => {
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    const promptFn = vi.fn()
+      .mockResolvedValueOnce("") // outputDir
+      .mockResolvedValueOnce("") // skPlacement → separate
+      .mockResolvedValueOnce(""); // logFile
+
+    await runWizard({ keychain, config, promptFn, httpClient: {} as never });
+
+    expect(vi.mocked(config.set)).toHaveBeenCalledWith("skPlacement", "separate");
+    const skSemCalls = vi.mocked(config.set).mock.calls.filter((c) => c[0] === "skSemester");
+    expect(skSemCalls).toHaveLength(0);
+  });
+
+  it("saves skPlacement=in-semester and prompts for skSemester", async () => {
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    const promptFn = vi.fn()
+      .mockResolvedValueOnce("")             // outputDir
+      .mockResolvedValueOnce("in-semester")  // skPlacement
+      .mockResolvedValueOnce("Semester_3")   // skSemester
+      .mockResolvedValueOnce("");            // logFile
+
+    await runWizard({ keychain, config, promptFn, httpClient: {} as never });
+
+    expect(vi.mocked(config.set)).toHaveBeenCalledWith("skPlacement", "in-semester");
+    expect(vi.mocked(config.set)).toHaveBeenCalledWith("skSemester", "Semester_3");
+  });
+
+  it("saves logFile path when user enters one", async () => {
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    const promptFn = vi.fn()
+      .mockResolvedValueOnce("")                    // outputDir
+      .mockResolvedValueOnce("")                    // skPlacement
+      .mockResolvedValueOnce("~/moodle-scraper.log"); // logFile
+
+    await runWizard({ keychain, config, promptFn, httpClient: {} as never });
+
+    expect(vi.mocked(config.set)).toHaveBeenCalledWith("logFile", "~/moodle-scraper.log");
+  });
+
+  it("saves logFile=null when user presses Enter (no log file)", async () => {
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    const promptFn = vi.fn()
+      .mockResolvedValueOnce("") // outputDir
+      .mockResolvedValueOnce("") // skPlacement
+      .mockResolvedValueOnce(""); // logFile → null
+
+    await runWizard({ keychain, config, promptFn, httpClient: {} as never });
+
+    expect(vi.mocked(config.set)).toHaveBeenCalledWith("logFile", null);
   });
 });

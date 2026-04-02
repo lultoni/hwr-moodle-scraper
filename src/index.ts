@@ -72,6 +72,7 @@ program
   .option("-q, --quiet", "Suppress all output except errors", false)
   .option("-v, --verbose", "Debug-level output", false)
   .option("--non-interactive", "Exit instead of prompting for credentials", false)
+  .option("--skip-disk-check", "Skip the minimum free disk space check", false)
   .action(async (opts: {
     outputDir?: string;
     courses?: string;
@@ -82,6 +83,7 @@ program
     quiet: boolean;
     verbose: boolean;
     nonInteractive: boolean;
+    skipDiskCheck: boolean;
   }) => {
     const globalOpts = program.opts<{ debug: boolean }>();
     const config = new ConfigManager();
@@ -101,6 +103,7 @@ program
       dryRun: opts.dryRun,
       force: opts.force,
       checkFiles: opts.checkFiles,
+      skipDiskCheck: opts.skipDiskCheck,
       nonInteractive: opts.nonInteractive,
       quiet: opts.quiet,
       verbose: opts.verbose,

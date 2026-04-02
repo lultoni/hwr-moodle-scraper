@@ -39,11 +39,25 @@ export async function runWizard(opts: WizardOptions): Promise<void> {
     );
   }
 
-  const defaultDir = ((await config.get("outputDir")) as string | undefined)
-    ?? `${process.env.HOME ?? homedir()}/moodle-scraper-output`;
-  const inputDir = await promptFn(`Output directory [${defaultDir}]: `);
-  const outputDir = inputDir.trim() || defaultDir;
-  await config.set("outputDir", outputDir);
+  // Output directory
+  const stored = ((await config.get("outputDir")) as string | undefined) ?? "";
+  const hint = stored || `${homedir()}/moodle-scraper-output`;
+  const inputDir = await promptFn(`Output directory [${hint}]: `);
+  await config.set("outputDir", inputDir.trim() || hint);
 
+  // Credentials
   await promptAndAuthenticate({ promptFn, httpClient, keychain, ...(logger ? { logger } : {}) });
+
+  // SK course placement
+  const skInput = (await promptFn("SK placement [separate/in-semester] (default: separate): ")).trim();
+  const skPlacement = skInput === "in-semester" ? "in-semester" : "separate";
+  await config.set("skPlacement", skPlacement);
+  if (skPlacement === "in-semester") {
+    const skSem = (await promptFn("Which semester folder? (e.g. Semester_3): ")).trim();
+    await config.set("skSemester", skSem);
+  }
+
+  // Log file
+  const logInput = (await promptFn("Log file path (press Enter to skip): ")).trim();
+  await config.set("logFile", logInput || null);
 }

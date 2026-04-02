@@ -10,9 +10,10 @@ import { KeychainAdapter } from "../auth/keychain.js";
 import { createHttpClient } from "../http/client.js";
 import { createLogger, LogLevel, type Logger } from "../logger.js";
 import { ConfigManager } from "../config.js";
-import { buildOutputPath } from "../fs/output.js";
+import { buildOutputPath, checkDiskSpace } from "../fs/output.js";
 import { DownloadQueue, type DownloadItem } from "../scraper/downloader.js";
 import { writeUrlFile } from "../scraper/content-types.js";
+import { EXIT_CODES } from "../exit-codes.js";
 import { mkdirSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { writeFile } from "node:fs/promises";
@@ -22,6 +23,8 @@ export interface ScrapeOptions {
   dryRun: boolean;
   force: boolean;
   checkFiles?: boolean;
+  /** Skip the minimum free disk space check. */
+  skipDiskCheck?: boolean;
   /** Moodle base URL. Defaults to "https://moodle.hwr-berlin.de". */
   baseUrl?: string;
   nonInteractive?: boolean;
@@ -43,12 +46,22 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     verbose = false,
   } = opts;
 
+  // Guard: outputDir must be configured before we can proceed
+  if (!outputDir) {
+    throw Object.assign(
+      new Error("outputDir is not configured. Run `msc` to set up, or use --output-dir <path>."),
+      { exitCode: EXIT_CODES.USAGE_ERROR }
+    );
+  }
+
+  // Config must be initialised before the logger so we can read logFile
+  const config = new ConfigManager();
+  const logFileCfg = (await config.get("logFile")) as string | null | undefined ?? null;
   const level = quiet ? LogLevel.ERROR : verbose ? LogLevel.DEBUG : LogLevel.INFO;
-  const logger = opts.logger ?? createLogger({ level, redact: [], logFile: null });
+  const logger = opts.logger ?? createLogger({ level, redact: [], logFile: logFileCfg ?? null });
 
   const httpClient = createHttpClient();
   const keychain = new KeychainAdapter();
-  const config = new ConfigManager();
   const stateManager = new StateManager(outputDir);
 
   // Auth — returns the session cookie for use in subsequent requests
@@ -58,6 +71,18 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     baseUrl,
     ...(opts.logger ? { logger: opts.logger } : {}),
   });
+
+  // Disk space pre-check
+  if (!opts.skipDiskCheck) {
+    const minFreeMb = (await config.get("minFreeDiskMb")) as number | undefined ?? 1000;
+    try {
+      await checkDiskSpace(outputDir, { minFreeMb });
+    } catch (err) {
+      logger.info((err as Error).message);
+      logger.info("  To override: msc scrape --skip-disk-check");
+      throw err;
+    }
+  }
 
   // Course search query from config (e.g. "WI24A")
   const searchQuery = (await config.get("courseSearch")) as string | undefined;
@@ -79,6 +104,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   logger.info(`Found ${courses.length} course(s).`);
+  logger.info("");
+  logger.info("Fetching course content...");
 
   // Build courseId → courseName lookup
   const courseNameMap = new Map<number, string>();
@@ -114,8 +141,6 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const trees: ContentTree[] = await Promise.all(
     courses.map(async (c) => {
       const tree = await fetchContentTree({ baseUrl, courseId: c.courseId, sessionCookies });
-      const totalActivities = tree.sections.reduce((n, s) => n + s.activities.length, 0);
-      logger.debug(`  ${c.courseName}: ${tree.sections.length} section(s), ${totalActivities} activity/activities`);
       return tree;
     })
   );
@@ -156,6 +181,11 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           return { ...section, activities: expandedActivities };
         })
       );
+      // Per-course checkmark after full expansion
+      const totalActivities = expandedSections.reduce((n, s) => n + s.activities.length, 0);
+      const sp = rawCourseShortPaths.get(tree.courseId);
+      const displayName = sp?.shortName ?? (courseNameMap.get(tree.courseId) ?? String(tree.courseId));
+      logger.info(`  ✓ ${displayName}  (${expandedSections.length} section(s), ${totalActivities} activity/activities)`);
       return { ...tree, sections: expandedSections };
     })
   );
@@ -184,6 +214,11 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   const downloads = plan.filter((p) => p.action === SyncAction.DOWNLOAD);
   const skipped = plan.filter((p) => p.action === SyncAction.SKIP);
+
+  logger.info("");
+  logger.info("Syncing...");
+  logger.info(`  ${downloads.length} new, ${skipped.length} up to date.`);
+  logger.info("");
 
   if (dryRun) {
     for (const item of plan) {
@@ -323,7 +358,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     binaryFinalPaths = result.finalPaths;
 
     for (const { item: failedItem, error } of result.failed) {
-      logger.warn(`  Failed to download ${failedItem.url}: ${error.message}`);
+      logger.info(`  Warning: failed to download ${failedItem.url}: ${error.message}`);
     }
   }
 
@@ -367,7 +402,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       progress.bar?.increment(1, { file: label });
     } catch (err) {
       failedCount++;
-      logger.debug(`  Warning: failed to download ${item.url} — ${(err as Error).message}`);
+      logger.info(`  Warning: failed to save ${item.url} — ${(err as Error).message}`);
     }
   }
 
@@ -378,6 +413,14 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   const failedMsg = failedCount > 0 ? `, ${failedCount} failed` : "";
   logger.info(`Done: ${downloadedCount} downloaded, ${skipped.length} skipped${failedMsg}.`);
+
+  // One-time hint to enable log file (only after a real download run, only once)
+  const logHintShown = (await config.get("logHintShown")) as boolean | undefined;
+  const currentLogFile = (await config.get("logFile")) as string | null | undefined;
+  if (!currentLogFile && !logHintShown && downloadedCount > 0) {
+    logger.info("Tip: Run `msc config set logFile ~/moodle-scraper.log` to keep a permanent log.");
+    await config.set("logHintShown", true);
+  }
 
   // Update state with downloaded files
   const updatedCourses: Record<string, CourseState> = { ...(state.courses as Record<string, CourseState>) };
