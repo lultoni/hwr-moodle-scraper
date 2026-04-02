@@ -209,8 +209,9 @@ export async function runReset(opts: ResetOptions): Promise<void> {
     return;
   }
 
-  // Collect all scraper-owned file paths from state (including sidecars)
+  // Collect all scraper-owned file paths from state (including sidecars and generated files)
   const knownPaths: string[] = [];
+  for (const p of state.generatedFiles ?? []) knownPaths.push(p);
   for (const course of Object.values(state.courses)) {
     for (const section of Object.values(course.sections ?? {})) {
       for (const file of Object.values(section.files ?? {})) {

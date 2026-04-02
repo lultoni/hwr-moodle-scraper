@@ -113,6 +113,9 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   const missingFiles: Array<{ localPath: string; url: string }> = [];
   const knownPaths = new Set<string>();
 
+  // Include generated files (README.md, _Abschnittsbeschreibung.md) written outside FileState
+  for (const p of state.generatedFiles ?? []) knownPaths.add(p);
+
   // Per-course stats: name → { files, size, lastModified }
   const courseStats = new Map<string, { label: string; files: number; size: number; lastModified: string }>();
 

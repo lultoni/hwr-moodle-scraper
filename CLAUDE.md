@@ -33,8 +33,11 @@ Used in three places: `parseActivityFromElement` (activity-altcontent), `extract
 ### extractPageContent (forum.ts)
 Called before every Turndown HTML→MD conversion for page-md and forum thread pages. Without it, Turndown converts the full 200 KB Moodle page (nav, scripts, sidebars) into noise. Tries `<div role="main">`, `<div id="page-content">`, `<div id="region-main">` in order. **Never pass raw page HTML to Turndown.**
 
-### Section summaries (_Abschnittsbeschreibung.md)
-`Section.summary` is populated from `<div class="summarytext">` in `parseContentTree`. Written to `_Abschnittsbeschreibung.md` in the section dir by `runScrape`. These files are **outside sync-state** (no FileState entry, refreshed every run). Do not add them to the download plan or they will appear as user-added files in `msc status` and be deleted by `msc reset`.
+### Section summaries (_Abschnittsbeschreibung.md) and course README.md
+`Section.summary` is populated from `<div class="summarytext">` in `parseContentTree`. Written to `_Abschnittsbeschreibung.md` in the section dir by `runScrape`. Course README.md files come from `ContentTree.summary`. Both are refreshed on every run from live Moodle HTML and are tracked in `State.generatedFiles` (not as FileState entries). `msc status` and `msc reset` read `generatedFiles` to treat them as scraper-owned. Do not add them to the per-resource download plan.
+
+### State registration rule — CRITICAL
+**Any file written to disk by `runScrape` that is not stored as a `FileState` entry MUST be added to `State.generatedFiles`.** If it isn't, `msc status` will show it as a user-added file, and `msc reset` will not delete it. The `generatedFiles` list is a flat `string[]` at the top level of `State` (not inside courses/sections). It is merged across runs so partial `--courses` runs don't lose entries from previous runs.
 
 ### isSidecar flag (description-md strategy)
 `description-md` items generate `.description.md` sidecar files alongside the main activity file. They are tagged `isSidecar: true` in `specialItems` and tracked via `FileState.sidecarPath`. They are excluded from `downloadedCount`, `totalItems` counter, and the progress bar total, but shown separately in the "Done:" summary line. Do not merge them into `downloadedCount`.

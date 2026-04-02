@@ -127,7 +127,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Relocate files on disk if semesterDir has changed (e.g. skPlacement toggle)
   const { state, changed: relocateChanged } = relocateFiles(migratedState, outputDir, courseShortPathsStr);
   if (pathsChanged || relocateChanged) {
-    await stateManager.save({ courses: state.courses });
+    await stateManager.save({ courses: state.courses, generatedFiles: state.generatedFiles });
     if (relocateChanged) logger.info("Moved files to updated folder layout.");
   }
 
@@ -161,6 +161,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // metadata files, not scraped Moodle resources, and must not appear in msc status
   // as "user files" or be deleted by msc reset.
   // Write course README.md files for courses that have a summary description
+  const generatedFiles: string[] = [];
   if (!dryRun) {
     let TurndownServiceForDesc: typeof import("turndown") | undefined;
     for (const tree of trees) {
@@ -173,6 +174,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       const readmePath = join(outputDir, ...(sp?.semesterDir ? [sp.semesterDir] : []), courseDirName, "README.md");
       mkdirSync(dirname(readmePath), { recursive: true });
       await atomicWrite(readmePath, Buffer.from(descMd + "\n", "utf8"));
+      generatedFiles.push(readmePath);
     }
 
     // Write section description files (_Abschnittsbeschreibung.md) for sections with summarytext
@@ -190,6 +192,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         const summaryPath = join(courseDir, sectionDirName, "_Abschnittsbeschreibung.md");
         mkdirSync(dirname(summaryPath), { recursive: true });
         await atomicWrite(summaryPath, Buffer.from(summaryMd + "\n", "utf8"));
+        generatedFiles.push(summaryPath);
       }
     }
   }
@@ -731,7 +734,11 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   // Save state
-  await stateManager.save({ courses: updatedCourses });
+  // Merge generatedFiles with existing state to preserve entries from previous runs
+  // (e.g. a --courses partial run only writes some courses' README/section files).
+  const existingGeneratedFiles = state.generatedFiles ?? [];
+  const mergedGeneratedFiles = [...new Set([...existingGeneratedFiles, ...generatedFiles])];
+  await stateManager.save({ courses: updatedCourses, generatedFiles: mergedGeneratedFiles });
 }
 
 /** Get display metadata for a sync plan item (used for skip/download log messages). */
