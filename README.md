@@ -17,6 +17,9 @@ First run pulls everything; subsequent runs are incremental (only new or changed
 | See what would be downloaded (no files written) | `msc scrape --dry-run` |
 | Scrape specific courses only | `msc scrape --courses 12345,67890` |
 | Override low-disk-space warning | `msc scrape --skip-disk-check` |
+| Delete scraped files, keep personal files | `msc reset` |
+| Full wipe (files + config + credentials) | `msc reset --full` |
+| See what would be deleted (no files removed) | `msc reset --dry-run` |
 | See sync summary and per-course breakdown | `msc status` |
 | Find missing or orphaned files | `msc status --issues` |
 | Change output folder | `msc config set outputDir ~/Documents/Moodle` |
@@ -116,7 +119,7 @@ npm run test:watch        # watch mode
 npm run test:coverage     # with coverage report
 ```
 
-All 273 tests pass across 27 test files.
+All 291 tests pass across 27 test files.
 
 ### Type-check
 
@@ -190,6 +193,20 @@ State and metadata:
 - **Keychain storage** — credentials stored in macOS Keychain, never in config files or logs
 - **Credential redaction** — all log output is scanned and secrets replaced with `[REDACTED]`
 - **Atomic writes** — files written to `.tmp` first, then renamed to prevent partial downloads
+
+---
+
+## Reset
+
+| Command | What it does |
+|---------|-------------|
+| `msc reset` | Deletes all scraped files and clears the sync state. Config and credentials are kept — next `msc scrape` re-downloads everything. |
+| `msc reset --full` | Same as above, plus clears config settings and stored credentials. Next run acts exactly like a first-time install. |
+| `msc reset --dry-run` | Shows what would be deleted without deleting anything. |
+| `msc reset --force` | Skips the confirmation prompt (useful for scripting). |
+
+> **Safe for personal files:** `msc reset` only deletes files it originally downloaded.
+> Any files you added to the output folder yourself are never touched.
 
 ---
 
