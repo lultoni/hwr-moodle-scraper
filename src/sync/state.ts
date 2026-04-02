@@ -12,6 +12,8 @@ export interface FileState {
   hash: string;
   lastModified: string;
   status: "ok" | "orphan" | "error";
+  /** Sidecar .description.md path, if one was written alongside this file. */
+  sidecarPath?: string;
 }
 
 export interface SectionState {

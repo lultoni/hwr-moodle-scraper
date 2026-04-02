@@ -5,14 +5,15 @@
 // Uses memfs for in-memory filesystem isolation.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 
 // We test against the real filesystem in a temp dir (memfs for pure unit tests,
 // real temp dir for integration-like fs tests)
 
-import { buildOutputPath, atomicWrite, cleanPartialFiles, checkDiskSpace } from "../../src/fs/output.js";
+import { buildOutputPath, atomicWrite, cleanPartialFiles, checkDiskSpace, computeFileHash } from "../../src/fs/output.js";
 
 describe("STEP-011: Folder hierarchy", () => {
   let tmpDir: string;
@@ -107,6 +108,51 @@ describe("STEP-011: Atomic file writes", () => {
 
     const tmpFiles = readdirSync(tmpDir).filter((f) => f.endsWith(".tmp"));
     expect(tmpFiles).toHaveLength(0);
+  });
+
+  it("returns SHA-256 hex digest of written content", async () => {
+    const target = join(tmpDir, "hashed.txt");
+    const content = Buffer.from("test content for hashing");
+    const expectedHash = createHash("sha256").update(content).digest("hex");
+
+    const { hash } = await atomicWrite(target, content);
+
+    expect(hash).toBe(expectedHash);
+    expect(hash).toHaveLength(64); // SHA-256 hex = 64 chars
+  });
+
+  it("returned hash matches computeFileHash of the written file", async () => {
+    const target = join(tmpDir, "check.pdf");
+    const content = Buffer.from("some binary content \x00\x01\x02");
+
+    const { hash: writeHash } = await atomicWrite(target, content);
+    const diskHash = computeFileHash(target);
+
+    expect(writeHash).toBe(diskHash);
+  });
+});
+
+describe("STEP-011: computeFileHash", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "msc-hash-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns SHA-256 of an existing file", () => {
+    const target = join(tmpDir, "file.txt");
+    const content = Buffer.from("known content");
+    writeFileSync(target, content);
+    const expected = createHash("sha256").update(content).digest("hex");
+    expect(computeFileHash(target)).toBe(expected);
+  });
+
+  it("returns empty string for a non-existent file (no throw)", () => {
+    expect(computeFileHash(join(tmpDir, "does-not-exist.pdf"))).toBe("");
   });
 });
 

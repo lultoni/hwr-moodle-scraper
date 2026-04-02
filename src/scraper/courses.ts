@@ -32,6 +32,8 @@ export interface Section {
 export interface ContentTree {
   courseId: number;
   sections: Section[];
+  /** Raw inner HTML of the course summary/description, or undefined if not present. */
+  summary?: string;
 }
 
 export interface FetchOptions {
@@ -111,34 +113,109 @@ function parseGridSectionCards(html: string, baseUrl: string): Array<{ name: str
   return cards;
 }
 
-/** Parse course search results page HTML into a Course list. */
+/**
+ * Parse course search results or dashboard HTML into a Course list.
+ *
+ * Strategy: find all elements with data-courseid, then within each element's
+ * vicinity locate the coursename link. This is robust against attribute ordering
+ * and minor layout variations across Moodle themes.
+ */
 function parseCourseSearchHtml(html: string, baseUrl: string): Course[] {
   const courses: Course[] = [];
-  // Each course card: <div class="coursebox ..." data-courseid="NNNN">
-  const cardRe = /data-courseid="(\d+)"[\s\S]*?class="coursename"[\s\S]*?href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
-  let m: RegExpExecArray | null;
-  while ((m = cardRe.exec(html)) !== null) {
-    const courseId = parseInt(m[1]!, 10);
-    const courseUrl = m[2]!;
-    const rawName = m[3]!.replace(/<[^>]+>/g, "").trim();
+  const seen = new Set<number>();
+
+  // Step 1: find every data-courseid occurrence and its position
+  const idRe = /data-courseid="(\d+)"/g;
+  let idMatch: RegExpExecArray | null;
+
+  while ((idMatch = idRe.exec(html)) !== null) {
+    const courseId = parseInt(idMatch[1]!, 10);
+    if (seen.has(courseId)) continue;
+
+    // Step 2: from the data-courseid position, scan forward for the coursename link
+    // Search in the next 2000 chars to stay within this card's DOM scope
+    const slice = html.slice(idMatch.index, idMatch.index + 2000);
+    const linkRe = /class="coursename"[\s\S]*?href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/;
+    const linkMatch = linkRe.exec(slice);
+    if (!linkMatch) continue;
+
+    const courseUrl = linkMatch[1]!;
+    const rawName = linkMatch[2]!.replace(/<[^>]+>/g, "").trim();
+    if (!courseUrl || !rawName) continue;
+
+    seen.add(courseId);
     courses.push({ courseId, courseName: rawName, courseUrl });
   }
+
   return courses;
 }
 
 /**
  * Fetch all enrolled courses from the Moodle dashboard.
- * Uses /my/courses.php?myoverviewfilter=all which shows every enrolled course.
+ *
+ * Strategy:
+ *   1. GET /my/ to obtain a fresh sesskey embedded in the page HTML.
+ *   2. POST to /lib/ajax/service.php with core_course_get_enrolled_courses_by_timeline_classification
+ *      to fetch the full course list via the Moodle Web Services AJAX API.
+ *   3. Fall back to parsing static HTML (data-courseid + coursename link) if the API call fails.
  */
 export async function fetchEnrolledCourses(opts: FetchOptions): Promise<Course[]> {
   const { baseUrl, sessionCookies } = opts;
 
-  const url = `${baseUrl}/my/courses.php?myoverviewfilter=all`;
-  const { statusCode, body } = await fetchWithRedirects(url, { cookie: sessionCookies });
+  // Step 1: fetch dashboard to get a fresh sesskey
+  const dashUrl = `${baseUrl}/my/`;
+  const { statusCode: dashStatus, body: dashHtml } = await fetchWithRedirects(dashUrl, { cookie: sessionCookies });
+  if (dashStatus >= 400) throw new Error(`Dashboard fetch failed: HTTP ${dashStatus}`);
 
+  const sesskeyMatch = /"sesskey":"([^"]+)"/.exec(dashHtml);
+  const sesskey = sesskeyMatch?.[1];
+
+  if (sesskey) {
+    // Step 2: call Moodle AJAX API
+    const ajaxUrl = `${baseUrl}/lib/ajax/service.php?sesskey=${sesskey}&info=core_course_get_enrolled_courses_by_timeline_classification`;
+    const payload = JSON.stringify([{
+      index: 0,
+      methodname: "core_course_get_enrolled_courses_by_timeline_classification",
+      args: { offset: 0, limit: 0, classification: "all", sort: "shortname", customfieldname: "", customfieldvalue: "" },
+    }]);
+    const { request: undiciRequest } = await import("undici");
+    const { statusCode: ajaxStatus, body: ajaxBody } = await undiciRequest(ajaxUrl, {
+      method: "POST",
+      headers: { cookie: sessionCookies, "content-type": "application/json" },
+      body: payload,
+    });
+    if (ajaxStatus < 400) {
+      const ajaxText = await ajaxBody.text();
+      try {
+        const parsed = JSON.parse(ajaxText) as Array<{ error: boolean; data?: { courses?: AjaxCourse[] } }>;
+        const result = parsed[0];
+        if (result && !result.error && result.data?.courses) {
+          return result.data.courses.map((c) => ({
+            courseId: c.id,
+            courseName: c.fullname,
+            courseUrl: `${baseUrl}/course/view.php?id=${c.id}`,
+          }));
+        }
+      } catch {
+        // fall through to HTML fallback
+      }
+    } else {
+      await ajaxBody.dump();
+    }
+  }
+
+  // Step 3: fallback — try /my/courses.php static HTML (older Moodle themes)
+  const coursesUrl = `${baseUrl}/my/courses.php?myoverviewfilter=all&perpage=200`;
+  const { statusCode, body } = await fetchWithRedirects(coursesUrl, { cookie: sessionCookies });
   if (statusCode >= 400) throw new Error(`Enrolled courses fetch failed: HTTP ${statusCode}`);
 
   return parseCourseSearchHtml(body, baseUrl);
+}
+
+interface AjaxCourse {
+  id: number;
+  fullname: string;
+  shortname: string;
 }
 
 /** Fetch with basic redirect following (up to maxRedirects hops). */
@@ -174,6 +251,29 @@ async function fetchWithRedirects(
   }
 
   throw new Error(`Too many redirects fetching ${url}`);
+}
+
+/**
+ * Extract course summary/description from the course homepage HTML.
+ * Returns the raw inner HTML of the summary block, or null if absent/empty.
+ * Handles multiple Moodle theme variants:
+ *   - <div class="summary"> inside <div class="course-description">
+ *   - <div class="course-summary-section">
+ */
+export function extractCourseDescription(html: string): string | null {
+  // Variant 1: boost_union / standard Moodle — <div class="summary"> inside course-description
+  const summaryM = /<div[^>]+class="[^"]*\bsummary\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(html);
+  if (summaryM?.[1]) {
+    const inner = summaryM[1].replace(/<[^>]+>/g, "").trim();
+    if (inner) return summaryM[1];
+  }
+  // Variant 2: <div class="course-summary-section">
+  const secM = /<div[^>]+class="[^"]*\bcourse-summary-section\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(html);
+  if (secM?.[1]) {
+    const inner = secM[1].replace(/<[^>]+>/g, "").trim();
+    if (inner) return secM[1];
+  }
+  return null;
 }
 
 export async function fetchCourseList(opts: FetchOptions & { searchQuery?: string }): Promise<Course[]> {
@@ -269,10 +369,11 @@ export async function fetchContentTree(opts: FetchOptions & { courseId: number }
       return na - nb;
     });
 
-    return { courseId, sections: allSections };
+    return { courseId, sections: allSections, summary: extractCourseDescription(body) ?? undefined };
   }
 
-  return parseContentTree(body, courseId, baseUrl, opts.logger);
+  const tree = parseContentTree(body, courseId, baseUrl, opts.logger);
+  return { ...tree, summary: extractCourseDescription(body) ?? undefined };
 }
 
 /** Fetch a folder page and return all downloadable file links. */

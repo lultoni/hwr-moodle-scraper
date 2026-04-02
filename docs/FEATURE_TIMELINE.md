@@ -1,11 +1,11 @@
 # Feature Timeline — HWR Moodle Scraper
 
 - **Status**: COMPLETE
-- **Last updated**: 2026-03-28
+- **Last updated**: 2026-04-02
 - **Traceability audit**: PASS (75/75)
 - **Total steps**: 22
 - **Requirements coverage**: 75/75
-- **Phase 5 improvements**: Redirect handling, activity name cleanup, folder expansion, type-aware dispatch, debug logging, progress bar fixes, onetopic section names, label content + activity descriptions, semester grouping with state migration, state save bug fix, format-grid multi-page section fetching, format-onetopic multi-tab fetching, modtype CSS class type detection, balanced-div altcontent parser, Moodle 4.x fp-filename span variant, duplicate folder name deduplication
+- **Phase 5 improvements**: Redirect handling, activity name cleanup, folder expansion, type-aware dispatch, debug logging, progress bar fixes, onetopic section names, label content + activity descriptions, semester grouping with state migration, state save bug fix, format-grid multi-page section fetching, format-onetopic multi-tab fetching, modtype CSS class type detection, balanced-div altcontent parser, Moodle 4.x fp-filename span variant, duplicate folder name deduplication, Pass 15–17 (339/339 tests): reset bug fixes (sidecarPath tracking, recursive removeEmptyDirs, --dry-run tree output), course listing improvements (perpage=200, two-step parsing), SHA-256 hashing throughout (atomicWrite→downloader→incremental), iframe-embed fix, course README.md from summary, forum deep-dive (all discussion threads), assignment feedback + grades + submission downloads, file-checker exit-2 blocking, Pass 18 (365/365 tests): TUI + User-Files-Move, Pass 19: TUI + SK Refinements (dead code removal, SK folder structure fix, full-screen rendering, cursor management), Pass 20: Courses AJAX + stderr fix (HWR Moodle AJAX course listing for 42 courses, df stderr pipe to prevent terminal noise, TUI exit silence)
 
 ---
 

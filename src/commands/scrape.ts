@@ -2,7 +2,7 @@
 import { validateOrRefreshSession } from "../auth/session.js";
 import { fetchCourseList, fetchEnrolledCourses, fetchContentTree, fetchFolderFiles, type Course, type ContentTree, type Activity, type Section } from "../scraper/courses.js";
 import { buildDownloadPlan } from "../scraper/dispatch.js";
-import { buildCourseShortPaths, resolveSemesterDir } from "../scraper/course-naming.js";
+import { buildCourseShortPaths } from "../scraper/course-naming.js";
 import { getResourceId } from "../scraper/resource-id.js";
 import { computeSyncPlan, SyncAction } from "../sync/incremental.js";
 import { StateManager, migrateStatePaths, relocateFiles, type CourseState, type State } from "../sync/state.js";
@@ -10,12 +10,15 @@ import { KeychainAdapter } from "../auth/keychain.js";
 import { createHttpClient } from "../http/client.js";
 import { createLogger, LogLevel, type Logger } from "../logger.js";
 import { ConfigManager } from "../config.js";
-import { buildOutputPath, checkDiskSpace } from "../fs/output.js";
+import { buildOutputPath, checkDiskSpace, atomicWrite } from "../fs/output.js";
+import { sanitiseFilename } from "../fs/sanitise.js";
+import { extractForumThreadUrls } from "../scraper/forum.js";
+import { extractAssignmentFeedback } from "../scraper/assign.js";
 import { DownloadQueue, type DownloadItem } from "../scraper/downloader.js";
 import { writeUrlFile } from "../scraper/content-types.js";
 import { EXIT_CODES } from "../exit-codes.js";
 import { mkdirSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { writeFile } from "node:fs/promises";
 
 export interface ScrapeOptions {
@@ -114,14 +117,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   // Build courseId → { semesterDir, shortName } for organised folder structure
-  const skPlacement = ((await config.get("skPlacement")) as "separate" | "in-semester" | undefined) ?? "separate";
-  const skSemester = ((await config.get("skSemester")) as string | undefined) ?? "";
-  const rawCourseShortPaths = buildCourseShortPaths(courses);
-  // Apply SK placement resolution
-  const courseShortPaths = new Map<number, { semesterDir: string; shortName: string }>();
-  for (const [id, sp] of rawCourseShortPaths) {
-    courseShortPaths.set(id, { ...sp, semesterDir: resolveSemesterDir(sp.semesterDir, skPlacement, skSemester) });
-  }
+  const courseShortPaths = buildCourseShortPaths(courses);
 
   // Load state and auto-migrate any old-style localPaths to new short paths
   const rawState = await stateManager.load() ?? { courses: {} };
@@ -144,6 +140,22 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       return tree;
     })
   );
+
+  // Write course README.md files for courses that have a summary description
+  if (!dryRun) {
+    let TurndownServiceForDesc: typeof import("turndown") | undefined;
+    for (const tree of trees) {
+      if (!tree.summary) continue;
+      if (!TurndownServiceForDesc) TurndownServiceForDesc = (await import("turndown")).default;
+      const descMd = new TurndownServiceForDesc().turndown(tree.summary).trim();
+      if (!descMd) continue;
+      const sp = courseShortPaths.get(tree.courseId);
+      const courseDirName = sanitiseFilename(sp?.shortName ?? courseNameMap.get(tree.courseId) ?? String(tree.courseId));
+      const readmePath = join(outputDir, ...(sp?.semesterDir ? [sp.semesterDir] : []), courseDirName, "README.md");
+      mkdirSync(dirname(readmePath), { recursive: true });
+      await atomicWrite(readmePath, Buffer.from(descMd + "\n", "utf8"));
+    }
+  }
 
   // Expand folders: replace folder activities with their contained files
   const expandedTrees: ContentTree[] = await Promise.all(
@@ -183,7 +195,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       );
       // Per-course checkmark after full expansion
       const totalActivities = expandedSections.reduce((n, s) => n + s.activities.length, 0);
-      const sp = rawCourseShortPaths.get(tree.courseId);
+      const sp = courseShortPaths.get(tree.courseId);
       const displayName = sp?.shortName ?? (courseNameMap.get(tree.courseId) ?? String(tree.courseId));
       logger.info(`  ✓ ${displayName}  (${expandedSections.length} section(s), ${totalActivities} activity/activities)`);
       return { ...tree, sections: expandedSections };
@@ -347,8 +359,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Execute binary downloads via queue
   let downloadedCount = 0;
   let failedCount = 0;
-  // finalPaths[i] holds the actual on-disk path (may have extension appended) for binaryItems[i]
-  let binaryFinalPaths: Array<string | undefined> = [];
+  // finalPaths[i] holds the actual on-disk path + hash for binaryItems[i]
+  let binaryFinalPaths: Array<{ path: string; hash: string } | undefined> = [];
 
   if (binaryItems.length > 0) {
     const queue = new DownloadQueue({ maxConcurrent });
@@ -363,20 +375,47 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   // Execute special-type downloads sequentially
+  // specialItemHashes[i] stores the SHA-256 hash of the written content for specialItems[i]
+  const specialItemHashes: Array<string> = new Array(specialItems.length).fill("");
   let TurndownService: typeof import("turndown") | undefined;
-  for (const { item, destPath, strategy, label, description, activityType } of specialItems) {
+  for (let si = 0; si < specialItems.length; si++) {
+    const { item, destPath, strategy, label, description, activityType } = specialItems[si]!;
     try {
       mkdirSync(dirname(destPath), { recursive: true });
+      let content: string | undefined;
       if (strategy === "url-txt") {
         await writeUrlFile(destPath, item.url!);
+        // url-txt files are written by writeUrlFile; no hash tracking needed
       } else if (strategy === "page-md") {
         const { request } = await import("undici");
         const { body } = await request(item.url!, { headers: { cookie: sessionCookies } });
         const html = await body.text();
         if (!TurndownService) TurndownService = (await import("turndown")).default;
         const td = new TurndownService();
-        const md = td.turndown(html);
-        await writeFile(destPath, md, { mode: 0o600 });
+
+        if (activityType === "forum") {
+          // Deep-dive: fetch each discussion thread and include content in the .md file
+          const threads = extractForumThreadUrls(html, baseUrl);
+          const sections: string[] = [`# ${label}`, ``];
+          if (threads.length === 0) {
+            sections.push(td.turndown(html));
+          } else {
+            const delayMs = ((await config.get("requestDelayMs")) as number | undefined) ?? 500;
+            for (const thread of threads) {
+              try {
+                const { body: threadBody } = await request(thread.url, { headers: { cookie: sessionCookies } });
+                const threadHtml = await threadBody.text();
+                sections.push(`## [${thread.title}](${thread.url})`, ``, td.turndown(threadHtml), ``);
+                if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+              } catch {
+                sections.push(`## [${thread.title}](${thread.url})`, ``, `*(Konnte nicht geladen werden)*`, ``);
+              }
+            }
+          }
+          content = sections.join("\n");
+        } else {
+          content = td.turndown(html);
+        }
       } else if (strategy === "info-md") {
         if (!TurndownService) TurndownService = (await import("turndown")).default;
         const td = new TurndownService();
@@ -390,13 +429,50 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         if (descMd) {
           lines.push(``, `## Description`, ``, descMd);
         }
+
+        // For assignments: fetch the page to extract grade, feedback, and own submission files
+        if (activityType === "assign" && item.url) {
+          try {
+            const { request } = await import("undici");
+            const { body: assignBody } = await request(item.url, { headers: { cookie: sessionCookies } });
+            const assignHtml = await assignBody.text();
+            const feedback = extractAssignmentFeedback(assignHtml, baseUrl);
+            if (feedback) {
+              if (feedback.grade) lines.push(``, `**Bewertung:** ${feedback.grade}`);
+              if (feedback.feedbackHtml) {
+                lines.push(``, `## Feedback des Dozenten`, ``, td.turndown(feedback.feedbackHtml));
+              }
+              if (feedback.submissionUrls.length > 0) {
+                lines.push(``, `## Eigene Einreichung`);
+                for (const subUrl of feedback.submissionUrls) {
+                  const fname = decodeURIComponent(subUrl.split("/").pop()?.split("?")[0] ?? "file");
+                  // Download the submission file next to the .md file
+                  const subDest = destPath.replace(/\.md$/, `.submission.${fname.includes(".") ? fname.split(".").pop() : "bin"}`);
+                  try {
+                    const { downloadFile } = await import("../scraper/downloader.js");
+                    const { finalPath } = await downloadFile({ url: subUrl, destPath: subDest, sessionCookies, retryBaseDelayMs: 0 });
+                    lines.push(`- [${fname}](${finalPath})`);
+                  } catch {
+                    lines.push(`- [${fname}](${subUrl}) *(Download fehlgeschlagen)*`);
+                  }
+                }
+              }
+            }
+          } catch {
+            // If fetching the assignment page fails, fall through with basic info card
+          }
+        }
+
         lines.push(``);
-        await writeFile(destPath, lines.join("\n"), { mode: 0o600 });
+        content = lines.join("\n");
       } else if (strategy === "label-md" || strategy === "description-md") {
         if (!TurndownService) TurndownService = (await import("turndown")).default;
-        const td = new TurndownService();
-        const md = td.turndown(description ?? "");
-        await writeFile(destPath, md, { mode: 0o600 });
+        content = new TurndownService().turndown(description ?? "");
+      }
+      if (content !== undefined) {
+        const buf = Buffer.from(content, "utf8");
+        const { hash } = await atomicWrite(destPath, buf);
+        specialItemHashes[si] = hash;
       }
       downloadedCount++;
       progress.bar?.increment(1, { file: label });
@@ -425,16 +501,29 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Update state with downloaded files
   const updatedCourses: Record<string, CourseState> = { ...(state.courses as Record<string, CourseState>) };
 
+  // Build sidecar map: resourceId → sidecar destPath (for description-md items)
+  const sidecarPaths = new Map<string, string>();
+  for (const si of specialItems) {
+    if (si.strategy === "description-md") {
+      sidecarPaths.set(si.item.resourceId ?? "", si.destPath);
+    }
+  }
+
   const allDownloadedItems = [
-    ...binaryItems.map((b, i) => ({ item: b.planItem, destPath: binaryFinalPaths[i] ?? b.downloadItem.destPath })),
+    ...binaryItems.map((b, i) => ({
+      item: b.planItem,
+      destPath: binaryFinalPaths[i]?.path ?? b.downloadItem.destPath,
+      computedHash: binaryFinalPaths[i]?.hash ?? "",
+    })),
     ...specialItems
-      .filter((si) => si.strategy !== "description-md")  // sidecars share resourceId with parent — skip to avoid overwriting parent's localPath
-      .map((si) => ({ item: si.item, destPath: si.destPath })),
+      .map((si, i) => ({ si, origIdx: i }))
+      .filter(({ si }) => si.strategy !== "description-md")  // sidecars share resourceId with parent — tracked via sidecarPath below
+      .map(({ si, origIdx }) => ({ item: si.item, destPath: si.destPath, computedHash: specialItemHashes[origIdx] ?? "" })),
     // Acknowledged non-downloadable items (assign, forum, etc.) — save with empty localPath so they're not re-planned
-    ...acknowledgedItems.map((item) => ({ item, destPath: "" })),
+    ...acknowledgedItems.map((item) => ({ item, destPath: "", computedHash: "" })),
   ];
 
-  for (const { item, destPath } of allDownloadedItems) {
+  for (const { item, destPath, computedHash } of allDownloadedItems) {
     if (!item || !item.courseId) continue;
 
     const courseIdStr = String(item.courseId);
@@ -449,13 +538,16 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     const sectionEntry = sections[sectionId] ?? { files: {} };
     const files = { ...(sectionEntry.files ?? {}) };
 
+    const sidecarPath = sidecarPaths.get(resourceId);
     files[resourceId] = {
       name: filenameFn(item.url ?? "", resourceId),
       url: item.url ?? "",
       localPath: destPath,
-      hash: location?.hash ?? "",
+      // Prefer computed SHA-256; fall back to Moodle's data-hash token where available
+      hash: computedHash || location?.hash || "",
       lastModified: new Date().toISOString(),
       status: "ok" as const,
+      ...(sidecarPath ? { sidecarPath } : {}),
     };
 
     sections[sectionId] = { files };

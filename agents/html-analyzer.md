@@ -118,7 +118,7 @@ when neither `data-sectionname` nor `<h3 class="sectionname">` is found.
 
 | modtype | URL pattern | Download strategy |
 |---------|-------------|-------------------|
-| resource | /mod/resource/ | Follow redirect → actual file |
+| resource | /mod/resource/ | Follow redirect → actual file; or parse iframe-embed HTML page → pluginfile.php link |
 | folder | /mod/folder/ | Fetch folder page → enumerate pluginfile.php links |
 | page | /mod/page/ | Fetch page → convert HTML to Markdown |
 | url | /mod/url/ | Save as .url.txt |
@@ -129,3 +129,18 @@ when neither `data-sectionname` nor `<h3 class="sectionname">` is found.
 | label | /mod/label/ | Inline content — extract from course page |
 | grouptool | /mod/grouptool/ | Skip |
 | bigbluebuttonbn | /mod/bigbluebuttonbn/ | Skip |
+
+### Resource "display in frame" (Moodle Anzeigetyp: Im Rahmen)
+When a teacher sets display type to "In frame", Moodle returns HTTP 200 + text/html for
+`view.php?id=N` instead of a redirect. The HTML page embeds the real file via iframe:
+```html
+<div class="resourcecontent resourcepdf">
+  <iframe id="resourceobject"
+    src="https://moodle.hwr-berlin.de/pluginfile.php/CTXID/mod_resource/content/N/filename.pdf?embed=1">
+    Klicken Sie auf den Link '<a href=".../filename.pdf">filename.pdf</a>'
+  </iframe>
+</div>
+```
+`downloadFile()` detects `text/html` responses, parses `extractEmbeddedPluginfileUrl()`, and
+follows the `<a href>` (without `?embed=1`) to download the actual file. This handles both
+document files (`.pdf`, `.pptx`, …) and `.html` resource files embedded this way.

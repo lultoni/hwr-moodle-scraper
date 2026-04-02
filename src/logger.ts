@@ -13,6 +13,12 @@ export interface LoggerOptions {
   /** Strings to redact from all log output (e.g. passwords, session tokens). Pass all known secrets here. */
   redact: string[];
   logFile?: string | null;
+  /**
+   * Whether to include ISO timestamps in stderr output.
+   * Defaults to `true` when `logFile` is set (timestamps are important for log file diagnostics),
+   * `false` otherwise (cleaner terminal output).
+   */
+  timestamps?: boolean;
 }
 
 export interface Logger {
@@ -41,6 +47,9 @@ function ensureLogFile(path: string): void {
 
 export function createLogger(opts: LoggerOptions): Logger {
   const { level, redact, logFile } = opts;
+  // Default: show timestamps when logFile is active (useful for diagnosis),
+  // suppress in plain terminal output.
+  const showTimestamps = opts.timestamps ?? (logFile != null);
 
   if (logFile) ensureLogFile(logFile);
 
@@ -49,10 +58,12 @@ export function createLogger(opts: LoggerOptions): Logger {
     const safe = redactSecrets(msg, redact);
     const prefix = LogLevel[msgLevel] ?? "LOG";
     const ts = new Date().toISOString();
-    const line = `[${ts}] [${prefix}] ${safe}\n`;
+    const line = showTimestamps ? `[${ts}] [${prefix}] ${safe}\n` : `[${prefix}] ${safe}\n`;
     process.stderr.write(line);
     if (logFile) {
-      appendFileSync(logFile, line);
+      // Log file always gets timestamps for diagnostic value
+      const fileLine = showTimestamps ? line : `[${ts}] [${prefix}] ${safe}\n`;
+      appendFileSync(logFile, fileLine);
     }
   }
 

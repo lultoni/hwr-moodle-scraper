@@ -4,7 +4,7 @@
 // from raw Moodle course names using the HWR WI module numbering scheme.
 
 import { describe, it, expect } from "vitest";
-import { parseCourseNameParts, buildCourseShortPaths, resolveSemesterDir } from "../../src/scraper/course-naming.js";
+import { parseCourseNameParts, buildCourseShortPaths } from "../../src/scraper/course-naming.js";
 
 describe("parseCourseNameParts — semester detection", () => {
   it("WI2032 → Semester_3, shortName Datenbanken", () => {
@@ -68,16 +68,17 @@ describe("parseCourseNameParts — semester detection", () => {
 });
 
 describe("parseCourseNameParts — special categories", () => {
-  it("WI6xxx → Schluesselkompetenzen", () => {
+  it("WI6xxx with SK03a prefix → Semester_3, shortName SK_prefixed", () => {
     const r = parseCourseNameParts("WI-22/2-M32-SK03a-WI6036-F01-WiSe-2025-51417 WI24A Digitale Kompetenz - Computergestützte Statistische Datenanalyse WiSe-2025");
-    expect(r.semesterDir).toBe("Schluesselkompetenzen");
+    expect(r.semesterDir).toBe("Semester_3");
+    expect(r.shortName.startsWith("SK_")).toBe(true);
   });
 
-  it("SK03a code (no WI6 but Schlüsselkompetenzen by SK pattern) → Schluesselkompetenzen if module code absent", () => {
-    // SK04 module codes that appear as SK in the course name — these don't have WI6xxx codes
+  it("SK03a code (no WI6, SK pattern in prefix) → Semester_3, shortName SK_prefixed", () => {
     // The WI-22/2-M32-SK03a-F01-... format has no WI#### code at all
     const r = parseCourseNameParts("WI-22/2-M32-SK03a-F01-WiSe-2025-51417 WI24A Digitale Kompetenz - Computergestützte Statistische Datenanalyse WiSe-2025");
-    expect(r.semesterDir).toBe("Schluesselkompetenzen");
+    expect(r.semesterDir).toBe("Semester_3");
+    expect(r.shortName.startsWith("SK_")).toBe(true);
   });
 
   it("WI7xxx → Praxistransfer", () => {
@@ -85,21 +86,22 @@ describe("parseCourseNameParts — special categories", () => {
     expect(r.semesterDir).toBe("Praxistransfer");
   });
 
-  it("MSK01 pattern (Wissenschaftliches Arbeiten I) → Schluesselkompetenzen", () => {
+  it("MSK01 pattern (Wissenschaftliches Arbeiten I) → Semester_1, shortName SK_Wissenschaftliches Arbeiten I", () => {
     const r = parseCourseNameParts("WI-MSK01-F01-WiSe-2024-35297 WI24A Wissenschaftliches Arbeiten I  WiSe-2024");
-    expect(r.semesterDir).toBe("Schluesselkompetenzen");
-    expect(r.shortName).toBe("Wissenschaftliches Arbeiten I");
+    expect(r.semesterDir).toBe("Semester_1");
+    expect(r.shortName).toBe("SK_Wissenschaftliches Arbeiten I");
   });
 
-  it("MSK02 pattern (Digitale Kompetenzen) → Schluesselkompetenzen", () => {
+  it("MSK02 pattern (Digitale Kompetenzen) → Semester_2, shortName SK_prefixed", () => {
     const r = parseCourseNameParts("WI-MSK02-F01-SoSe-2025-42734 WI24A Digitale Kompetenzen - Betriebssystempraxis SoSe-2025");
-    expect(r.semesterDir).toBe("Schluesselkompetenzen");
+    expect(r.semesterDir).toBe("Semester_2");
+    expect(r.shortName.startsWith("SK_")).toBe(true);
   });
 
-  it("SK04b module (Ausbildung der Ausbilder) → Schluesselkompetenzen", () => {
-    // SK04b is a Schlüsselkompetenzen module (extra qualification), not Sonstiges
+  it("SK04b module (Ausbildung der Ausbilder) → Semester_4, shortName SK_prefixed", () => {
     const r = parseCourseNameParts("WI-22/2-M33-SK04b-F02-SoSe-2026-59389 WI24A Ausbildung der Ausbilder I SoSe-2026");
-    expect(r.semesterDir).toBe("Schluesselkompetenzen");
+    expect(r.semesterDir).toBe("Semester_4");
+    expect(r.shortName.startsWith("SK_")).toBe(true);
   });
 
   it("completely unrecognised name → Sonstiges", () => {
@@ -131,26 +133,6 @@ describe("parseCourseNameParts — short name extraction", () => {
     const r = parseCourseNameParts("WI-22/2-M06-WI1041-F01-SoSe-2026-59384 59420 59421 WI24ABC Kostenrechnung und Controlling SoSe-2026");
     expect(r.semesterDir).toBe("Semester_4");
     expect(r.shortName).toBe("Kostenrechnung und Controlling");
-  });
-});
-
-describe("resolveSemesterDir — skPlacement option", () => {
-  it("returns 'Schluesselkompetenzen' by default (skPlacement: separate)", () => {
-    expect(resolveSemesterDir("Schluesselkompetenzen", "separate", "")).toBe("Schluesselkompetenzen");
-  });
-
-  it("returns nested path when skPlacement is in-semester and skSemester is set", () => {
-    const result = resolveSemesterDir("Schluesselkompetenzen", "in-semester", "Semester_3");
-    expect(result).toBe("Semester_3/Schluesselkompetenzen");
-  });
-
-  it("falls back to separate when skPlacement is in-semester but skSemester is empty", () => {
-    expect(resolveSemesterDir("Schluesselkompetenzen", "in-semester", "")).toBe("Schluesselkompetenzen");
-  });
-
-  it("does not affect non-SK semester dirs (e.g. Semester_2)", () => {
-    expect(resolveSemesterDir("Semester_2", "in-semester", "Semester_3")).toBe("Semester_2");
-    expect(resolveSemesterDir("Sonstiges", "in-semester", "Semester_3")).toBe("Sonstiges");
   });
 });
 

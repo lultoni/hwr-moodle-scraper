@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import type { State } from "./state.js";
 import type { ContentTree } from "../scraper/courses.js";
 import { getResourceId } from "../scraper/resource-id.js";
+import { computeFileHash } from "../fs/output.js";
 
 export enum SyncAction {
   DOWNLOAD = "DOWNLOAD",
@@ -66,7 +67,10 @@ export function computeSyncPlan(opts: ComputeSyncPlanOptions): SyncPlanItem[] {
         const needsDownload = force
           || !fileState
           || (activity.hash && fileState.hash !== activity.hash)
-          || (checkFiles && fileState.localPath && !existsSync(fileState.localPath));
+          || (checkFiles && fileState.localPath && !existsSync(fileState.localPath))
+          || (checkFiles && fileState.localPath && fileState.hash
+              && existsSync(fileState.localPath)
+              && computeFileHash(fileState.localPath) !== fileState.hash);
 
         if (needsDownload) {
           plan.push({

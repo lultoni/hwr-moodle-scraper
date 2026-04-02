@@ -23,14 +23,19 @@ export interface WizardOptions {
 
 export async function shouldRunWizard(opts: { keychain: KeychainAdapter; config: AnyConfig }): Promise<boolean> {
   const creds = await opts.keychain.readCredentials();
-  return creds == null; // null or undefined = not configured
+  if (creds == null) return true; // no credentials → always run wizard
+  const outputDir = (await opts.config.get("outputDir")) as string | undefined;
+  return !outputDir; // outputDir missing or empty → run wizard to reconfigure
 }
 
 export async function runWizard(opts: WizardOptions): Promise<void> {
   const { keychain, config, promptFn, httpClient, nonInteractive = false, logger } = opts;
 
   const creds = await keychain.readCredentials();
-  if (creds != null) return; // already configured (null or undefined = not set)
+  const storedOutputDir = ((await config.get("outputDir")) as string | undefined) ?? "";
+
+  // Nothing to do if both credentials and outputDir are already set
+  if (creds != null && storedOutputDir) return;
 
   if (nonInteractive) {
     throw Object.assign(
@@ -39,22 +44,14 @@ export async function runWizard(opts: WizardOptions): Promise<void> {
     );
   }
 
-  // Output directory
-  const stored = ((await config.get("outputDir")) as string | undefined) ?? "";
-  const hint = stored || `${homedir()}/moodle-scraper-output`;
+  // Output directory (always ask if missing)
+  const hint = storedOutputDir || `${homedir()}/moodle-scraper-output`;
   const inputDir = await promptFn(`Output directory [${hint}]: `);
   await config.set("outputDir", inputDir.trim() || hint);
 
-  // Credentials
-  await promptAndAuthenticate({ promptFn, httpClient, keychain, ...(logger ? { logger } : {}) });
-
-  // SK course placement
-  const skInput = (await promptFn("SK placement [separate/in-semester] (default: separate): ")).trim();
-  const skPlacement = skInput === "in-semester" ? "in-semester" : "separate";
-  await config.set("skPlacement", skPlacement);
-  if (skPlacement === "in-semester") {
-    const skSem = (await promptFn("Which semester folder? (e.g. Semester_3): ")).trim();
-    await config.set("skSemester", skSem);
+  // Credentials (only ask if not already stored)
+  if (creds == null) {
+    await promptAndAuthenticate({ promptFn, httpClient, keychain, ...(logger ? { logger } : {}) });
   }
 
   // Log file

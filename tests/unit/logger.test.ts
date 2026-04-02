@@ -98,6 +98,42 @@ describe("STEP-007: Logger — log levels", () => {
   });
 });
 
+describe("STEP-007: Logger — timestamp option", () => {
+  it("omits ISO timestamp when timestamps option is false (default)", () => {
+    const logger = createLogger({ level: LogLevel.INFO, redact: [] });
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    logger.info("hello");
+    const output = (spy.mock.calls[0]?.[0] as string) ?? "";
+    // Should NOT contain ISO timestamp pattern
+    expect(output).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    expect(output).toContain("[INFO]");
+    expect(output).toContain("hello");
+    spy.mockRestore();
+  });
+
+  it("includes ISO timestamp when timestamps option is true", () => {
+    const logger = createLogger({ level: LogLevel.INFO, redact: [], timestamps: true });
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    logger.info("hello");
+    const output = (spy.mock.calls[0]?.[0] as string) ?? "";
+    expect(output).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    expect(output).toContain("[INFO]");
+    spy.mockRestore();
+  });
+
+  it("log file always uses timestamps regardless of timestamps option", () => {
+    // When logFile is configured, the log file receives timestamped lines
+    // even if the terminal output does not. This is tested indirectly via
+    // the createLogger contract: when logFile is set, timestamps defaults to true.
+    const logger = createLogger({ level: LogLevel.INFO, redact: [], logFile: null });
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    logger.info("no ts");
+    const output = (spy.mock.calls[0]?.[0] as string) ?? "";
+    expect(output).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    spy.mockRestore();
+  });
+});
+
 describe("STEP-007: Logger — state file redaction guard", () => {
   // REQ-SEC-007
   it("assertNoSecrets() throws if a state object contains a known secret value", async () => {

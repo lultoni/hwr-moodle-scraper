@@ -1,7 +1,8 @@
 // REQ-CLI-006, REQ-CLI-012, REQ-CLI-016
-import { existsSync, statSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { relative } from "node:path";
 import { StateManager } from "../sync/state.js";
+import { collectFiles } from "../fs/collect.js";
 
 export interface StatusOptions {
   outputDir: string;
@@ -40,23 +41,6 @@ function timeAgo(iso: string): string {
   } catch {
     return "";
   }
-}
-
-/** Recursively collect all file paths under a directory. */
-function collectFiles(dir: string): string[] {
-  const results: string[] = [];
-  if (!existsSync(dir)) return results;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === ".moodle-scraper-state.json") continue;
-    if (entry.name.endsWith(".meta.json")) continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...collectFiles(full));
-    } else if (entry.isFile()) {
-      results.push(full);
-    }
-  }
-  return results;
 }
 
 /** Build a simple tree view from a list of absolute paths relative to a base dir. */

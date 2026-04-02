@@ -1,11 +1,11 @@
 // REQ-FS-002, REQ-FS-005, REQ-FS-006, REQ-FS-008
 import {
-  mkdirSync, existsSync, renameSync, writeFileSync,
+  mkdirSync, existsSync, renameSync, writeFileSync, readFileSync,
   readdirSync, statSync, unlinkSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { sanitiseFilename } from "./sanitise.js";
 import { EXIT_CODES } from "../exit-codes.js";
 import type { Logger } from "../logger.js";
@@ -37,10 +37,23 @@ export async function buildOutputPath(opts: OutputPathOptions): Promise<string> 
   return join(dir, filename);
 }
 
-export async function atomicWrite(destPath: string, content: Buffer): Promise<void> {
+/** Atomically write content to destPath and return its SHA-256 hex digest. */
+export async function atomicWrite(destPath: string, content: Buffer): Promise<{ hash: string }> {
+  const hash = createHash("sha256").update(content).digest("hex");
   const tmpPath = destPath + "." + randomBytes(4).toString("hex") + ".tmp";
   writeFileSync(tmpPath, content);
   renameSync(tmpPath, destPath);
+  return { hash };
+}
+
+/** Compute the SHA-256 hex digest of an on-disk file. Returns "" on read error. */
+export function computeFileHash(filePath: string): string {
+  try {
+    const content = readFileSync(filePath);
+    return createHash("sha256").update(content).digest("hex");
+  } catch {
+    return "";
+  }
 }
 
 export async function cleanPartialFiles(dir: string, logger?: Logger): Promise<void> {
@@ -65,7 +78,7 @@ export async function checkDiskSpace(dir: string, opts: DiskSpaceOptions): Promi
   // Use statvfs via child_process df on macOS
   const { execSync } = await import("node:child_process");
   try {
-    const out = execSync(`df -k "${dir}"`, { encoding: "utf8" });
+    const out = execSync(`df -k "${dir}"`, { encoding: "utf8", stdio: "pipe" });
     const lines = out.trim().split("\n");
     const parts = (lines[1] ?? "").split(/\s+/);
     // df -k: columns are Filesystem, 1K-blocks, Used, Available, Capacity, Mounted

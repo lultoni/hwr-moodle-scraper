@@ -15,6 +15,7 @@ import { runAuthSet, runAuthClear, runAuthStatus } from "./commands/auth.js";
 import { runStatus } from "./commands/status.js";
 import { runReset } from "./commands/reset.js";
 import { runWizard, shouldRunWizard } from "./commands/wizard.js";
+import { runTui } from "./commands/tui.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
@@ -246,7 +247,8 @@ program
   .option("--full", "Also clear config and stored credentials", false)
   .option("--force", "Skip confirmation prompt", false)
   .option("--dry-run", "Print what would be deleted without deleting", false)
-  .action(async (opts: { full: boolean; force: boolean; dryRun: boolean }) => {
+  .option("--move-user-files", "Interactively move user-owned files before reset", false)
+  .action(async (opts: { full: boolean; force: boolean; dryRun: boolean; moveUserFiles: boolean }) => {
     const mgr = new ConfigManager();
     const outputDir = (await mgr.get("outputDir")) as string;
     if (!outputDir) {
@@ -259,8 +261,23 @@ program
         full: opts.full,
         force: opts.force,
         dryRun: opts.dryRun,
+        moveUserFiles: opts.moveUserFiles,
         ...(!opts.force ? { promptFn: makePromptFn() } : {}),
       });
+    } catch (err) {
+      const code = (err as { exitCode?: number }).exitCode ?? EXIT_CODES.ERROR;
+      process.stderr.write(`Error: ${(err as Error).message}\n`);
+      process.exit(code);
+    }
+  });
+
+// --- tui ---
+program
+  .command("tui")
+  .description("Launch interactive terminal UI")
+  .action(async () => {
+    try {
+      await runTui({ promptFn: makePromptFn(), version: pkg.version });
     } catch (err) {
       const code = (err as { exitCode?: number }).exitCode ?? EXIT_CODES.ERROR;
       process.stderr.write(`Error: ${(err as Error).message}\n`);

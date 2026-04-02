@@ -2,8 +2,8 @@
 // Maps raw Moodle course names to short human-readable names grouped by semester.
 
 export interface CourseNameParts {
-  semesterDir: string;  // e.g. "Semester_3", "Schluesselkompetenzen", "Sonstiges"
-  shortName: string;    // e.g. "Datenbanken"
+  semesterDir: string;  // e.g. "Semester_3", "Sonstiges"
+  shortName: string;    // e.g. "Datenbanken" or "SK_Wissenschaftliches_Arbeiten_I"
 }
 
 export interface CourseRef {
@@ -41,24 +41,47 @@ const MODULE_SEMESTER: Record<string, string> = {
  *
  * Semester determination:
  *   1. Look for WI#### module code in the name
- *   2. If /^WI6/: Schluesselkompetenzen
+ *   2. If /^WI6/ (Schlüsselkompetenzen): derive semester from SK/MSK number in code prefix
  *   3. If /^WI7/: Praxistransfer
- *   4. If SK\d+[a-z] pattern in code section but no WI#### match: Schluesselkompetenzen
+ *   4. If SK/MSK pattern in code prefix but no WI#### match: same SK semester detection
  *   5. Look up in MODULE_SEMESTER map
  *   6. Fallback: Sonstiges
+ *
+ * SK courses: semesterDir is the plain semester (e.g. "Semester_1"), shortName gets "SK_" prefix.
+ * Folder layout: <outputDir>/Semester_1/SK_Wissenschaftliches_Arbeiten_I/
  */
 export function parseCourseNameParts(rawName: string): CourseNameParts {
   const semesterDir = detectSemesterDir(rawName);
   const shortName = extractShortName(rawName);
-  return { semesterDir, shortName };
+  return {
+    semesterDir,
+    shortName: isSkCourse(rawName) ? `SK_${shortName}` : shortName,
+  };
+}
+
+/**
+ * Returns true if this course is a Schlüsselkompetenzen (SK) course.
+ * WI6xxx module codes and MSK/SK code prefixes are SK courses.
+ * WI7xxx (Praxistransfer) and all other WI module codes are NOT SK courses.
+ */
+function isSkCourse(rawName: string): boolean {
+  const moduleMatch = /\b(WI\d{4})\b/.exec(rawName);
+  if (moduleMatch) {
+    return /^WI6/.test(moduleMatch[1]!);
+  }
+  const prefix = rawName.split(" ")[0] ?? "";
+  return /(?:^|[-])M?SK\d+/i.test(prefix);
 }
 
 function detectSemesterDir(rawName: string): string {
-  // Find WI#### module code (e.g. WI2032)
+  // Find WI#### module code (e.g. WI2032, WI6036)
   const moduleMatch = /\b(WI\d{4})\b/.exec(rawName);
   if (moduleMatch) {
     const code = moduleMatch[1]!;
-    if (/^WI6/.test(code)) return "Schluesselkompetenzen";
+    if (/^WI6/.test(code)) {
+      // WI6xxx = Schlüsselkompetenzen — derive plain semester from SK number in code prefix
+      return detectSkSemester(rawName);
+    }
     if (/^WI7/.test(code)) return "Praxistransfer";
     return MODULE_SEMESTER[code] ?? "Sonstiges";
   }
@@ -66,9 +89,44 @@ function detectSemesterDir(rawName: string): string {
   // No WI#### — check for SK/MSK pattern in the code prefix (Schlüsselkompetenzen)
   // e.g. "WI-22/2-M32-SK03a-F01-..." or "WI-MSK02-F01-..."
   if (/(?:^|[-])M?SK\d+/i.test(rawName.split(" ")[0] ?? "")) {
-    return "Schluesselkompetenzen";
+    return detectSkSemester(rawName);
   }
 
+  return "Sonstiges";
+}
+
+/**
+ * Derive the plain semester directory for a Schlüsselkompetenzen course by parsing
+ * the SK or MSK number from the course code prefix.
+ *
+ * Mapping (HWR WI curriculum):
+ *   MSK01 / SK01x → Semester_1
+ *   MSK02 / SK02x → Semester_2
+ *   SK03x / WI60xx → Semester_3
+ *   SK04x          → Semester_4
+ *   SK05x          → Semester_5
+ *   (higher / unknown) → Sonstiges (flat fallback)
+ *
+ * Returns e.g. "Semester_3" — the SK_ prefix on the shortName is applied by parseCourseNameParts.
+ */
+function detectSkSemester(rawName: string): string {
+  const prefix = rawName.split(" ")[0] ?? "";
+
+  // MSKnn → semester = nn
+  const mskMatch = /\bMSK0*(\d+)/i.exec(prefix);
+  if (mskMatch) {
+    const n = parseInt(mskMatch[1]!, 10);
+    if (n >= 1 && n <= 6) return `Semester_${n}`;
+  }
+
+  // SKnn[letter] → semester = nn
+  const skMatch = /\bSK0*(\d+)/i.exec(prefix);
+  if (skMatch) {
+    const n = parseInt(skMatch[1]!, 10);
+    if (n >= 1 && n <= 6) return `Semester_${n}`;
+  }
+
+  // WI6xxx without parseable SK number → flat fallback
   return "Sonstiges";
 }
 
@@ -131,26 +189,4 @@ export function buildCourseShortPaths(
   }
 
   return result;
-}
-
-/**
- * Resolve the final semester directory for a course, taking into account the
- * skPlacement config option for Schlüsselkompetenzen courses.
- *
- * @param semesterDir - The raw semester dir from parseCourseNameParts (e.g. "Schluesselkompetenzen")
- * @param skPlacement - "separate" (default): SK courses go into Schluesselkompetenzen/ top-level.
- *                      "in-semester": SK courses go into <skSemester>/Schluesselkompetenzen/
- * @param skSemester  - Target semester dir for in-semester placement (e.g. "Semester_3").
- *                      Ignored when skPlacement is "separate" or when empty.
- */
-export function resolveSemesterDir(
-  semesterDir: string,
-  skPlacement: "separate" | "in-semester",
-  skSemester: string,
-): string {
-  if (semesterDir !== "Schluesselkompetenzen") return semesterDir;
-  if (skPlacement === "in-semester" && skSemester) {
-    return `${skSemester}/Schluesselkompetenzen`;
-  }
-  return semesterDir;
 }

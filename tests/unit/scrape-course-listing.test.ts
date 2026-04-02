@@ -5,7 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { MockAgent, setGlobalDispatcher, getGlobalDispatcher, Dispatcher } from "undici";
-import { fetchCourseList, fetchEnrolledCourses, fetchContentTree } from "../../src/scraper/courses.js";
+import { fetchCourseList, fetchEnrolledCourses, fetchContentTree, extractCourseDescription } from "../../src/scraper/courses.js";
 
 let mockAgent: MockAgent;
 let originalDispatcher: Dispatcher;
@@ -67,7 +67,21 @@ describe("STEP-013: Course listing", () => {
 });
 
 describe("STEP-013: Enrolled courses from dashboard", () => {
-  const DASHBOARD_HTML = `
+  // Helper to build a Moodle-style AJAX response
+  function ajaxResponse(courses: Array<{ id: number; fullname: string; shortname: string }>) {
+    return JSON.stringify([{ error: false, data: { courses } }]);
+  }
+
+  // Dashboard HTML with a sesskey (for AJAX path)
+  const DASH_WITH_SESSKEY = `<html><head></head><body>
+<script>M.cfg = {"sesskey":"test-sesskey-123"};</script>
+</body></html>`;
+
+  // Dashboard HTML with NO sesskey (forces fallback to static HTML path)
+  const DASH_NO_SESSKEY = `<html><body><p>Welcome</p></body></html>`;
+
+  // Static-HTML fallback fixture (data-courseid + coursename)
+  const STATIC_COURSES_HTML = `
 <html><body>
   <div class="courses-view">
     <div class="coursebox clearfix" data-courseid="10" data-type="1">
@@ -83,10 +97,15 @@ describe("STEP-013: Enrolled courses from dashboard", () => {
   </div>
 </body></html>`;
 
-  it("returns all enrolled courses from the Moodle dashboard page", async () => {
-    mockAgent.get(BASE)
-      .intercept({ path: /\/my\/courses\.php/, method: "GET" })
-      .reply(200, DASHBOARD_HTML, { headers: { "content-type": "text/html" } });
+  it("returns all enrolled courses via AJAX API when sesskey is present", async () => {
+    const pool = mockAgent.get(BASE);
+    pool.intercept({ path: "/my/", method: "GET" })
+      .reply(200, DASH_WITH_SESSKEY, { headers: { "content-type": "text/html" } });
+    pool.intercept({ path: /\/lib\/ajax\/service\.php/, method: "POST" })
+      .reply(200, ajaxResponse([
+        { id: 10, fullname: "WI24A Betriebswirtschaftliche Grundlagen", shortname: "WI1011" },
+        { id: 20, fullname: "Fachbereich Dokumentensammlung", shortname: "FB-Dok" },
+      ]), { headers: { "content-type": "application/json" } });
 
     const courses = await fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "MoodleSession=abc" });
 
@@ -95,21 +114,158 @@ describe("STEP-013: Enrolled courses from dashboard", () => {
     expect(courses[1]).toMatchObject({ courseId: 20, courseName: "Fachbereich Dokumentensammlung" });
   });
 
-  it("returns empty array when dashboard has no course boxes", async () => {
-    mockAgent.get(BASE)
-      .intercept({ path: /\/my\/courses\.php/, method: "GET" })
-      .reply(200, "<html><body><p>Welcome</p></body></html>", { headers: { "content-type": "text/html" } });
+  it("falls back to static HTML when no sesskey found in dashboard", async () => {
+    const pool = mockAgent.get(BASE);
+    // /my/ returns a page without sesskey
+    pool.intercept({ path: "/my/", method: "GET" })
+      .reply(200, DASH_NO_SESSKEY, { headers: { "content-type": "text/html" } });
+    // Fallback /my/courses.php
+    pool.intercept({ path: /\/my\/courses\.php/, method: "GET" })
+      .reply(200, STATIC_COURSES_HTML, { headers: { "content-type": "text/html" } });
+
+    const courses = await fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "MoodleSession=abc" });
+    expect(courses).toHaveLength(2);
+    expect(courses[0]).toMatchObject({ courseId: 10 });
+  });
+
+  it("falls back to static HTML when AJAX returns an error result", async () => {
+    const pool = mockAgent.get(BASE);
+    pool.intercept({ path: "/my/", method: "GET" })
+      .reply(200, DASH_WITH_SESSKEY, { headers: { "content-type": "text/html" } });
+    pool.intercept({ path: /\/lib\/ajax\/service\.php/, method: "POST" })
+      .reply(200, JSON.stringify([{ error: true, data: null }]), { headers: { "content-type": "application/json" } });
+    pool.intercept({ path: /\/my\/courses\.php/, method: "GET" })
+      .reply(200, STATIC_COURSES_HTML, { headers: { "content-type": "text/html" } });
+
+    const courses = await fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "" });
+    expect(courses).toHaveLength(2);
+  });
+
+  it("returns empty array when AJAX returns empty courses list", async () => {
+    const pool = mockAgent.get(BASE);
+    pool.intercept({ path: "/my/", method: "GET" })
+      .reply(200, DASH_WITH_SESSKEY, { headers: { "content-type": "text/html" } });
+    pool.intercept({ path: /\/lib\/ajax\/service\.php/, method: "POST" })
+      .reply(200, ajaxResponse([]), { headers: { "content-type": "application/json" } });
 
     const courses = await fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "" });
     expect(courses).toEqual([]);
   });
 
-  it("throws when the dashboard endpoint returns an error", async () => {
+  it("throws when the dashboard /my/ endpoint returns an error", async () => {
     mockAgent.get(BASE)
-      .intercept({ path: /\/my\/courses\.php/, method: "GET" })
+      .intercept({ path: "/my/", method: "GET" })
       .reply(500, "Server Error");
 
     await expect(fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "" })).rejects.toThrow();
+  });
+
+  it("returns courses with correct courseUrl format", async () => {
+    const pool = mockAgent.get(BASE);
+    pool.intercept({ path: "/my/", method: "GET" })
+      .reply(200, DASH_WITH_SESSKEY, { headers: { "content-type": "text/html" } });
+    pool.intercept({ path: /\/lib\/ajax\/service\.php/, method: "POST" })
+      .reply(200, ajaxResponse([
+        { id: 42, fullname: "Ready to Go Global? Interkultureller Kurs", shortname: "RTG" },
+        { id: 43, fullname: "Fachrichtungsbüro WI - Infos", shortname: "FBWI" },
+      ]), { headers: { "content-type": "application/json" } });
+
+    const courses = await fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "" });
+    expect(courses).toHaveLength(2);
+    expect(courses[0]!.courseName).toContain("Ready to Go Global");
+    expect(courses[1]!.courseName).toContain("Fachrichtungsbüro");
+    expect(courses[0]!.courseUrl).toBe(`${BASE}/course/view.php?id=42`);
+  });
+
+  it("does not duplicate courses when AJAX returns same id multiple times", async () => {
+    const pool = mockAgent.get(BASE);
+    pool.intercept({ path: "/my/", method: "GET" })
+      .reply(200, DASH_WITH_SESSKEY, { headers: { "content-type": "text/html" } });
+    // AJAX naturally returns unique courses (dedup is on the Moodle server side for AJAX)
+    pool.intercept({ path: /\/lib\/ajax\/service\.php/, method: "POST" })
+      .reply(200, ajaxResponse([
+        { id: 50, fullname: "Course A", shortname: "CA" },
+        { id: 51, fullname: "Course B", shortname: "CB" },
+      ]), { headers: { "content-type": "application/json" } });
+
+    const courses = await fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "" });
+    const ids = courses.map((c) => c.courseId);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+// Regression test: verifies that all 42 courses enrolled at HWR Berlin are parsed from
+// the Moodle AJAX API response (as captured from the live site 2026-04-02).
+describe("STEP-013: Full HWR Berlin course list (42 courses)", () => {
+  const HWR_COURSES = [
+    { id: 1001, fullname: "Ready to Go Global? Interkultureller Vor- und Nachbereitungskurs", shortname: "RTG" },
+    { id: 1002, fullname: "Bibliothek benutzen", shortname: "Bib" },
+    { id: 1003, fullname: "Einstufung Englisch FB 2", shortname: "EE2" },
+    { id: 1004, fullname: "Volkswirtschaftliche Grundlagen", shortname: "VWL" },
+    { id: 1005, fullname: "Kostenrechnung und Controlling_98551", shortname: "KRC1" },
+    { id: 1006, fullname: "Datenbanken", shortname: "DB" },
+    { id: 1007, fullname: "Software Engineering", shortname: "SE" },
+    { id: 1008, fullname: "Prozessmodellierung", shortname: "PM" },
+    { id: 1009, fullname: "IT-Management", shortname: "ITM" },
+    { id: 1010, fullname: "Digitale Kompetenz - Computergestützte Statistische Datenanalyse", shortname: "DK-CSD" },
+    { id: 1011, fullname: "WI24 Business English III  Advanced 1 WiSe-2025", shortname: "BE3" },
+    { id: 1012, fullname: "Wissenschaftliches Arbeiten II", shortname: "WA2" },
+    { id: 1013, fullname: "Ausbildung der Ausbilder I", shortname: "AdA1" },
+    { id: 1014, fullname: "Betriebswirtschaftliche Grundlagen", shortname: "BWL" },
+    { id: 1015, fullname: "Finanzbuchführung", shortname: "FBF" },
+    { id: 1016, fullname: "Bilanzbuchführung", shortname: "BBF" },
+    { id: 1017, fullname: "Beschaffung/Produktion", shortname: "BP" },
+    { id: 1018, fullname: "Marketing / Vertrieb", shortname: "MV" },
+    { id: 1019, fullname: "Projektmanagement", shortname: "PjM" },
+    { id: 1020, fullname: "Gestalten des digitalen Zeitalters", shortname: "GdZ" },
+    { id: 1021, fullname: "Strukturierte Programmierung", shortname: "SP" },
+    { id: 1022, fullname: "Algorithmen und Datenstrukturen", shortname: "ADS" },
+    { id: 1023, fullname: "Rechnersysteme", shortname: "RS" },
+    { id: 1024, fullname: "Betriebssysteme", shortname: "BS" },
+    { id: 1025, fullname: "Netzwerke", shortname: "NW" },
+    { id: 1026, fullname: "Theoretische Grundlagen der Informatik", shortname: "TGI" },
+    { id: 1027, fullname: "Finanzmathematik", shortname: "FM" },
+    { id: 1028, fullname: "Operations Research", shortname: "OR" },
+    { id: 1029, fullname: "WI24 DevOps-Engineering SoSe-2026", shortname: "DevOps" },
+    { id: 1030, fullname: "Wissenschaftliches Arbeiten I", shortname: "WA1" },
+    { id: 1031, fullname: "WI24 Business English I - Advanced I WiSe-2024", shortname: "BE1" },
+    { id: 1032, fullname: "Digitale Kompetenzen - Betriebssystempraxis", shortname: "DK-BSP" },
+    { id: 1033, fullname: "WI24 Business English II Advanced 1 SoSe-2025", shortname: "BE2" },
+    { id: 1034, fullname: "IT-Sicherheit", shortname: "ITS" },
+    { id: 1035, fullname: "Geschäftsprozessmanagement", shortname: "GPM" },
+    { id: 1036, fullname: "Objektorientierte Systemanalyse und -Entwurf", shortname: "OOSE" },
+    { id: 1037, fullname: "Kostenrechnung und Controlling_98017", shortname: "KRC2" },
+    { id: 1038, fullname: "Statistik", shortname: "Stat" },
+    { id: 1039, fullname: "Verstehen des digitalen Zeitalters", shortname: "VdZ" },
+    { id: 1040, fullname: "Analysis", shortname: "Ana" },
+    { id: 1041, fullname: "Objektorientierte Programmierung", shortname: "OOP" },
+    { id: 1042, fullname: "Fachrichtungsbüro WI - Infos der Fachrichtung", shortname: "FBWI" },
+  ];
+
+  const DASH_WITH_SESSKEY = `<html><head></head><body>
+<script>M.cfg = {"sesskey":"test-sesskey-hwr"};</script>
+</body></html>`;
+
+  it("fetches all 42 HWR Berlin enrolled courses via AJAX", async () => {
+    const pool = mockAgent.get(BASE);
+    pool.intercept({ path: "/my/", method: "GET" })
+      .reply(200, DASH_WITH_SESSKEY, { headers: { "content-type": "text/html" } });
+    pool.intercept({ path: /\/lib\/ajax\/service\.php/, method: "POST" })
+      .reply(200, JSON.stringify([{ error: false, data: { courses: HWR_COURSES } }]), { headers: { "content-type": "application/json" } });
+
+    const courses = await fetchEnrolledCourses({ baseUrl: BASE, sessionCookies: "MoodleSession=abc" });
+
+    expect(courses).toHaveLength(42);
+    // Spot-check a few course names
+    const names = courses.map((c) => c.courseName);
+    expect(names).toContain("IT-Sicherheit");
+    expect(names).toContain("Datenbanken");
+    expect(names).toContain("Wissenschaftliches Arbeiten I");
+    expect(names).toContain("Fachrichtungsbüro WI - Infos der Fachrichtung");
+    // All have correct courseUrl format
+    for (const c of courses) {
+      expect(c.courseUrl).toBe(`${BASE}/course/view.php?id=${c.courseId}`);
+    }
   });
 });
 
@@ -168,5 +324,42 @@ describe("STEP-013: Content tree traversal", () => {
     const restricted = activities.find((a) => !a.isAccessible);
     expect(restricted).toBeDefined();
     expect(restricted?.isAccessible).toBe(false);
+  });
+});
+
+describe("extractCourseDescription — unit tests", () => {
+  it("extracts summary text from <div class='summary'>", () => {
+    const html = `<html><body>
+      <div class="course-description">
+        <div class="summary"><p>Dies ist eine <strong>Kursbeschreibung</strong>.</p></div>
+      </div>
+    </body></html>`;
+    const result = extractCourseDescription(html);
+    expect(result).not.toBeNull();
+    expect(result).toContain("Kursbeschreibung");
+  });
+
+  it("returns null when no summary block is present", () => {
+    const html = `<html><body><div class="other">No summary here</div></body></html>`;
+    expect(extractCourseDescription(html)).toBeNull();
+  });
+
+  it("returns null when summary block is empty or whitespace-only", () => {
+    const html = `<html><body><div class="course-description"><div class="summary">   </div></div></body></html>`;
+    expect(extractCourseDescription(html)).toBeNull();
+  });
+
+  it("returns null when summary only contains empty paragraph tags", () => {
+    const html = `<html><body><div class="course-description"><div class="summary"><p></p><br></div></div></body></html>`;
+    expect(extractCourseDescription(html)).toBeNull();
+  });
+
+  it("extracts description from <div class='course-summary-section'> variant", () => {
+    const html = `<html><body>
+      <div class="course-summary-section"><p>Kurzbeschreibung des Kurses WI.</p></div>
+    </body></html>`;
+    const result = extractCourseDescription(html);
+    expect(result).not.toBeNull();
+    expect(result).toContain("Kurzbeschreibung");
   });
 });

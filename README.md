@@ -119,7 +119,7 @@ npm run test:watch        # watch mode
 npm run test:coverage     # with coverage report
 ```
 
-All 291 tests pass across 27 test files.
+All 365 tests pass across 32 test files (Phase 5: 20 cleanup/improvement passes, including bug fixes for course listing via AJAX, stderr handling, and TUI refinements).
 
 ### Type-check
 
@@ -148,7 +148,7 @@ src/
 ├── scraper/              # Course list, content tree parsing, downloader, dispatch
 └── sync/                 # State file, incremental sync plan
 tests/
-├── unit/                 # 27 test files (including Phase 5 fixes and regression tests)
+├── unit/                 # 32 test files (including Phase 5 fixes and regression tests)
 └── integration/          # Full-scrape and incremental-sync end-to-end tests
 docs/
 ├── REQUIREMENTS.md       # 75 gap-free requirements

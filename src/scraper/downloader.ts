@@ -22,6 +22,8 @@ export interface DownloadFileOptions {
 export interface DownloadFileResult {
   /** The path the file was actually written to (may differ from destPath if an extension was appended). */
   finalPath: string;
+  /** SHA-256 hex digest of the downloaded file content. */
+  hash: string;
 }
 
 /** True for transient network errors that warrant a retry. */
@@ -131,10 +133,29 @@ export function extractFilename(
   return null;
 }
 
+/**
+ * When Moodle serves a resource with display type "In frame" (eingebettet),
+ * it returns a 200 HTML page instead of redirecting. The actual file URL
+ * is embedded as an <iframe src="pluginfile.php/..."> or fallback <a href>.
+ * Extract that URL so we can follow it to the real file.
+ */
+function extractEmbeddedPluginfileUrl(html: string, baseUrl: string): string | null {
+  // Match <a href="...pluginfile.php/..."> inside the resourcecontent block
+  // (the fallback link is cleaner — no ?embed=1 suffix)
+  const m = /id="resourceobject"[\s\S]{0,500}?<a\s[^>]*href="(https?:\/\/[^"]*pluginfile\.php\/[^"?]+)"/.exec(html)
+    ?? /class="resourcecontent[^"]*"[\s\S]{0,1000}?<a\s[^>]*href="(https?:\/\/[^"]*pluginfile\.php\/[^"?]+)"/.exec(html);
+  if (m?.[1]) return m[1]!;
+  // Fallback: iframe src without ?embed=1
+  const iframeM = /id="resourceobject"\s[^>]*src="(https?:\/\/[^"]*pluginfile\.php\/[^"?]+)"/.exec(html);
+  if (iframeM?.[1]) return iframeM[1]!;
+  return null;
+}
+
 export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadFileResult> {
   const { url, destPath, sessionCookies, onProgress, onComplete, retryBaseDelayMs = 5000 } = opts;
 
   let finalPath = destPath;
+  let computedHash = "";
 
   await withRetry(
     async () => {
@@ -188,8 +209,26 @@ export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadF
           onProgress?.({ bytesReceived, ...(totalBytes !== undefined ? { totalBytes } : {}) });
         }
 
+        // Moodle "display in frame" delivers a 200 HTML wrapper page instead of
+        // redirecting. Detect this and follow the embedded pluginfile.php link.
+        const ctStr = (Array.isArray(headers["content-type"]) ? headers["content-type"][0] : headers["content-type"]) ?? "";
+        if (ctStr.startsWith("text/html")) {
+          const html = Buffer.concat(chunks).toString("utf8");
+          const pluginUrl = extractEmbeddedPluginfileUrl(html, currentUrl);
+          if (pluginUrl) {
+            currentUrl = pluginUrl;
+            // Reset finalPath — extractFilename will re-derive it from the new URL
+            finalPath = destPath;
+            continue;
+          }
+          // No embedded file link found — fall through and save the HTML as-is
+          // (will be flagged by file-checker; nothing better we can do here)
+        }
+
         mkdirSync(dirname(finalPath), { recursive: true });
-        await atomicWrite(finalPath, Buffer.concat(chunks));
+        const { hash } = await atomicWrite(finalPath, Buffer.concat(chunks));
+        // Store hash on the outer variable so it's accessible after the retry closure
+        computedHash = hash;
         return;
       }
 
@@ -203,7 +242,7 @@ export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadF
   );
 
   onComplete?.(finalPath);
-  return { finalPath };
+  return { finalPath, hash: computedHash };
 }
 
 export interface DownloadItem {
@@ -217,8 +256,8 @@ export interface DownloadItem {
 
 export interface DownloadQueueResult {
   downloaded: number;
-  /** Per-item final paths (index matches input items array). undefined if the item failed. */
-  finalPaths: Array<string | undefined>;
+  /** Per-item results (index matches input items array). undefined if the item failed. */
+  finalPaths: Array<{ path: string; hash: string } | undefined>;
   failed: Array<{ item: DownloadItem; error: Error }>;
 }
 
@@ -240,14 +279,14 @@ export class DownloadQueue {
     );
 
     const failed: DownloadQueueResult["failed"] = [];
-    const finalPaths: Array<string | undefined> = new Array(items.length).fill(undefined);
+    const finalPaths: Array<{ path: string; hash: string } | undefined> = new Array(items.length).fill(undefined);
     let downloaded = 0;
 
     for (let i = 0; i < results.length; i++) {
       const r = results[i]!;
       if (r.status === "fulfilled") {
         downloaded++;
-        finalPaths[r.value.index] = r.value.result.finalPath;
+        finalPaths[r.value.index] = { path: r.value.result.finalPath, hash: r.value.result.hash };
       } else {
         failed.push({ item: items[i]!, error: r.reason as Error });
       }

@@ -164,24 +164,26 @@ scan(outputDir);
 // ---------------------------------------------------------------------------
 
 if (anomalies.length === 0) {
-  console.log(`Checked: ${outputDir}`);
-  console.log("OK: 0 anomalies found.");
+  process.stdout.write(`Checked: ${outputDir}\nOK: 0 anomalies found.\n`);
   process.exit(0);
 } else {
-  console.log(`Checked: ${outputDir}`);
-  console.log(`Found ${anomalies.length} anomaly/anomalies:\n`);
+  const scraperAnomalies = anomalies.filter((a) => !a.userFile);
+  const lines = [`Checked: ${outputDir}`, `Found ${anomalies.length} anomaly/anomalies:\n`];
   for (const a of anomalies) {
     const userTag = a.userFile ? "  [user-file — informational]" : "";
-    console.log(`ANOMALY: ${a.type.padEnd(20)} ${a.path}${userTag}`);
+    lines.push(`ANOMALY: ${a.type.padEnd(20)} ${a.path}${userTag}`);
   }
-  console.log();
-  // Only hard-fail on scraper-produced anomalies
-  const scraperAnomalies = anomalies.filter((a) => !a.userFile);
+  lines.push("");
   if (scraperAnomalies.length > 0) {
-    console.log(`${scraperAnomalies.length} scraper-produced anomaly/anomalies require fixing.`);
-    process.exit(1);
+    lines.push(`${scraperAnomalies.length} scraper-produced anomaly/anomalies require fixing.`);
+    // Write to stderr so Claude Code hook runner receives the feedback
+    // Exit 2 = blocking Stop hook: Claude Code feeds stderr back to Claude
+    // so it can fix the anomalies before the session ends.
+    process.stderr.write(lines.join("\n") + "\n");
+    process.exit(2);
   } else {
-    console.log("All anomalies are user-added files — no action required.");
+    lines.push("All anomalies are user-added files — no action required.");
+    process.stdout.write(lines.join("\n") + "\n");
     process.exit(0);
   }
 }

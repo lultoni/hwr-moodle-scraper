@@ -43,7 +43,7 @@ describe("STEP-022: First-run wizard — detection", () => {
     expect(result).toBe(true);
   });
 
-  it("shouldRunWizard returns false when credentials already exist", async () => {
+  it("shouldRunWizard returns false when credentials already exist and outputDir set", async () => {
     const keychain = new (vi.mocked(KeychainAdapter))() as never;
     vi.mocked(keychain.readCredentials).mockResolvedValue({ username: "alice", password: "pass" });
     const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
@@ -52,16 +52,41 @@ describe("STEP-022: First-run wizard — detection", () => {
     const result = await shouldRunWizard({ keychain, config });
     expect(result).toBe(false);
   });
+
+  it("shouldRunWizard returns true when credentials exist but outputDir is empty (post-full-reset)", async () => {
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue({ username: "alice", password: "pass" });
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue(""); // empty string = not configured
+
+    const result = await shouldRunWizard({ keychain, config });
+    expect(result).toBe(true);
+  });
+
+  it("shouldRunWizard returns true when credentials exist but outputDir is undefined", async () => {
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue({ username: "alice", password: "pass" });
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue(undefined);
+
+    const result = await shouldRunWizard({ keychain, config });
+    expect(result).toBe(true);
+  });
 });
 
 describe("STEP-022: First-run wizard — flow", () => {
+  beforeEach(() => {
+    vi.mocked(promptAndAuthenticate).mockClear();
+  });
+
   // REQ-CLI-015
   it("wizard prompts for outputDir and calls promptAndAuthenticate", async () => {
     const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue(null); // no credentials → ask
     const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue(undefined);
     const promptFn = vi.fn()
       .mockResolvedValueOnce("/custom/output") // outputDir input
-      .mockResolvedValueOnce("")               // skPlacement (→ separate)
       .mockResolvedValueOnce("");              // logFile (→ null)
 
     await runWizard({ keychain, config, promptFn, httpClient: {} as never });
@@ -72,10 +97,11 @@ describe("STEP-022: First-run wizard — flow", () => {
 
   it("wizard uses default outputDir when user presses Enter without input", async () => {
     const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue(null);
     const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue(undefined);
     const promptFn = vi.fn()
       .mockResolvedValueOnce("") // empty → use default hint
-      .mockResolvedValueOnce("") // skPlacement
       .mockResolvedValueOnce(""); // logFile
 
     await runWizard({ keychain, config, promptFn, httpClient: {} as never });
@@ -89,6 +115,7 @@ describe("STEP-022: First-run wizard — flow", () => {
     const keychain = new (vi.mocked(KeychainAdapter))() as never;
     vi.mocked(keychain.readCredentials).mockResolvedValue(null);
     const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue(undefined);
 
     await expect(
       runWizard({ keychain, config, promptFn: vi.fn(), httpClient: {} as never, nonInteractive: true })
@@ -105,45 +132,32 @@ describe("STEP-022: First-run wizard — flow", () => {
     const result = await shouldRunWizard({ keychain, config });
     expect(result).toBe(false);
   });
+
+  it("wizard asks only for outputDir (not credentials) when credentials are still set", async () => {
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue({ username: "alice", password: "pass" });
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue(""); // outputDir missing
+    const promptFn = vi.fn()
+      .mockResolvedValueOnce("/new/output") // outputDir
+      .mockResolvedValueOnce("");           // logFile
+
+    await runWizard({ keychain, config, promptFn, httpClient: {} as never });
+
+    expect(vi.mocked(config.set)).toHaveBeenCalledWith("outputDir", "/new/output");
+    // Credentials prompt should NOT have been called — creds already exist
+    expect(vi.mocked(promptAndAuthenticate)).not.toHaveBeenCalled();
+  });
 });
 
-describe("STEP-022: Wizard — skPlacement + logFile prompts", () => {
-  it("saves skPlacement=separate and no skSemester when user presses Enter", async () => {
-    const keychain = new (vi.mocked(KeychainAdapter))() as never;
-    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
-    const promptFn = vi.fn()
-      .mockResolvedValueOnce("") // outputDir
-      .mockResolvedValueOnce("") // skPlacement → separate
-      .mockResolvedValueOnce(""); // logFile
-
-    await runWizard({ keychain, config, promptFn, httpClient: {} as never });
-
-    expect(vi.mocked(config.set)).toHaveBeenCalledWith("skPlacement", "separate");
-    const skSemCalls = vi.mocked(config.set).mock.calls.filter((c) => c[0] === "skSemester");
-    expect(skSemCalls).toHaveLength(0);
-  });
-
-  it("saves skPlacement=in-semester and prompts for skSemester", async () => {
-    const keychain = new (vi.mocked(KeychainAdapter))() as never;
-    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
-    const promptFn = vi.fn()
-      .mockResolvedValueOnce("")             // outputDir
-      .mockResolvedValueOnce("in-semester")  // skPlacement
-      .mockResolvedValueOnce("Semester_3")   // skSemester
-      .mockResolvedValueOnce("");            // logFile
-
-    await runWizard({ keychain, config, promptFn, httpClient: {} as never });
-
-    expect(vi.mocked(config.set)).toHaveBeenCalledWith("skPlacement", "in-semester");
-    expect(vi.mocked(config.set)).toHaveBeenCalledWith("skSemester", "Semester_3");
-  });
-
+describe("STEP-022: Wizard — logFile prompt", () => {
   it("saves logFile path when user enters one", async () => {
     const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue(null);
     const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue(undefined);
     const promptFn = vi.fn()
       .mockResolvedValueOnce("")                    // outputDir
-      .mockResolvedValueOnce("")                    // skPlacement
       .mockResolvedValueOnce("~/moodle-scraper.log"); // logFile
 
     await runWizard({ keychain, config, promptFn, httpClient: {} as never });
@@ -153,10 +167,11 @@ describe("STEP-022: Wizard — skPlacement + logFile prompts", () => {
 
   it("saves logFile=null when user presses Enter (no log file)", async () => {
     const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue(null);
     const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue(undefined);
     const promptFn = vi.fn()
       .mockResolvedValueOnce("") // outputDir
-      .mockResolvedValueOnce("") // skPlacement
       .mockResolvedValueOnce(""); // logFile → null
 
     await runWizard({ keychain, config, promptFn, httpClient: {} as never });

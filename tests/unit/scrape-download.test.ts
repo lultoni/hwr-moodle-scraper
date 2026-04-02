@@ -9,6 +9,7 @@ import { MockAgent, setGlobalDispatcher, getGlobalDispatcher, Dispatcher } from 
 import { mkdtempSync, rmSync, statSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, extname } from "node:path";
+import { createHash } from "node:crypto";
 import { downloadFile, DownloadQueue, extractFilename } from "../../src/scraper/downloader.js";
 
 let mockAgent: MockAgent;
@@ -53,6 +54,36 @@ describe("STEP-014: File download — streaming", () => {
     expect(statSync(dest).size).toBeGreaterThan(0);
   });
 
+  it("downloadFile returns SHA-256 hash of the written content", async () => {
+    const content = "known content for hashing";
+    mockAgent.get(BASE).intercept({ path: "/file.bin", method: "GET" }).reply(200, content, {
+      headers: { "content-type": "application/octet-stream" },
+    });
+
+    const dest = join(tmpDir, "file.bin");
+    const { hash } = await downloadFile({ url: `${BASE}/file.bin`, destPath: dest, sessionCookies: "" });
+
+    const expected = createHash("sha256").update(Buffer.from(content)).digest("hex");
+    expect(hash).toBe(expected);
+    expect(hash).toHaveLength(64);
+  });
+
+  it("DownloadQueue.run returns hash alongside path in finalPaths", async () => {
+    const content = "queue content";
+    mockAgent.get(BASE).intercept({ path: "/queue.txt", method: "GET" }).reply(200, content, {
+      headers: { "content-type": "text/plain" },
+    });
+
+    const dest = join(tmpDir, "queue.txt");
+    const queue = new DownloadQueue({ maxConcurrent: 1 });
+    const result = await queue.run([{ url: `${BASE}/queue.txt`, destPath: dest, sessionCookies: "" }]);
+
+    expect(result.finalPaths[0]).toBeDefined();
+    expect(result.finalPaths[0]?.path).toBe(dest);
+    const expected = createHash("sha256").update(Buffer.from(content)).digest("hex");
+    expect(result.finalPaths[0]?.hash).toBe(expected);
+  });
+
   it("appends extension from Content-Disposition when destPath has no extension", async () => {
     const content = "pdf content";
     mockAgent.get(BASE).intercept({ path: "/mod/resource/view.php?id=1", method: "GET" }).reply(200, content, {
@@ -84,6 +115,32 @@ describe("STEP-014: File download — streaming", () => {
 
     expect(extname(finalPath)).toBe(".pptx");
     expect(existsSync(finalPath)).toBe(true);
+  });
+
+  it("follows pluginfile.php link embedded in Moodle resource view.php HTML page (iframe embed)", async () => {
+    const pdfContent = "real pdf bytes";
+    // Moodle returns HTML page (200, text/html) instead of redirecting
+    const htmlPage = `<!DOCTYPE html><html><body>
+      <div role="main"><div class="resourcecontent resourcepdf">
+        <iframe id="resourceobject" src="${BASE}/pluginfile.php/123/mod_resource/content/1/Skript.pdf?embed=1">
+          Klicken Sie auf den Link '<a href="${BASE}/pluginfile.php/123/mod_resource/content/1/Skript.pdf">Skript.pdf</a>'
+        </iframe>
+      </div></div></body></html>`;
+    mockAgent.get(BASE)
+      .intercept({ path: "/mod/resource/view.php?id=99", method: "GET" })
+      .reply(200, htmlPage, { headers: { "content-type": "text/html; charset=utf-8" } });
+    mockAgent.get(BASE)
+      .intercept({ path: "/pluginfile.php/123/mod_resource/content/1/Skript.pdf", method: "GET" })
+      .reply(200, pdfContent, { headers: { "content-type": "application/pdf" } });
+
+    const dest = join(tmpDir, "Skript");
+    const { finalPath } = await downloadFile({ url: `${BASE}/mod/resource/view.php?id=99`, destPath: dest, sessionCookies: "" });
+
+    expect(extname(finalPath)).toBe(".pdf");
+    expect(existsSync(finalPath)).toBe(true);
+    // Must NOT save the HTML page
+    const { readFileSync } = await import("node:fs");
+    expect(readFileSync(finalPath, "utf8")).toBe(pdfContent);
   });
 
   it("retries on 'other side closed' network error and succeeds on second attempt", async () => {
@@ -244,7 +301,7 @@ describe("STEP-014: DownloadQueue — per-item error isolation", () => {
     ]);
 
     expect(result.downloaded).toBe(1);
-    expect(result.finalPaths[0]).toBe(destPath + ".pdf");
+    expect(result.finalPaths[0]?.path).toBe(destPath + ".pdf");
     expect(existsSync(destPath + ".pdf")).toBe(true);
   });
 });
