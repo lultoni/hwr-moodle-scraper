@@ -71,7 +71,7 @@ Follow the developer agent rules (`agents/developer.md`):
 - Read the source file fully before editing
 - Write/update the test first
 - Implement the minimum code change
-- Run `npm test` — all 240+ tests must pass
+- Run `npx vitest run` — all tests must pass (currently 377+)
 
 ### Step 6: Re-scrape the affected sections
 

@@ -73,15 +73,15 @@
 
 ---
 
-## Phase 5 — Iterative Improvements — COMPLETE
+## Phase 5 — Iterative Improvements (ongoing)
 **Workflow**:
-1. User provides feedback
-2. Feedback agent updates REQUIREMENTS.md and/or FEATURE_TIMELINE.md
-3. Test writer updates/adds tests for changed requirements
-4. Developer implements changes
-5. Doc updater runs before commit
+1. User provides feedback or reports a scraping quality issue
+2. Follow `agents/debug-workflow.md` if it's a parsing/scraping bug (capture HTML → write test → fix → verify)
+3. For new features: test writer updates/adds tests; developer implements; doc-updater runs before commit
+4. Run `npx vitest run` — all tests must pass before committing
+5. Run `node scripts/file-checker.js` — must exit 0 before ending the session
 
-**Completion**: All 22 cleanup passes (Pass 1–22) completed (2026-03-27 to 2026-04-02). 377/377 tests passing across 33 test files.
+**Current status**: 22 cleanup passes completed (2026-03-27 to 2026-04-02). 377/377 tests passing. See `docs/FEATURE_TIMELINE.md` and `CLAUDE.md` for full history.
 
 ---
 

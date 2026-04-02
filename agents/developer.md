@@ -33,6 +33,6 @@ You implement features to make pre-written tests pass. You never write code for 
 ## Shared Utilities (avoid re-implementing)
 - `src/scraper/resource-id.ts` — `getResourceId(activity, courseId, sectionId)` — generates a stable resourceId for state keying; do not inline the expression `` activity.resourceId ?? `${courseId}-${sectionId}-${activity.activityName}` `` elsewhere
 - `src/http/cookies.ts` — `extractCookies(headers)` — extracts `name=value` pairs from `Set-Cookie` response headers; do not duplicate in auth or HTTP modules
-- `src/http/fetch-with-redirects.ts` — `resolveRedirects(url, headers)` — redirect resolution with HTTPS check and body draining; use in scraper and downloader instead of inlining redirect loops
+- `fetchWithRedirects` in `src/scraper/courses.ts` — redirect resolution with HTTPS check and body draining; reuse from courses.ts rather than inlining redirect loops in new scraper modules
 
 
