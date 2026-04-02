@@ -40,7 +40,7 @@ export async function runTui(opts: { promptFn: PromptFn; version: string }): Pro
       },
       {
         label: "Quit",
-        action: async () => { process.stdout.write("Goodbye.\n"); process.exit(0); },
+        action: async () => { process.stdout.write("Moodle-Scraper - See you soon!\n"); process.exit(0); },
       },
     ],
   });
