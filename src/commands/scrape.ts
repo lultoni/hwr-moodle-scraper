@@ -16,6 +16,7 @@ import { extractForumThreadUrls, extractPageContent } from "../scraper/forum.js"
 import { extractAssignmentFeedback } from "../scraper/assign.js";
 import { DownloadQueue, type DownloadItem } from "../scraper/downloader.js";
 import { writeUrlFile } from "../scraper/content-types.js";
+import { filterSidecars, type SidecarItem } from "../scraper/sidecar-filter.js";
 import { EXIT_CODES } from "../exit-codes.js";
 import { mkdirSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
@@ -440,7 +441,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // in the activity list because they're generated, not planned from Moodle data).
   // Separate binary downloads from special-handling types
   const binaryItems: Array<{ downloadItem: DownloadItem; planItem: typeof downloads[0] }> = [];
-  const specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string; label: string; description?: string; activityType?: string; isSidecar: boolean }> = [];
+  let specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string; label: string; description?: string; activityType?: string; isSidecar: boolean }> = [];
   // Items that are acknowledged but not downloadable (e.g. assign, forum, quiz) — save to state so they're not re-planned
   const acknowledgedItems: Array<typeof downloads[0]> = [];
 
@@ -518,6 +519,26 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     }
   }
 
+  // ── Sidecar deduplication filter ──────────────────────────────────────────
+  // Runs after classification, before any writes. Suppresses exact-duplicate sidecars and
+  // consolidates short descriptions (≤60 chars) into per-dir _Beschreibungen.md files.
+  let TurndownService: typeof import("turndown") | undefined;
+  if (!TurndownService) TurndownService = (await import("turndown")).default;
+  const sidecarFilterResult = filterSidecars(specialItems as SidecarItem[], TurndownService, logger);
+  specialItems = sidecarFilterResult.filteredItems as typeof specialItems;
+  const beschreibungenToWrite = sidecarFilterResult.beschreibungenFiles;
+  const suppressedSidecarCount = sidecarFilterResult.suppressedCount;
+  const consolidatedShortCount = sidecarFilterResult.consolidatedCount;
+
+  // Write _Beschreibungen.md consolidation files (tracked via generatedFiles, not FileState)
+  if (!dryRun) {
+    for (const bf of beschreibungenToWrite) {
+      mkdirSync(dirname(bf.path), { recursive: true });
+      await atomicWrite(bf.path, Buffer.from(bf.content + "\n", "utf8"));
+      generatedFiles.push(bf.path);
+    }
+  }
+
   if (useProgressBar && binaryItems.length > 0) {
     const cliProgress = await import("cli-progress");
     progress.bar = new cliProgress.SingleBar({
@@ -576,7 +597,6 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const specialItemHashes: Array<string> = new Array(specialItems.length).fill("");
   // specialItemSubmissionPaths[i] stores any submission files downloaded for assign items
   const specialItemSubmissionPaths: Array<string[]> = specialItems.map(() => []);
-  let TurndownService: typeof import("turndown") | undefined;
   for (let si = 0; si < specialItems.length; si++) {
     const { item, destPath, strategy, label, description, activityType } = specialItems[si]!;
     try {
@@ -698,6 +718,16 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const failedMsg = failedCount > 0 ? `, ${failedCount} failed` : "";
   const sidecarMsg = sidecarCount > 0 ? `, ${sidecarCount} sidecar${sidecarCount === 1 ? "" : "s"}` : "";
   logger.info(`Done: ${downloadedCount} downloaded${sidecarMsg}, ${skipped.length} skipped${failedMsg}.`);
+
+  // Filter summary — shown whenever duplicates were suppressed or short descs consolidated
+  const filterParts: string[] = [];
+  if (suppressedSidecarCount > 0)
+    filterParts.push(`${suppressedSidecarCount} duplicate sidecar${suppressedSidecarCount === 1 ? "" : "s"} suppressed`);
+  if (consolidatedShortCount > 0) {
+    const nFiles = beschreibungenToWrite.length;
+    filterParts.push(`${consolidatedShortCount} short description${consolidatedShortCount === 1 ? "" : "s"} consolidated into ${nFiles} _Beschreibungen.md file${nFiles === 1 ? "" : "s"}`);
+  }
+  if (filterParts.length > 0) logger.info(`  ${filterParts.join(", ")}.`);
 
   // One-time hint to enable log file (only after a real download run, only once)
   const logHintShown = (await config.get("logHintShown")) as boolean | undefined;
