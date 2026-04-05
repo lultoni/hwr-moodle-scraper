@@ -3,6 +3,7 @@
 //   - grade (if graded)
 //   - feedback comment from the grader
 //   - URLs of the student's own submitted files
+//   - online text submission (assignsubmission_onlinetext)
 
 export interface AssignmentFeedback {
   /** Grade string as shown in Moodle (e.g. "85,00 / 100,00"), or null if not yet graded. */
@@ -11,6 +12,8 @@ export interface AssignmentFeedback {
   feedbackHtml: string | null;
   /** URLs of the student's own submission files (pluginfile.php links). */
   submissionUrls: string[];
+  /** Raw inner HTML of an online text submission, or null if none. */
+  submissionTextHtml: string | null;
 }
 
 /**
@@ -44,6 +47,40 @@ export function extractAssignmentFeedback(html: string, _baseUrl: string): Assig
     if (inner) feedbackHtml = fbM[1];
   }
 
+  // --- Online text submission ---
+  // Student's online text is in: <div class="... full_assignsubmission_onlinetext_NNN ...">
+  //   <div class="no-overflow">...HTML text...</div>
+  let submissionTextHtml: string | null = null;
+  const onlineTextRe = /class="[^"]*full_assignsubmission_onlinetext_\d+[^"]*"/i;
+  const onlineTextStart = onlineTextRe.exec(html);
+  if (onlineTextStart) {
+    // Walk forward from the div open tag to find the first <div class="no-overflow">
+    const outerStart = html.lastIndexOf("<div", onlineTextStart.index);
+    const noOverflowIdx = html.indexOf(`class="no-overflow"`, outerStart);
+    if (noOverflowIdx !== -1) {
+      const contentStart = html.indexOf(">", noOverflowIdx) + 1;
+      // Use depth counter to find matching </div>
+      let depth = 1;
+      let pos = contentStart;
+      while (pos < html.length && depth > 0) {
+        const nextOpen = html.indexOf("<div", pos);
+        const nextClose = html.indexOf("</div>", pos);
+        if (nextClose === -1) break;
+        if (nextOpen !== -1 && nextOpen < nextClose) {
+          depth++;
+          pos = nextOpen + 4;
+        } else {
+          depth--;
+          if (depth === 0) {
+            const inner = html.slice(contentStart, nextClose).trim();
+            if (inner) submissionTextHtml = inner;
+          }
+          pos = nextClose + 6;
+        }
+      }
+    }
+  }
+
   // --- Submission file URLs ---
   // Student's own files: pluginfile.php links inside .fileuploadsubmission or .assignsubmission
   const submissionUrls: string[] = [];
@@ -59,6 +96,6 @@ export function extractAssignmentFeedback(html: string, _baseUrl: string): Assig
   }
 
   // Return the result — even if grade/feedback are null, submission URLs may exist
-  if (grade === null && feedbackHtml === null && submissionUrls.length === 0) return null;
-  return { grade, feedbackHtml, submissionUrls };
+  if (grade === null && feedbackHtml === null && submissionUrls.length === 0 && submissionTextHtml === null) return null;
+  return { grade, feedbackHtml, submissionUrls, submissionTextHtml };
 }

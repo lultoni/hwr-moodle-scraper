@@ -197,7 +197,8 @@ export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadF
         //       the proper ".pdf" / ".pptx" extension from being appended.
         //
         // A known extension is any key from MIME_TO_EXT (e.g. ".pdf", ".docx", ".zip").
-        const KNOWN_EXTS = new Set(Object.values(MIME_TO_EXT));
+        // Also include common aliases not in MIME_TO_EXT (e.g. ".jpeg" for image/jpeg → ".jpg").
+        const KNOWN_EXTS = new Set([...Object.values(MIME_TO_EXT), ".jpeg", ".heic", ".rtf", ".jar", ".ipynb", ".conf", ".yml", ".yaml", ".java", ".ts", ".sh"]);
         const destExt = extname(destPath).toLowerCase();
         const destHasKnownExt = destExt !== "" && KNOWN_EXTS.has(destExt);
         if (extractedName && !destHasKnownExt) {

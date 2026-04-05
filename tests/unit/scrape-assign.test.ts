@@ -81,4 +81,28 @@ describe("extractAssignmentFeedback — unit tests", () => {
     expect(result).not.toBeNull();
     expect(result?.grade).toBeNull();
   });
+
+  it("extracts online text submission from full_assignsubmission_onlinetext div", () => {
+    const html = `<html><body>
+      <div class="submissionstatustable">
+        <div class="box hidefull full_assignsubmission_onlinetext_849062">
+          <div class="no-overflow"><p>Meine Abgabe als Online-Text.</p><ul><li>Punkt 1</li></ul></div>
+        </div>
+      </div>
+    </body></html>`;
+    const result = extractAssignmentFeedback(html, BASE);
+    expect(result).not.toBeNull();
+    expect(result?.submissionTextHtml).toContain("Meine Abgabe");
+    expect(result?.submissionTextHtml).toContain("Punkt 1");
+  });
+
+  it("returns null for submissionTextHtml when no online text submission present", () => {
+    const html = `<html><body>
+      <div class="submissionstatustable">
+        <a href="${BASE}/pluginfile.php/1/assignsubmission_file/submission_files/1/file.pdf">file.pdf</a>
+      </div>
+    </body></html>`;
+    const result = extractAssignmentFeedback(html, BASE);
+    expect(result?.submissionTextHtml ?? null).toBeNull();
+  });
 });

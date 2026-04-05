@@ -18,7 +18,7 @@ import { DownloadQueue, type DownloadItem } from "../scraper/downloader.js";
 import { writeUrlFile } from "../scraper/content-types.js";
 import { EXIT_CODES } from "../exit-codes.js";
 import { mkdirSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { writeFile } from "node:fs/promises";
 
 export interface ScrapeOptions {
@@ -306,11 +306,13 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Sync plan
   const plan = computeSyncPlan({ state, currentTree: expandedTrees, force, checkFiles, dryRun });
 
-  // Promote SKIP → DOWNLOAD for any state entries where the localPath has no .md extension
-  // but the current activity type maps to a text/md strategy (info-md, page-md, url-txt).
-  // This corrects legacy mis-classified entries (e.g. scorm activities saved as extensionless binary).
+  // Promote SKIP → DOWNLOAD for entries that need re-processing:
+  //   (a) info-md types (assign, feedback, etc.) — contain live personal data; always re-fetch
+  //   (b) md/url-strategy types whose localPath lacks the expected extension (legacy mis-classification)
+  //   (c) binary items whose localPath has no recognised file extension (ENAMETOOLONG/BUG-C legacy)
   const INFO_MD_ACTIVITY_TYPES = new Set(["assign","feedback","choice","vimp","hvp","h5pactivity","scorm","flashcard","survey","chat","lti","imscp","grouptool","bigbluebuttonbn","customcert","etherpadlite"]);
   const PAGE_MD_ACTIVITY_TYPES = new Set(["page","forum","quiz","glossary","book","lesson","wiki","workshop"]);
+  const KNOWN_FILE_EXTS = new Set([".pdf",".doc",".docx",".xls",".xlsx",".ppt",".pptx",".odt",".ods",".odp",".zip",".tar",".gz",".7z",".rar",".mp3",".mp4",".png",".jpg",".jpeg",".gif",".svg",".heic",".txt",".csv",".json",".xml",".html",".yml",".yaml",".java",".py",".js",".ts",".sql",".sh",".bin",".jar",".ipynb",".rtf",".conf",".md",".url.txt"]);
   for (const item of plan) {
     if (item.action !== SyncAction.SKIP || !item.resourceId || !item.courseId) continue;
     const courseIdStr = String(item.courseId);
@@ -327,17 +329,32 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       if (activityType) break;
     }
     if (!activityType) continue;
-    const shouldBeMd = INFO_MD_ACTIVITY_TYPES.has(activityType) || PAGE_MD_ACTIVITY_TYPES.has(activityType) || activityType === "url";
-    if (!shouldBeMd) continue;
-    // Check if state has a localPath without .md extension
+    // Get existing localPath from state
     const fileState = state.courses[courseIdStr]?.sections;
     let existingPath: string | undefined;
     for (const section of Object.values(fileState ?? {})) {
       const f = section.files?.[item.resourceId];
       if (f) { existingPath = f.localPath; break; }
     }
-    if (existingPath && !existingPath.endsWith(".md") && !existingPath.endsWith(".url.txt")) {
-      item.action = SyncAction.DOWNLOAD;
+    const isInfoMd = INFO_MD_ACTIVITY_TYPES.has(activityType);
+    const shouldBeMd = isInfoMd || PAGE_MD_ACTIVITY_TYPES.has(activityType) || activityType === "url";
+    // (a) info-md: always re-fetch (live personal data)
+    if (isInfoMd) { item.action = SyncAction.DOWNLOAD; continue; }
+    // (b) md/url types with wrong extension in state
+    if (shouldBeMd && existingPath && !existingPath.endsWith(".md") && !existingPath.endsWith(".url.txt")) {
+      item.action = SyncAction.DOWNLOAD; continue;
+    }
+    // (c) binary types with no recognised extension in localPath (legacy ENAMETOOLONG / BUG-C)
+    if (!shouldBeMd && existingPath) {
+      const ext = extname(existingPath).toLowerCase();
+      const hasDotInName = existingPath.includes(".");
+      // Only promote if truly extensionless (not a dotfile like .DS_Store)
+      if (ext === "" && hasDotInName === false) {
+        item.action = SyncAction.DOWNLOAD; continue;
+      }
+      if (ext !== "" && !KNOWN_FILE_EXTS.has(ext) && !existingPath.endsWith(".url.txt") && !existingPath.endsWith(".description.md")) {
+        item.action = SyncAction.DOWNLOAD; continue;
+      }
     }
   }
 
@@ -622,6 +639,9 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
               if (feedback.grade) lines.push(``, `**Bewertung:** ${feedback.grade}`);
               if (feedback.feedbackHtml) {
                 lines.push(``, `## Feedback des Dozenten`, ``, td.turndown(feedback.feedbackHtml));
+              }
+              if (feedback.submissionTextHtml) {
+                lines.push(``, `## Eigene Einreichung (Online-Text)`, ``, td.turndown(feedback.submissionTextHtml));
               }
               if (feedback.submissionUrls.length > 0) {
                 lines.push(``, `## Eigene Einreichung`);
