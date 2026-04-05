@@ -20,11 +20,17 @@ const SUSPICIOUS_NAME_PATTERNS = [
   /^forbidden[_\s]*$/i,             // only exact "Forbidden"
 ];
 
-// Well-known filenames that legitimately have no extension
-const KNOWN_NO_EXT = new Set([
-  "makefile", "dockerfile", "vagrantfile", "procfile", "gemfile", "rakefile",
-  "sshd_config", "ssh_config", "hosts", "fstab", "crontab", "sudoers",
-  "bashrc", "bash_profile", "zshrc", "profile",
+// Well-known file extensions that indicate a properly-typed file.
+// If a scraper-owned file has an extension not in this set, it's flagged as
+// suspicious (e.g. "FiMa 4.1" has extension ".1" which is not a real file type).
+const KNOWN_EXTS = new Set([
+  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+  ".odt", ".ods", ".odp", ".zip", ".tar", ".gz", ".7z", ".rar",
+  ".mp3", ".mp4", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".heic",
+  ".txt", ".csv", ".md", ".json", ".xml", ".html", ".yml", ".yaml",
+  ".url.txt",  // url-txt strategy
+  ".java", ".py", ".js", ".ts", ".sql", ".sh", ".bin",
+  ".jar", ".ipynb", ".rtf", ".conf", ".base",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -126,13 +132,14 @@ function scan(dir) {
       continue;
     }
 
-    // 3. Files without extensions (only check files known to come from scraper, or all if state unavailable)
-    const ext = extname(entry.name);
-    if (!ext && (knownPaths.size === 0 || knownPaths.has(fullPath))) {
-      // Skip known extensionless filenames (e.g. sshd_config, Makefile)
-      if (!KNOWN_NO_EXT.has(entry.name.toLowerCase())) {
-        anomalies.push({ type: "missing-extension", path: fullPath, userFile: false });
-      }
+    // 3. Files with non-recognised extensions (e.g. "FiMa 4.1" → ext ".1")
+    // Files with no extension at all (e.g. sshd_config, Dockerfile) are acceptable —
+    // they are legitimate config/source files. Only flag files with a non-empty,
+    // unrecognised extension (likely a mis-classified version number or missing real ext).
+    const ext = extname(entry.name).toLowerCase();
+    const isKnownExt = ext === "" || KNOWN_EXTS.has(ext) || entry.name.endsWith(".description.md") || entry.name.endsWith(".url.txt");
+    if (!isKnownExt && (knownPaths.size === 0 || knownPaths.has(fullPath))) {
+      anomalies.push({ type: "missing-extension", path: fullPath, userFile: false });
       continue;
     }
 

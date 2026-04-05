@@ -450,3 +450,75 @@ describe("extractCourseDescription — unit tests", () => {
     expect(result).toContain("Strategisches GPM");
   });
 });
+
+describe("BUG-D: Onetopic tab detection with &amp; entity encoding", () => {
+  it("fetches all onetopic sections when href uses &amp;section= (HTML entity encoding)", async () => {
+    const pool = mockAgent.get(BASE);
+
+    // Main page with &amp; encoded URLs in tab nav — only section 1 rendered in HTML
+    pool.intercept({ path: "/course/view.php?id=10", method: "GET" })
+      .reply(200, `<html><body>
+        <ul class="nav tabs">
+          <li id="onetabid-100"><a class="nav-link active" href="${BASE}/course/view.php?id=10&amp;section=1#tabs-tree-start">Informationen</a></li>
+          <li id="onetabid-101"><a class="nav-link" href="${BASE}/course/view.php?id=10&amp;section=2#tabs-tree-start">Materialien</a></li>
+          <li id="onetabid-102"><a class="nav-link" href="${BASE}/course/view.php?id=10&amp;section=3#tabs-tree-start">Abgabe</a></li>
+        </ul>
+        <li class="section" data-sectionname="Section 0"><ul class="section"></ul></li>
+        <li class="section" data-sectionname="Informationen">
+          <ul class="section">
+            <li class="activity modtype_resource"><a href="${BASE}/mod/resource/view.php?id=1">Skript</a></li>
+          </ul>
+        </li>
+      </body></html>`, { headers: { "content-type": "text/html" } });
+
+    // Tab 2 page
+    pool.intercept({ path: "/course/view.php?id=10&section=2", method: "GET" })
+      .reply(200, `<html><body>
+        <li class="section" data-sectionname="Materialien">
+          <ul class="section">
+            <li class="activity modtype_resource"><a href="${BASE}/mod/resource/view.php?id=2">Übungsblatt</a></li>
+          </ul>
+        </li>
+      </body></html>`, { headers: { "content-type": "text/html" } });
+
+    // Tab 3 page
+    pool.intercept({ path: "/course/view.php?id=10&section=3", method: "GET" })
+      .reply(200, `<html><body>
+        <li class="section" data-sectionname="Abgabe">
+          <ul class="section">
+            <li class="activity modtype_assign"><a href="${BASE}/mod/assign/view.php?id=3">Aufgabe 1</a></li>
+          </ul>
+        </li>
+      </body></html>`, { headers: { "content-type": "text/html" } });
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 10, sessionCookies: "" });
+    const sectionNames = tree.sections.map(s => s.sectionName);
+    expect(sectionNames).toContain("Informationen");
+    expect(sectionNames).toContain("Materialien");
+    expect(sectionNames).toContain("Abgabe");
+    expect(tree.sections.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("BUG-E: Section name whitespace fallback", () => {
+  it("falls back to 'Allgemeines' when section 0 data-sectionname is whitespace-only", async () => {
+    const pool = mockAgent.get(BASE);
+    pool.intercept({ path: "/course/view.php?id=20", method: "GET" })
+      .reply(200, `<html><body>
+        <li class="section" data-sectionname=" ">
+          <ul class="section">
+            <li class="activity modtype_forum"><a href="${BASE}/mod/forum/view.php?id=1">Ankündigungen</a></li>
+          </ul>
+        </li>
+        <li class="section" data-sectionname="Lerneinheit 1">
+          <ul class="section">
+            <li class="activity modtype_resource"><a href="${BASE}/mod/resource/view.php?id=2">Skript</a></li>
+          </ul>
+        </li>
+      </body></html>`, { headers: { "content-type": "text/html" } });
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 20, sessionCookies: "" });
+    expect(tree.sections[0]?.sectionName).toBe("Allgemeines");
+    expect(tree.sections[1]?.sectionName).toBe("Lerneinheit 1");
+  });
+});

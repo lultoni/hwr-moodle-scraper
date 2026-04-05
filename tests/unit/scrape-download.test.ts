@@ -406,4 +406,49 @@ describe("extractFilename — unit tests", () => {
     );
     expect(name).not.toMatch(/^\//);
   });
+
+  it("extracts extension from inline; Content-Disposition (not just attachment;)", () => {
+    // Moodle often sends `inline; filename="Finanzmathematik 4.1.pdf"` — must still extract
+    const name = extractFilename(
+      { "content-disposition": 'inline; filename="Finanzmathematik 4.1.pdf"' },
+      "https://moodle.example.com/pluginfile.php/1/content/1/Finanzmathematik%204.1.pdf"
+    );
+    expect(name).toBe("Finanzmathematik 4.1.pdf");
+  });
+});
+
+describe("BUG-C: downloadFile appends extension even when destPath looks like it has one (e.g. 'FiMa 4.1' → ext '.1')", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "msc-ext-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("appends .pdf when destPath ends in version number like '4.1' (not a known extension)", async () => {
+    const pool = mockAgent.get(BASE);
+    // Direct pluginfile serving — 200 with inline Content-Disposition
+    pool.intercept({ path: "/pluginfile.php/1/content/1/FiMa%204.1.pdf", method: "GET" })
+      .reply(200, Buffer.from("%PDF-1.4 fake pdf content"), {
+        headers: {
+          "content-type": "application/pdf",
+          "content-disposition": 'inline; filename="FiMa 4.1.pdf"',
+        },
+      });
+
+    const destPath = join(tmpDir, "FiMa 4.1"); // sanitised activity name, no extension
+    const result = await downloadFile({
+      url: `${BASE}/pluginfile.php/1/content/1/FiMa%204.1.pdf`,
+      destPath,
+      sessionCookies: "",
+      retryBaseDelayMs: 0,
+    });
+
+    // Should be "FiMa 4.1.pdf", NOT "FiMa 4.1"
+    expect(result.finalPath).toMatch(/\.pdf$/);
+    expect(extname(result.finalPath)).toBe(".pdf");
+  });
 });

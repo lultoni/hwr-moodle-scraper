@@ -240,6 +240,22 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
               const prev = folderNameCount.get(activity.activityName) ?? 0;
               folderNameCount.set(activity.activityName, prev + 1);
               const nameSuffix = prev > 0 ? ` (${prev + 1})` : "";
+
+              // If the folder has an inline description, preserve it as a label-md
+              // (written to <FolderName>.description.md in the section dir).
+              // Without this, the folder description is lost when the folder activity
+              // is replaced by its expanded file list.
+              if (activity.description) {
+                expandedActivities.push({
+                  activityType: "label",
+                  activityName: activity.activityName + nameSuffix,
+                  url: "",
+                  isAccessible: true,
+                  resourceId: `folder-${folderId}-description`,
+                  description: activity.description,
+                });
+              }
+
               for (const f of files) {
                 // If this filename appears in multiple folders, put it in a subfolder named after the folder activity
                 const collides = (fileNameFolderCount.get(f.name) ?? 0) > 1;
@@ -293,7 +309,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Promote SKIP → DOWNLOAD for any state entries where the localPath has no .md extension
   // but the current activity type maps to a text/md strategy (info-md, page-md, url-txt).
   // This corrects legacy mis-classified entries (e.g. scorm activities saved as extensionless binary).
-  const INFO_MD_ACTIVITY_TYPES = new Set(["assign","feedback","choice","vimp","hvp","h5pactivity","scorm","flashcard","survey","chat","lti","imscp","grouptool","bigbluebuttonbn","customcert"]);
+  const INFO_MD_ACTIVITY_TYPES = new Set(["assign","feedback","choice","vimp","hvp","h5pactivity","scorm","flashcard","survey","chat","lti","imscp","grouptool","bigbluebuttonbn","customcert","etherpadlite"]);
   const PAGE_MD_ACTIVITY_TYPES = new Set(["page","forum","quiz","glossary","book","lesson","wiki","workshop"]);
   for (const item of plan) {
     if (item.action !== SyncAction.SKIP || !item.resourceId || !item.courseId) continue;
@@ -549,7 +565,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       let content: string | undefined;
       if (strategy === "url-txt") {
         await writeUrlFile(destPath, item.url!);
-        // url-txt files are written by writeUrlFile; no hash tracking needed
+        // url-txt: content is not buffered through atomicWrite, so specialItemHashes[si] stays "".
+        // The file is still tracked via allDownloadedItems → FileState.localPath (no hash comparison).
       } else if (strategy === "page-md") {
         const { request } = await import("undici");
         const { body } = await request(item.url!, { headers: { cookie: sessionCookies } });

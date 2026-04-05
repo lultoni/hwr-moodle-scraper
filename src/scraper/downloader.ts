@@ -189,10 +189,28 @@ export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadF
           currentUrl,
         );
 
-        // If destPath has no extension and we found one, rename destination
-        if (extractedName && !extname(destPath)) {
-          const ext = extname(extractedName);
-          finalPath = ext ? destPath + ext : join(dirname(destPath), extractedName);
+        // Apply the extracted extension to destPath when:
+        //   (a) destPath has no extension at all, OR
+        //   (b) destPath has an extension that isn't a recognised file type (e.g.
+        //       "FiMa 4.1" → extname = ".1"; "Folien 4.1" → extname = ".1").
+        //       This prevents versioned names like "Lecture 4.1" from blocking
+        //       the proper ".pdf" / ".pptx" extension from being appended.
+        //
+        // A known extension is any key from MIME_TO_EXT (e.g. ".pdf", ".docx", ".zip").
+        const KNOWN_EXTS = new Set(Object.values(MIME_TO_EXT));
+        const destExt = extname(destPath).toLowerCase();
+        const destHasKnownExt = destExt !== "" && KNOWN_EXTS.has(destExt);
+        if (extractedName && !destHasKnownExt) {
+          const ext = extname(extractedName).toLowerCase();
+          if (ext && !destPath.toLowerCase().endsWith(ext)) {
+            // Append the extension only if destPath doesn't already end with it.
+            // This avoids double-extension for files like "docker-compose.yml" whose
+            // ".yml" is not in MIME_TO_EXT but is already correct.
+            finalPath = destPath + ext;
+          } else if (!ext) {
+            finalPath = join(dirname(destPath), extractedName);
+          }
+          // else: destPath already ends with the correct extension — keep finalPath = destPath
         }
 
         const totalBytes = headers["content-length"]

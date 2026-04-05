@@ -87,10 +87,14 @@ export function extractPageContent(html: string): string {
  *   Profile, user, and navigation links lack `discuss.php` and are ignored.
  *
  * Deduplication:
- *   The same thread URL can appear multiple times in a forum page (e.g. in the
- *   subject column and the "last post" column). The dedup key is the href with
- *   any `#anchor` fragment stripped so `discuss.php?d=42` and
- *   `discuss.php?d=42#p123` are treated as the same thread.
+ *   The same discussion can appear multiple times in a forum page in two ways:
+ *   (a) In both the subject column and the "last post" column, producing URLs like
+ *       `discuss.php?d=42` and `discuss.php?d=42&parent=123`. The `&parent=` param
+ *       references the latest reply but points to the same discussion.
+ *   (b) Via `#anchor` fragments: `discuss.php?d=42#p123`.
+ *   The dedup key is extracted as `d=NNN` (just the discussion ID) so both variants
+ *   of the same thread collapse to one entry. The canonical URL stored is always the
+ *   plain `discuss.php?d=NNN` form without extra params.
  *
  * Relative URL resolution:
  *   HWR Moodle consistently uses absolute hrefs, but relative paths starting
@@ -122,12 +126,21 @@ export function extractForumThreadUrls(
       href = baseUrl.replace(/\/$/, "") + "/" + href;
     }
 
-    // Normalise: strip trailing anchors / extra params beyond d= for dedup key
-    const dedupKey = href.split("#")[0]!;
+    // Dedup key: extract just the `d=NNN` discussion ID.
+    // Forum index pages list each thread twice: once as the subject link
+    // (discuss.php?d=NNN) and once as the "last post" link
+    // (discuss.php?d=NNN&parent=MMM). Stripping only "#..." would leave the
+    // &parent= variant as a different key → the same thread fetched twice.
+    const dMatch = /[?&]d=(\d+)/.exec(href);
+    const dedupKey = dMatch ? `d=${dMatch[1]}` : href.split("#")[0]!;
     if (seen.has(dedupKey)) continue;
     seen.add(dedupKey);
 
-    threads.push({ title: rawTitle || dedupKey, url: href });
+    // Always use the canonical URL without extra params (just d=NNN)
+    const canonicalUrl = dMatch
+      ? href.replace(/^([^?]+\?[^#]*)(&parent=\d+)([^#]*)/, "$1$3").split("#")[0]!
+      : href.split("#")[0]!;
+    threads.push({ title: rawTitle || dedupKey, url: canonicalUrl });
   }
 
   return threads;

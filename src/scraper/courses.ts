@@ -79,10 +79,17 @@ function decodeHtmlEntities(s: string): string {
 /**
  * Parse onetopic-format tab nav to build sectionNumber → name map.
  * Matches: <li id="onetabid-NNN"...><a href="...section=N...">Name</a>
+ *
+ * HTML entities: In HTML source, `&` in href attributes is encoded as `&amp;`.
+ * The regex must match both literal `&` (when parsing programmatically-decoded HTML)
+ * and the HTML entity form `&amp;` so that URLs like:
+ *   href="...?id=88019&amp;section=2#tabs-tree-start"
+ * are correctly matched. Without this, tabs 2..N are silently ignored and only
+ * section 0 + the initially-active section are scraped.
  */
 function parseOnetopicTabs(html: string): Map<number, string> {
   const map = new Map<number, string>();
-  const tabRe = /id="onetabid-\d+"[\s\S]*?href="[^"]*[?&]section=(\d+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+  const tabRe = /id="onetabid-\d+"[\s\S]*?href="[^"]*[?&](?:amp;)?section=(\d+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
   let m: RegExpExecArray | null;
   while ((m = tabRe.exec(html)) !== null) {
     const sectionNum = parseInt(m[1]!, 10);
@@ -95,10 +102,11 @@ function parseOnetopicTabs(html: string): Map<number, string> {
 /**
  * Parse onetopic tab nav to build an ordered list of { sectionNum, name } entries.
  * Used to iterate and fetch each section page.
+ * Same &amp; → & entity fix as parseOnetopicTabs.
  */
 function parseOnetopicTabList(html: string): Array<{ sectionNum: number; name: string }> {
   const tabs: Array<{ sectionNum: number; name: string }> = [];
-  const tabRe = /id="onetabid-\d+"[\s\S]*?href="[^"]*[?&]section=(\d+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+  const tabRe = /id="onetabid-\d+"[\s\S]*?href="[^"]*[?&](?:amp;)?section=(\d+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
   let m: RegExpExecArray | null;
   while ((m = tabRe.exec(html)) !== null) {
     const sectionNum = parseInt(m[1]!, 10);
@@ -514,7 +522,7 @@ function parseContentTree(html: string, courseId: number, baseUrl: string, logge
     const dataNameMatch = /data-sectionname="([^"]+)"/i.exec(chunk);
     let sectionName: string;
     if (dataNameMatch) {
-      sectionName = decodeHtmlEntities(dataNameMatch[1]!);
+      sectionName = decodeHtmlEntities(dataNameMatch[1]!).trim();
     } else {
       const h3Match = /<h[1-6][^>]+class="[^"]*sectionname[^"]*"[^>]*>([\s\S]*?)<\/h[1-6]>/i.exec(chunk);
       if (h3Match) {
@@ -525,6 +533,11 @@ function parseContentTree(html: string, courseId: number, baseUrl: string, logge
         const sectionNum = dataNumMatch ? parseInt(dataNumMatch[1]!, 10) : -1;
         sectionName = (sectionNum >= 0 && onetopicTabs.get(sectionNum)) || `Section ${sectionIndex}`;
       }
+    }
+    // Guard: Moodle sometimes sets data-sectionname to a space or empty string for the
+    // general/intro section (section 0). Fall back to a canonical name in that case.
+    if (!sectionName.trim()) {
+      sectionName = sectionIndex === 0 ? "Allgemeines" : `Section ${sectionIndex}`;
     }
 
     const activities: Activity[] = [];

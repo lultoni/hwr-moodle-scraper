@@ -203,7 +203,7 @@ describe("buildDownloadPlan: activity type dispatch", () => {
     expect(items[0]?.destPath).toMatch(/\.md$/);
   });
 
-  it("info-md with description also emits description-md sidecar", () => {
+  it("info-md with description does NOT emit a separate description-md sidecar (description embedded in main .md)", () => {
     const act = makeActivity({
       activityType: "vimp",
       activityName: "Vorlesung Video",
@@ -214,7 +214,8 @@ describe("buildDownloadPlan: activity type dispatch", () => {
     const infoItem = items.find(i => i.strategy === "info-md");
     const descItem = items.find(i => i.strategy === "description-md");
     expect(infoItem).toBeDefined();
-    expect(descItem).toBeDefined();
+    // info-md already embeds the description under "## Description" — no redundant sidecar
+    expect(descItem).toBeUndefined();
   });
 
   it("page-md type with description also emits description-md sidecar", () => {

@@ -58,6 +58,24 @@ describe("extractForumThreadUrls — unit tests", () => {
     expect(threads[0]?.url).toContain("d=42");
   });
 
+  it("BUG-B: deduplicates subject link vs last-post link (&parent= variant)", () => {
+    // Forum index shows each thread twice: subject link (d=NNN) and last-post link (d=NNN&parent=MMM)
+    const html = `<html><body>
+      <a href="${BASE}/mod/forum/discuss.php?d=329795">Aufgabe für TAG 6</a>
+      <a href="${BASE}/mod/forum/discuss.php?d=329795&parent=430827">26. Nov. 2024</a>
+      <a href="${BASE}/mod/forum/discuss.php?d=328403">Aufgabe für TAG 3</a>
+      <a href="${BASE}/mod/forum/discuss.php?d=328403&parent=429283">16. Nov. 2024</a>
+    </body></html>`;
+    const threads = extractForumThreadUrls(html, BASE);
+    // Must produce exactly 2 threads, not 4
+    expect(threads).toHaveLength(2);
+    // Canonical URLs should not contain &parent=
+    expect(threads[0]?.url).not.toContain("parent");
+    expect(threads[1]?.url).not.toContain("parent");
+    expect(threads[0]?.url).toContain("d=329795");
+    expect(threads[1]?.url).toContain("d=328403");
+  });
+
   it("ignores profile, user, and navigation links (non-discuss.php hrefs)", () => {
     const html = `<html><body>
       <a href="${BASE}/user/profile.php?id=1">User Profile</a>

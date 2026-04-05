@@ -50,6 +50,7 @@ const INFO_MD_TYPES = new Set([
   "grouptool",
   "bigbluebuttonbn",
   "customcert",  // Course completion certificate (links to completion criteria, not downloadable)
+  "etherpadlite", // Etherpad collaborative editor — not a downloadable file
 ]);
 
 /**
@@ -134,8 +135,12 @@ export function buildDownloadPlan(
       sectionName,
     });
 
-    // Sidecar: save description as .description.md alongside non-label items
-    if (activity.description && strategy !== "label-md") {
+    // Sidecar: save description as .description.md alongside non-label, non-info-md items.
+    // info-md items (assign, feedback, etc.) already embed the description in the main file
+    // under "## Description", so a separate sidecar would be pure redundancy.
+    // page-md items DO get a sidecar because their main file contains fetched page content
+    // (not the description), so the description is genuinely separate metadata.
+    if (activity.description && strategy !== "label-md" && strategy !== "info-md") {
       items.push({
         activity,
         url: activity.url,
