@@ -84,7 +84,8 @@ hwr-moodle-scraper/
 When a user reports broken files or before ending a session:
 1. Follow `agents/debug-workflow.md` — capture HTML in `debug/` (gitignored), locate bug, write test, fix, re-scrape
 2. Run `node scripts/file-checker.js` — must exit 0 before session ends (also runs automatically via Stop hook)
-3. Clean `debug/` after file-checker passes
+3. Run `msc status --issues` — must show **0 user-added files** that were created by the scraper (i.e. no orphaned state entries). Any file tracked in state that appears as "user-added" signals a path-mismatch bug.
+4. Clean `debug/` after file-checker passes
 
 ## Current Phase
 **Phase 5 — Iterative Improvements (ongoing)**

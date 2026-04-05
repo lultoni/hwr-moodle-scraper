@@ -114,7 +114,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   const knownPaths = new Set<string>();
 
   // Include generated files (README.md, _Abschnittsbeschreibung.md) written outside FileState
-  for (const p of state.generatedFiles ?? []) knownPaths.add(p);
+  for (const p of state.generatedFiles ?? []) knownPaths.add(p.normalize("NFC"));
 
   // Per-course stats: name → { files, size, lastModified }
   const courseStats = new Map<string, { label: string; files: number; size: number; lastModified: string }>();
@@ -130,9 +130,11 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
         courseFiles++;
 
         if (file.localPath) {
-          knownPaths.add(file.localPath);
-          if (file.sidecarPath) knownPaths.add(file.sidecarPath);
-          for (const sp of file.submissionPaths ?? []) knownPaths.add(sp);
+          // Normalise to NFC — state paths may be NFD (from macOS rename) or NFC (from HTML).
+          // collectFiles() also returns NFC, so both sides must match.
+          knownPaths.add(file.localPath.normalize("NFC"));
+          if (file.sidecarPath) knownPaths.add(file.sidecarPath.normalize("NFC"));
+          for (const sp of file.submissionPaths ?? []) knownPaths.add(sp.normalize("NFC"));
           if (file.status !== "orphan" && existsSync(file.localPath)) {
             try {
               const st = statSync(file.localPath);

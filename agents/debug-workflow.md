@@ -88,9 +88,12 @@ Verify the previously broken files now have correct extensions and content.
 
 ```bash
 node scripts/file-checker.js <outputDir>
+msc status --issues
 ```
 
 The file-checker exits 0 only when **no anomalies are found**. You **must not end a debug session** until it exits 0.
+
+`msc status --issues` must show **zero files in the "User-added files" section that were actually created by the scraper**. Any scraper-written file appearing there signals a path-mismatch bug (state recorded path A, file was written to path B). Fix the path-construction logic or the state-registration logic, re-scrape the affected sections, and re-run both checks.
 
 ---
 

@@ -139,7 +139,7 @@ async function handleMoveUserFiles(
   });
 
   const allOnDisk = collectFiles(outputDir);
-  const knownSet = new Set(knownPaths);
+  const knownSet = new Set(knownPaths.map((p) => p.normalize("NFC")));
   const userFiles = allOnDisk.filter((f) => !knownSet.has(f));
 
   if (userFiles.length === 0) return 0;
