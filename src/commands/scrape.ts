@@ -207,15 +207,15 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           const folderNameCount = new Map<string, number>();
 
           // Pre-fetch all folder contents so we can detect cross-folder filename collisions
-          type FolderEntry = { activity: Activity; folderId: string; files: Array<{ name: string; url: string }> };
+          type FolderEntry = { activity: Activity; folderId: string; files: Array<{ name: string; url: string }>; folderDescription?: string };
           const folderEntries: FolderEntry[] = [];
           for (const activity of section.activities) {
             if (activity.activityType === "folder" && activity.url) {
-              const files = await fetchFolderFiles({ baseUrl, folderUrl: activity.url, sessionCookies });
+              const result = await fetchFolderFiles({ baseUrl, folderUrl: activity.url, sessionCookies });
               const folderIdMatch = /[?&]id=(\d+)/.exec(activity.url);
               const folderId = folderIdMatch ? folderIdMatch[1]! : activity.activityName;
-              folderEntries.push({ activity, folderId, files });
-              logger.debug(`  Expanding folder: ${activity.activityName} (${files.length} files)`);
+              folderEntries.push({ activity, folderId, files: result.files, folderDescription: result.description });
+              logger.debug(`  Expanding folder: ${activity.activityName} (${result.files.length} files)`);
             }
           }
 
@@ -235,24 +235,26 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
             if (activity.activityType === "folder" && activity.url) {
               const entry = folderEntries.find((e) => e.activity === activity);
               if (!entry) continue;
-              const { folderId, files } = entry;
+              const { folderId, files, folderDescription } = entry;
               // Track duplicate folder names to produce distinct destPaths
               const prev = folderNameCount.get(activity.activityName) ?? 0;
               folderNameCount.set(activity.activityName, prev + 1);
               const nameSuffix = prev > 0 ? ` (${prev + 1})` : "";
 
-              // If the folder has an inline description, preserve it as a label-md
-              // (written to <FolderName>.description.md in the section dir).
-              // Without this, the folder description is lost when the folder activity
-              // is replaced by its expanded file list.
-              if (activity.description) {
+              // If the folder has a description — either from activity-altcontent on the
+              // course page (activity.description) or from the folder's own intro div
+              // (folderDescription, extracted from <div id="intro"> on the folder page) —
+              // preserve it as a label-md.  The course page often omits the intro div
+              // entirely for folder activities, so folderDescription is the reliable source.
+              const descHtml = activity.description ?? folderDescription;
+              if (descHtml) {
                 expandedActivities.push({
                   activityType: "label",
                   activityName: activity.activityName + nameSuffix,
                   url: "",
                   isAccessible: true,
                   resourceId: `folder-${folderId}-description`,
-                  description: activity.description,
+                  description: descHtml,
                 });
               }
 

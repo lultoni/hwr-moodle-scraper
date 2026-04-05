@@ -360,16 +360,46 @@ describe("Parsing: Folder expansion", () => {
         </body></html>
       `);
 
-    const files = await fetchFolderFiles({
+    const result = await fetchFolderFiles({
       baseUrl: BASE,
       folderUrl: `${BASE}/mod/folder/view.php?id=300`,
       sessionCookies: "",
     });
 
-    expect(files).toHaveLength(2);
-    expect(files[0]?.name).toBe("lecture1.pdf");
-    expect(files[0]?.url).toContain("lecture1.pdf");
-    expect(files[1]?.name).toBe("lecture2.pdf");
+    expect(result.files).toHaveLength(2);
+    expect(result.files[0]?.name).toBe("lecture1.pdf");
+    expect(result.files[0]?.url).toContain("lecture1.pdf");
+    expect(result.files[1]?.name).toBe("lecture2.pdf");
+    expect(result.description).toBeUndefined();
+  });
+
+  it("fetchFolderFiles extracts description from folder intro div", async () => {
+    const { fetchFolderFiles } = await import("../../src/scraper/courses.js");
+
+    const pool = mockAgent.get(BASE);
+    pool
+      .intercept({ path: `/mod/folder/view.php?id=301`, method: "GET" })
+      .reply(200, `
+        <html><body>
+          <div class="activity-description" id="intro">
+            <div class="no-overflow"><p>Liebe Kolleginnen, liebe Kollegen,</p><p>Thomas Rochow</p></div>
+          </div>
+          <div class="foldertree">
+            <span class="fp-filename"><a href="${BASE}/pluginfile.php/1/mod_folder/content/0/Blatt1.pdf?forcedownload=1">Blatt1.pdf</a></span>
+          </div>
+        </body></html>
+      `);
+
+    const result = await fetchFolderFiles({
+      baseUrl: BASE,
+      folderUrl: `${BASE}/mod/folder/view.php?id=301`,
+      sessionCookies: "",
+    });
+
+    expect(result.files).toHaveLength(1);
+    expect(result.description).toBeDefined();
+    expect(result.description).toContain("Liebe Kolleginnen");
+    expect(result.description).toContain("Thomas Rochow");
   });
 });
 
@@ -783,15 +813,15 @@ describe("Parsing: folder fp-filename span (Moodle 4.x real structure)", () => {
         </body></html>
       `);
 
-    const files = await fetchFolderFiles({
+    const result = await fetchFolderFiles({
       baseUrl: BASE,
       folderUrl: `${BASE}/mod/folder/view.php?id=400`,
       sessionCookies: "",
     });
 
-    expect(files).toHaveLength(2);
-    expect(files[0]?.name).toBe("Blatt 1.pdf");
-    expect(files[1]?.name).toBe("Formelsammlung.pdf");
+    expect(result.files).toHaveLength(2);
+    expect(result.files[0]?.name).toBe("Blatt 1.pdf");
+    expect(result.files[1]?.name).toBe("Formelsammlung.pdf");
   });
 });
 

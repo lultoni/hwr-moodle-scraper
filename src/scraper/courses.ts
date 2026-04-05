@@ -25,6 +25,12 @@ export interface FolderFile {
   url: string;
 }
 
+export interface FolderResult {
+  files: FolderFile[];
+  /** Raw inner HTML of the folder description (from <div id="intro">), if present. */
+  description?: string;
+}
+
 export interface Section {
   sectionId: string;
   sectionName: string;
@@ -438,13 +444,57 @@ export async function fetchContentTree(opts: FetchOptions & { courseId: number }
 /** Fetch a folder page and return all downloadable file links. */
 export async function fetchFolderFiles(
   opts: FetchOptions & { folderUrl: string },
-): Promise<FolderFile[]> {
+): Promise<FolderResult> {
   const { folderUrl, sessionCookies } = opts;
 
   const { statusCode, body } = await fetchWithRedirects(folderUrl, { cookie: sessionCookies });
-  if (statusCode >= 400) return [];
+  if (statusCode >= 400) return { files: [] };
 
-  return parseFolderFiles(body);
+  return {
+    files: parseFolderFiles(body),
+    description: parseFolderDescription(body),
+  };
+}
+
+/**
+ * Extract the folder intro/description from the folder view page.
+ * Moodle places it in: <div class="activity-description" id="intro">
+ *                         <div class="no-overflow">...HTML...</div>
+ *                       </div>
+ * We extract the inner HTML of the "no-overflow" div using a balanced-div counter.
+ */
+function parseFolderDescription(html: string): string | undefined {
+  // Find the intro div
+  const introIdx = html.indexOf('id="intro"');
+  if (introIdx === -1) return undefined;
+
+  // Walk forward to find <div class="no-overflow"> inside the intro block
+  const noOverflowIdx = html.indexOf('class="no-overflow"', introIdx);
+  if (noOverflowIdx === -1) return undefined;
+
+  const contentStart = html.indexOf(">", noOverflowIdx) + 1;
+  if (contentStart <= 0) return undefined;
+
+  // Use balanced-div depth counter to find the matching </div>
+  let depth = 1;
+  let pos = contentStart;
+  while (pos < html.length && depth > 0) {
+    const nextOpen = html.indexOf("<div", pos);
+    const nextClose = html.indexOf("</div>", pos);
+    if (nextClose === -1) break;
+    if (nextOpen !== -1 && nextOpen < nextClose) {
+      depth++;
+      pos = nextOpen + 4;
+    } else {
+      depth--;
+      if (depth === 0) {
+        const inner = html.slice(contentStart, nextClose).trim();
+        if (inner) return inner;
+      }
+      pos = nextClose + 6;
+    }
+  }
+  return undefined;
 }
 
 function parseFolderFiles(html: string): FolderFile[] {
