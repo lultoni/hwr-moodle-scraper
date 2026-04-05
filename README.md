@@ -119,7 +119,7 @@ npm run test:watch        # watch mode
 npm run test:coverage     # with coverage report
 ```
 
-All 377 tests pass across 33 test files (Phase 5: 22 cleanup/improvement passes, including section description extraction for Moodle 4.x, course listing via AJAX, stderr handling, TUI refinements, legacy mis-classification auto-promotion, and data-activityname parsing fixes).
+All 382 tests pass across 32 test files (Phase 5: 22 cleanup/improvement passes, including section description extraction for Moodle 4.x, course listing via AJAX, stderr handling, TUI refinements, legacy mis-classification auto-promotion, data-activityname parsing fixes, output-quality bug fixes for dispatch/forum/downloader/courses, and ENAMETOOLONG resolution for long filenames).
 
 ### Type-check
 
