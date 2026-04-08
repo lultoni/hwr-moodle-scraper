@@ -463,8 +463,8 @@ describe("BUG-D: Onetopic tab detection with &amp; entity encoding", () => {
           <li id="onetabid-101"><a class="nav-link" href="${BASE}/course/view.php?id=10&amp;section=2#tabs-tree-start">Materialien</a></li>
           <li id="onetabid-102"><a class="nav-link" href="${BASE}/course/view.php?id=10&amp;section=3#tabs-tree-start">Abgabe</a></li>
         </ul>
-        <li class="section" data-sectionname="Section 0"><ul class="section"></ul></li>
-        <li class="section" data-sectionname="Informationen">
+        <li class="section" data-sectionname="Section 0" data-number="0"><ul class="section"></ul></li>
+        <li class="section" data-sectionname="Informationen" data-number="1">
           <ul class="section">
             <li class="activity modtype_resource"><a href="${BASE}/mod/resource/view.php?id=1">Skript</a></li>
           </ul>
@@ -474,7 +474,7 @@ describe("BUG-D: Onetopic tab detection with &amp; entity encoding", () => {
     // Tab 2 page
     pool.intercept({ path: "/course/view.php?id=10&section=2", method: "GET" })
       .reply(200, `<html><body>
-        <li class="section" data-sectionname="Materialien">
+        <li class="section" data-sectionname="Materialien" data-number="2">
           <ul class="section">
             <li class="activity modtype_resource"><a href="${BASE}/mod/resource/view.php?id=2">Übungsblatt</a></li>
           </ul>
@@ -484,7 +484,7 @@ describe("BUG-D: Onetopic tab detection with &amp; entity encoding", () => {
     // Tab 3 page
     pool.intercept({ path: "/course/view.php?id=10&section=3", method: "GET" })
       .reply(200, `<html><body>
-        <li class="section" data-sectionname="Abgabe">
+        <li class="section" data-sectionname="Abgabe" data-number="3">
           <ul class="section">
             <li class="activity modtype_assign"><a href="${BASE}/mod/assign/view.php?id=3">Aufgabe 1</a></li>
           </ul>

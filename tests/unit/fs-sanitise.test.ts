@@ -68,6 +68,30 @@ describe("STEP-003: Filename sanitisation", () => {
     const input = "Lecture Notes: Week 1 / Introduction.pdf";
     expect(sanitiseFilename(input)).toBe(sanitiseFilename(input));
   });
+
+  it("strips &nbsp; entities from names", () => {
+    expect(sanitiseFilename("&nbsp;Aktivitäten")).toBe("Aktivitäten");
+  });
+
+  it("strips &nbsp; from both start and end", () => {
+    expect(sanitiseFilename("&nbsp;Lernvideos&nbsp;")).toBe("Lernvideos");
+  });
+
+  it("decodes &amp; entity to literal ampersand", () => {
+    expect(sanitiseFilename("Zahlen &amp; Fakten.pdf")).toBe("Zahlen & Fakten.pdf");
+  });
+
+  it("decodes &amp; in section-like names preserving surrounding spaces", () => {
+    expect(sanitiseFilename("Session 6: Double Diamond, Kanban &amp; OKR")).toBe("Session 6_ Double Diamond, Kanban & OKR");
+  });
+
+  it("decodes &lt; and &gt; to < and > which then become underscores", () => {
+    expect(sanitiseFilename("A &lt;B&gt; C")).toBe("A _B_ C");
+  });
+
+  it("decodes &quot; to double-quote which then becomes underscore", () => {
+    expect(sanitiseFilename('Say &quot;hello&quot;')).toBe("Say _hello_");
+  });
 });
 
 describe("STEP-003: Collision resolution", () => {

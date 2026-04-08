@@ -287,7 +287,7 @@ describe("msc reset — sidecarPath support", () => {
     await runReset({ outputDir: "/out", dryRun: true });
     const output = spy.mock.calls.flat().join("");
     // 2 existing files (localPath + sidecarPath both exist by default)
-    expect(output).toMatch(/\[dry-run\] Would delete 2 files/);
+    expect(output).toMatch(/\[dry-run\] Would delete 2 files across 1 courses? \(1 activit/);
     spy.mockRestore();
   });
 });
@@ -384,6 +384,99 @@ describe("msc reset — --move-user-files", () => {
     expect(output).toContain("MyGuide");
     expect(mockRenameSync).not.toHaveBeenCalled();
     expect(mockSelectItem).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
+
+describe("msc reset — submissionPaths support", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExistsSync.mockReturnValue(true);
+    mockReaddirSync.mockReturnValue([]);
+  });
+
+  function makeStateWithSubmissions(
+    localPath = "/out/Course/Section/Hausarbeit.md",
+    submissionPaths = [
+      "/out/Course/Section/Hausarbeit.submission.pdf",
+      "/out/Course/Section/Hausarbeit.submission.zip",
+    ],
+  ) {
+    return {
+      version: 1,
+      lastSyncAt: "2026-04-02T10:00:00.000Z",
+      courses: {
+        "1": {
+          name: "TestCourse",
+          sections: {
+            s1: {
+              files: {
+                r1: {
+                  status: "ok",
+                  localPath,
+                  submissionPaths,
+                  url: "https://example.com/r1",
+                  hash: "abc",
+                  lastModified: "",
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+  }
+
+  it("deletes all submissionPaths alongside the main file", async () => {
+    mockLoad.mockResolvedValue(makeStateWithSubmissions());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", force: true });
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/Hausarbeit.md");
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/Hausarbeit.submission.pdf");
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/Hausarbeit.submission.zip");
+    spy.mockRestore();
+  });
+
+  it("does not crash when a submissionPath does not exist on disk", async () => {
+    mockLoad.mockResolvedValue(
+      makeStateWithSubmissions("/out/Course/Section/Hausarbeit.md", [
+        "/out/Course/Section/Hausarbeit.submission.pdf",
+      ]),
+    );
+    mockExistsSync.mockImplementation(
+      (p: string) => p !== "/out/Course/Section/Hausarbeit.submission.pdf",
+    );
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await expect(runReset({ outputDir: "/out", force: true })).resolves.not.toThrow();
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/Hausarbeit.md");
+    expect(mockUnlinkSync).not.toHaveBeenCalledWith(
+      "/out/Course/Section/Hausarbeit.submission.pdf",
+    );
+    spy.mockRestore();
+  });
+
+  it("--dry-run counts submission files and shows them in tree output", async () => {
+    mockLoad.mockResolvedValue(makeStateWithSubmissions());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", dryRun: true });
+    const output = spy.mock.calls.flat().join("");
+    expect(output).toContain("[dry-run]");
+    expect(output).toContain("Hausarbeit.submission.pdf");
+    expect(output).toContain("Hausarbeit.submission.zip");
+    // 3 files: main + 2 submissions
+    expect(output).toMatch(/\[dry-run\] Would delete 3 files across 1 courses? \(1 activit/);
+    expect(mockUnlinkSync).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("works correctly when submissionPaths is absent (undefined)", async () => {
+    const state = makeStateWithSubmissions();
+    // Remove submissionPaths entirely
+    delete (state.courses["1"]!.sections["s1"]!.files["r1"] as Record<string, unknown>)["submissionPaths"];
+    mockLoad.mockResolvedValue(state);
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await expect(runReset({ outputDir: "/out", force: true })).resolves.not.toThrow();
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/Hausarbeit.md");
     spy.mockRestore();
   });
 });

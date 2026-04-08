@@ -16,6 +16,8 @@ export interface FileState {
   sidecarPath?: string;
   /** Submission file paths downloaded alongside an assignment info card. */
   submissionPaths?: string[];
+  /** Embedded image paths downloaded alongside a page-md/label-md file. */
+  imagePaths?: string[];
 }
 
 export interface SectionState {

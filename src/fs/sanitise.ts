@@ -7,6 +7,17 @@ const MAX_BYTES = 255;
 export function sanitiseFilename(name: string): string {
   // Remove null bytes first (they must disappear, not become _)
   let s = name.replace(NULL_BYTE, "");
+  // Decode common HTML entities to their character equivalents
+  // (Moodle double-encodes some attributes, leaving residual entities after the main decode pass)
+  s = s
+    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&#(\d+);/gi, (_, d: string) => String.fromCharCode(parseInt(d, 10)))
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'");
   // Replace remaining illegal characters with _
   s = s.replace(ILLEGAL, "_");
   // Trim leading/trailing whitespace and dots

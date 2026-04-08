@@ -46,6 +46,9 @@ export interface Section {
    * This is DIFFERENT from `ContentTree.summary`, which is the course-level description.
    */
   summary?: string;
+  /** Moodle's `data-number` attribute on the `<li class="section">` element. Used to match
+   *  onetopic tab numbers to parsed sections. */
+  dataNumber?: number;
 }
 
 export interface ContentTree {
@@ -76,6 +79,7 @@ function decodeHtmlEntities(s: string): string {
     .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCharCode(parseInt(h, 16)))
     .replace(/&#(\d+);/gi, (_, d: string) => String.fromCharCode(parseInt(d, 10)))
     .replace(/&amp;/gi, "&")
+    .replace(/&nbsp;/gi, " ")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
@@ -402,7 +406,10 @@ export async function fetchContentTree(opts: FetchOptions & { courseId: number }
   if (onetopicTabList.length > 0) {
     // Parse the active section from the main page
     const mainTree = parseContentTree(body, courseId, baseUrl, opts.logger);
-    const activeSectionNums = new Set(mainTree.sections.map((_, i) => i + 1));
+    // Use actual data-number values (not array indices) to identify which sections are already present
+    const activeSectionNums = new Set(
+      mainTree.sections.filter((s) => s.dataNumber !== undefined).map((s) => s.dataNumber!)
+    );
 
     const allSections: Section[] = [...mainTree.sections];
 
@@ -411,7 +418,7 @@ export async function fetchContentTree(opts: FetchOptions & { courseId: number }
         // Skip sections already present (e.g. the active one returned in mainTree)
         if (activeSectionNums.has(sectionNum)) {
           // Update its name from the tab nav
-          const existing = allSections.find((s) => s.sectionId === `s${sectionNum - 1}`);
+          const existing = allSections.find((s) => s.dataNumber === sectionNum);
           if (existing) existing.sectionName = name;
           return;
         }
@@ -419,8 +426,8 @@ export async function fetchContentTree(opts: FetchOptions & { courseId: number }
         const { statusCode: sc, body: tabBody } = await fetchWithRedirects(url, headers);
         if (sc >= 400) return;
         const tabTree = parseContentTree(tabBody, courseId, baseUrl, opts.logger);
-        // The tab page contains only the requested section
-        const section = tabTree.sections[0];
+        // Find the section matching the requested sectionNum by data-number
+        const section = tabTree.sections.find((s) => s.dataNumber === sectionNum) ?? tabTree.sections[0];
         if (section) {
           allSections.push({ ...section, sectionId: `s${sectionNum - 1}`, sectionName: name });
         }
@@ -566,6 +573,10 @@ function parseContentTree(html: string, courseId: number, baseUrl: string, logge
   for (let i = 1; i < sectionChunks.length; i++) {
     const chunk = sectionChunks[i] ?? "";
 
+    // Extract Moodle's data-number attribute (always, not just for name fallback)
+    const dataNumMatchGlobal = /data-number="(\d+)"/i.exec(chunk);
+    const dataNumber = dataNumMatchGlobal ? parseInt(dataNumMatchGlobal[1]!, 10) : undefined;
+
     // 1. data-sectionname attribute (new Moodle)
     // 2. <h3 class="sectionname"> heading
     // 3. Onetopic tab nav (data-number → tab map)
@@ -626,7 +637,7 @@ function parseContentTree(html: string, courseId: number, baseUrl: string, logge
       if (inner.replace(/<[^>]+>/g, "").trim()) sectionSummary = inner;
     }
 
-    sections.push({ sectionId: `s${sectionIndex}`, sectionName, activities, ...(sectionSummary ? { summary: sectionSummary } : {}) });
+    sections.push({ sectionId: `s${sectionIndex}`, sectionName, activities, ...(sectionSummary ? { summary: sectionSummary } : {}), ...(dataNumber !== undefined ? { dataNumber } : {}) });
     sectionIndex++;
   }
 

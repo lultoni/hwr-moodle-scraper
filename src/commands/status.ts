@@ -135,6 +135,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
           knownPaths.add(file.localPath.normalize("NFC"));
           if (file.sidecarPath) knownPaths.add(file.sidecarPath.normalize("NFC"));
           for (const sp of file.submissionPaths ?? []) knownPaths.add(sp.normalize("NFC"));
+          for (const ip of file.imagePaths ?? []) knownPaths.add(ip.normalize("NFC"));
           if (file.status !== "orphan" && existsSync(file.localPath)) {
             try {
               const st = statSync(file.localPath);

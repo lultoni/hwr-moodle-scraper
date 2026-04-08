@@ -211,12 +211,19 @@ export async function runReset(opts: ResetOptions): Promise<void> {
 
   // Collect all scraper-owned file paths from state (including sidecars and generated files)
   const knownPaths: string[] = [];
-  for (const p of state.generatedFiles ?? []) knownPaths.push(p);
+  let generatedCount = 0;
+  let sidecarCount = 0;
+  let submissionCount = 0;
+  let imageCount = 0;
+  let activityCount = 0;
+  for (const p of state.generatedFiles ?? []) { knownPaths.push(p); generatedCount++; }
   for (const course of Object.values(state.courses)) {
     for (const section of Object.values(course.sections ?? {})) {
       for (const file of Object.values(section.files ?? {})) {
-        if (file.localPath) knownPaths.push(file.localPath);
-        if (file.sidecarPath) knownPaths.push(file.sidecarPath);
+        if (file.localPath) { knownPaths.push(file.localPath); activityCount++; }
+        if (file.sidecarPath) { knownPaths.push(file.sidecarPath); sidecarCount++; }
+        for (const sp of file.submissionPaths ?? []) { knownPaths.push(sp); submissionCount++; }
+        for (const ip of file.imagePaths ?? []) { knownPaths.push(ip); imageCount++; }
       }
     }
   }
@@ -244,7 +251,13 @@ export async function runReset(opts: ResetOptions): Promise<void> {
 
   if (dryRun) {
     const treeOutput = renderTree(existingPaths.sort(), outputDir);
-    process.stdout.write(`[dry-run] Would delete ${existingPaths.length} files across ${courseCount} courses:\n`);
+    // Build a categorised summary so the count is reconcilable with msc scrape output
+    const parts: string[] = [`${activityCount} activit${activityCount === 1 ? "y" : "ies"}`];
+    if (sidecarCount > 0) parts.push(`${sidecarCount} sidecar${sidecarCount === 1 ? "" : "s"}`);
+    if (submissionCount > 0) parts.push(`${submissionCount} submission${submissionCount === 1 ? "" : "s"}`);
+    if (imageCount > 0) parts.push(`${imageCount} image${imageCount === 1 ? "" : "s"}`);
+    if (generatedCount > 0) parts.push(`${generatedCount} generated`);
+    process.stdout.write(`[dry-run] Would delete ${existingPaths.length} files across ${courseCount} courses (${parts.join(", ")}):\n`);
     if (treeOutput) {
       process.stdout.write("\n" + treeOutput + "\n");
     }
@@ -286,5 +299,11 @@ export async function runReset(opts: ResetOptions): Promise<void> {
   const suffix = full
     ? " Config and credentials cleared."
     : " Run `msc scrape` to start fresh.";
-  process.stdout.write(`Deleted ${deletedCount} files across ${courseCount} courses. State reset.${suffix}\n`);
+  const extras: string[] = [];
+  if (sidecarCount > 0) extras.push(`${sidecarCount} sidecar${sidecarCount === 1 ? "" : "s"}`);
+  if (submissionCount > 0) extras.push(`${submissionCount} submission${submissionCount === 1 ? "" : "s"}`);
+  if (imageCount > 0) extras.push(`${imageCount} image${imageCount === 1 ? "" : "s"}`);
+  if (generatedCount > 0) extras.push(`${generatedCount} generated`);
+  const breakdown = extras.length > 0 ? ` (incl. ${extras.join(", ")})` : "";
+  process.stdout.write(`Deleted ${deletedCount} files${breakdown} across ${courseCount} courses. State reset.${suffix}\n`);
 }

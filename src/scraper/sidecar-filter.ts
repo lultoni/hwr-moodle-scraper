@@ -107,6 +107,21 @@ export function filterSidecars(
     batchSeen.set(dir, new Set());
   }
 
+  // ── 4b. Build batch content index for non-sidecar items ──────────────────
+  // Non-sidecar specialItems (page-md, info-md, label-md) will be written to disk
+  // in the same run. Their description HTML, when converted to MD, should also be
+  // checked against sidecars so first-run duplicates are caught.
+  const batchNonSidecarContent = new Map<string, string[]>();
+  for (const item of passThrough) {
+    if (!item.description) continue;
+    const dir = dirname(item.destPath).normalize("NFC");
+    const mdContent = td.turndown(item.description).trim().normalize("NFC");
+    if (!mdContent) continue;
+    const arr = batchNonSidecarContent.get(dir) ?? [];
+    arr.push(mdContent);
+    batchNonSidecarContent.set(dir, arr);
+  }
+
   // ── 5. Decide fate of each candidate ─────────────────────────────────────
   // Short descriptions to potentially consolidate: Map<dir, Array<{candidate, descMd}>>
   const shortsByDir = new Map<string, Array<{ candidate: SidecarItem; descMd: string }>>();
@@ -127,6 +142,19 @@ export function filterSidecars(
       }
     }
     if (foundInDisk) continue;
+
+    // (a2) Duplicate in non-sidecar batch items (page-md, info-md, label-md being written this run)
+    const batchContents = batchNonSidecarContent.get(dir) ?? [];
+    let foundInBatch = false;
+    for (const batchMd of batchContents) {
+      if (batchMd.includes(descMd)) {
+        logger?.debug(`[SUPPRESS-SIDECAR] ${candidate.destPath} (duplicate in: (batch-content))`);
+        suppressedCount++;
+        foundInBatch = true;
+        break;
+      }
+    }
+    if (foundInBatch) continue;
 
     // (b) Duplicate in current batch (same dir, same text)
     const seen = batchSeen.get(dir)!;

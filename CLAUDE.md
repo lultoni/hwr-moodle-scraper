@@ -20,7 +20,7 @@ Follow the phases in `docs/WORKFLOW.md` strictly:
 - **Never commit credentials or secrets**
 - **Always read source before modifying** — never modify a file you have not fully read
 - **Tests before features** — write or update the test first; the test must fail before the implementation exists
-- **After significant changes**: run `npx vitest run` — all 382 tests must pass; commit with a contextual message
+- **After significant changes**: run `npx vitest run` — all 411 tests must pass; commit with a contextual message
 - **Run file-checker before ending any session**: `node scripts/file-checker.js` must exit 0
 
 ## Critical Parsing Patterns — Do Not Regress
@@ -89,9 +89,9 @@ When a user reports broken files or before ending a session:
 
 ## Current Phase
 **Phase 5 — Iterative Improvements (ongoing)**
-- All 22 timeline steps fully implemented; 382/382 tests passing (32 test files)
+- All 22 timeline steps fully implemented; 411/411 tests passing (34 test files)
 - Full CLI: auth, scrape, status, wizard, reset, tui + first-run wizard
-- 22 cleanup/improvement passes completed (see `docs/FEATURE_TIMELINE.md` for full history)
+- 29 cleanup/improvement passes completed (see `docs/FEATURE_TIMELINE.md` for full history)
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.

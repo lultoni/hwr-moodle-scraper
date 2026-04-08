@@ -189,6 +189,9 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         if (!TdSect) TdSect = (await import("turndown")).default;
         const summaryMd = new TdSect().turndown(section.summary).trim();
         if (!summaryMd) continue;
+        // Skip summaries that contain only images/formatting with no meaningful text
+        const textOnly = summaryMd.replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/[#*_\[\]()|\->\s]/g, "");
+        if (!textOnly) continue;
         const sectionDirName = sanitiseFilename(section.sectionName);
         const summaryPath = join(courseDir, sectionDirName, "_Abschnittsbeschreibung.md");
         mkdirSync(dirname(summaryPath), { recursive: true });
@@ -232,6 +235,11 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
             }
           }
 
+          // When >1 folder exists in a section, always place files in subfolders
+          // named after the folder. When only 1 folder exists, keep flat layout to
+          // avoid double nesting (e.g. Analysis/Musterklausuren/Musterklausuren/).
+          const useSubDirs = folderEntries.length > 1;
+
           for (const activity of section.activities) {
             if (activity.activityType === "folder" && activity.url) {
               const entry = folderEntries.find((e) => e.activity === activity);
@@ -242,33 +250,37 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
               folderNameCount.set(activity.activityName, prev + 1);
               const nameSuffix = prev > 0 ? ` (${prev + 1})` : "";
 
+              const folderSubDir = useSubDirs ? activity.activityName + nameSuffix : undefined;
+
               // If the folder has a description — either from activity-altcontent on the
               // course page (activity.description) or from the folder's own intro div
               // (folderDescription, extracted from <div id="intro"> on the folder page) —
-              // preserve it as a label-md.  The course page often omits the intro div
-              // entirely for folder activities, so folderDescription is the reliable source.
+              // preserve it as a label-md. When placed inside a subfolder, rename to
+              // _Ordnerbeschreibung.md for clarity.
               const descHtml = activity.description ?? folderDescription;
               if (descHtml) {
                 expandedActivities.push({
                   activityType: "label",
-                  activityName: activity.activityName + nameSuffix,
+                  activityName: folderSubDir ? "_Ordnerbeschreibung" : activity.activityName + nameSuffix,
                   url: "",
                   isAccessible: true,
                   resourceId: `folder-${folderId}-description`,
                   description: descHtml,
+                  ...(folderSubDir ? { subDir: folderSubDir } : {}),
                 });
               }
 
               for (const f of files) {
-                // If this filename appears in multiple folders, put it in a subfolder named after the folder activity
+                // If useSubDirs or filename collides across folders, put it in a subfolder
                 const collides = (fileNameFolderCount.get(f.name) ?? 0) > 1;
+                const fileSubDir = folderSubDir ?? (collides ? activity.activityName + nameSuffix : undefined);
                 expandedActivities.push({
                   activityType: "resource",
                   activityName: nameSuffix ? `${f.name}${nameSuffix}` : f.name,
                   url: f.url,
                   isAccessible: true,
                   resourceId: `folder-${folderId}-${f.name}`,
-                  ...(collides ? { subDir: activity.activityName + nameSuffix } : {}),
+                  ...(fileSubDir ? { subDir: fileSubDir } : {}),
                 });
               }
             } else {
@@ -597,6 +609,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const specialItemHashes: Array<string> = new Array(specialItems.length).fill("");
   // specialItemSubmissionPaths[i] stores any submission files downloaded for assign items
   const specialItemSubmissionPaths: Array<string[]> = specialItems.map(() => []);
+  // specialItemImagePaths[i] stores any embedded image paths downloaded for page-md/label-md items
+  const specialItemImagePaths: Array<string[]> = specialItems.map(() => []);
   for (let si = 0; si < specialItems.length; si++) {
     const { item, destPath, strategy, label, description, activityType } = specialItems[si]!;
     try {
@@ -694,6 +708,13 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         content = new TurndownService().turndown(description ?? "");
       }
       if (content !== undefined) {
+        // Download embedded Moodle images and rewrite URLs to relative paths
+        if (strategy !== "url-txt") {
+          const { downloadEmbeddedImages } = await import("../scraper/images.js");
+          const imgResult = await downloadEmbeddedImages(content, destPath, sessionCookies, retryBaseDelayMs);
+          content = imgResult.content;
+          specialItemImagePaths[si] = imgResult.imagePaths;
+        }
         const buf = Buffer.from(content, "utf8");
         const { hash } = await atomicWrite(destPath, buf);
         specialItemHashes[si] = hash;
@@ -716,8 +737,19 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   const failedMsg = failedCount > 0 ? `, ${failedCount} failed` : "";
-  const sidecarMsg = sidecarCount > 0 ? `, ${sidecarCount} sidecar${sidecarCount === 1 ? "" : "s"}` : "";
-  logger.info(`Done: ${downloadedCount} downloaded${sidecarMsg}, ${skipped.length} skipped${failedMsg}.`);
+  const submissionTotal = specialItemSubmissionPaths.reduce((n, arr) => n + arr.length, 0);
+  const imageTotal = specialItemImagePaths.reduce((n, arr) => n + arr.length, 0);
+  // Use the merged generated count (this run + previous runs) so the total matches what reset sees
+  const mergedGeneratedCount = new Set([...(state.generatedFiles ?? []), ...generatedFiles]).size;
+  const totalFiles = downloadedCount + sidecarCount + submissionTotal + imageTotal + mergedGeneratedCount;
+  const skipMsg = skipped.length > 0 ? `${skipped.length} skipped` : "0 skipped";
+  logger.info(`Done: ${totalFiles} files across ${courses.length} courses (${skipMsg}${failedMsg})`);
+  const breakdownParts: string[] = [`${downloadedCount} activities`];
+  if (sidecarCount > 0) breakdownParts.push(`${sidecarCount} sidecar${sidecarCount === 1 ? "" : "s"}`);
+  if (submissionTotal > 0) breakdownParts.push(`${submissionTotal} submission${submissionTotal === 1 ? "" : "s"}`);
+  if (imageTotal > 0) breakdownParts.push(`${imageTotal} image${imageTotal === 1 ? "" : "s"}`);
+  if (mergedGeneratedCount > 0) breakdownParts.push(`${mergedGeneratedCount} generated`);
+  logger.info(`  ${breakdownParts.join(", ")}`);
 
   // Filter summary — shown whenever duplicates were suppressed or short descs consolidated
   const filterParts: string[] = [];
@@ -744,6 +776,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const sidecarPaths = new Map<string, string>();
   // Build submission paths map: resourceId → submission file paths (for assign items)
   const submissionPathsMap = new Map<string, string[]>();
+  // Build image paths map: resourceId → embedded image file paths
+  const imagePathsMap = new Map<string, string[]>();
   for (let i = 0; i < specialItems.length; i++) {
     const si = specialItems[i]!;
     if (si.strategy === "description-md") {
@@ -752,6 +786,10 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     const subPaths = specialItemSubmissionPaths[i];
     if (subPaths && subPaths.length > 0) {
       submissionPathsMap.set(si.item.resourceId ?? "", subPaths);
+    }
+    const imgPaths = specialItemImagePaths[i];
+    if (imgPaths && imgPaths.length > 0) {
+      imagePathsMap.set(si.item.resourceId ?? "", imgPaths);
     }
   }
 
@@ -786,6 +824,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
     const sidecarPath = sidecarPaths.get(resourceId);
     const submissionPaths = submissionPathsMap.get(resourceId);
+    const imagePaths = imagePathsMap.get(resourceId);
     files[resourceId] = {
       name: filenameFn(item.url ?? "", resourceId),
       url: item.url ?? "",
@@ -796,10 +835,27 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       status: "ok" as const,
       ...(sidecarPath ? { sidecarPath } : {}),
       ...(submissionPaths && submissionPaths.length > 0 ? { submissionPaths } : {}),
+      ...(imagePaths && imagePaths.length > 0 ? { imagePaths } : {}),
     };
 
     sections[sectionId] = { files };
     updatedCourses[courseIdStr] = { name: courseName, sections };
+  }
+
+  // Mark orphaned resources in state (e.g. resourceId changed due to name sanitisation fix)
+  const orphanItems = plan.filter((p) => p.action === SyncAction.ORPHAN);
+  for (const item of orphanItems) {
+    if (!item.resourceId) continue;
+    // Find the orphan in updatedCourses and mark it
+    for (const courseEntry of Object.values(updatedCourses)) {
+      for (const sectionEntry of Object.values(courseEntry.sections ?? {})) {
+        const file = sectionEntry.files?.[item.resourceId];
+        if (file) {
+          file.status = "orphan";
+          if (verbose) logger.debug(`[ORPHAN] ${item.resourceId}`);
+        }
+      }
+    }
   }
 
   // Save state

@@ -220,4 +220,33 @@ describe("filterSidecars()", () => {
     expect(result.consolidatedCount).toBe(0);
     expect(result.suppressedCount).toBe(0);
   });
+
+  // ── Test 9: sidecar suppressed when content matches a non-sidecar item in same batch ─
+  it("suppresses sidecar whose content appears in a non-sidecar batch item (first-run cross-strategy dedup)", () => {
+    const dir = join(tmpDir, "Section");
+    mkdirSync(dir);
+    // No files on disk yet — this simulates first run
+
+    const descText = "This is a task description text that is quite specific and longer than sixty characters.";
+    const pageMdItem: SidecarItem = {
+      item: { resourceId: "res-page", courseId: 1 },
+      destPath: join(dir, "NewWork.md"),
+      strategy: "page-md",
+      label: "New Work",
+      description: `<p>${descText}</p>`,
+      activityType: "page",
+      isSidecar: false,
+    };
+    const sidecar = makeSidecar({
+      destPath: join(dir, "NewWork.description.md"),
+      label: "New Work Sidecar",
+      item: { resourceId: "res-sidecar", courseId: 1 },
+      description: `<p>${descText}</p>`,
+    });
+
+    const result = filterSidecars([pageMdItem, sidecar], TurndownService);
+    expect(result.filteredItems.some((i) => i.strategy === "page-md")).toBe(true);
+    expect(result.filteredItems.filter((i) => i.isSidecar)).toHaveLength(0);
+    expect(result.suppressedCount).toBe(1);
+  });
 });
