@@ -429,7 +429,7 @@ export async function fetchContentTree(opts: FetchOptions & { courseId: number }
         // Find the section matching the requested sectionNum by data-number
         const section = tabTree.sections.find((s) => s.dataNumber === sectionNum) ?? tabTree.sections[0];
         if (section) {
-          allSections.push({ ...section, sectionId: `s${sectionNum - 1}`, sectionName: name });
+          allSections.push({ ...section, sectionId: `s${sectionNum}`, sectionName: name });
         }
       }),
     );
@@ -440,6 +440,14 @@ export async function fetchContentTree(opts: FetchOptions & { courseId: number }
       const nb = parseInt(b.sectionId.slice(1), 10);
       return na - nb;
     });
+
+    // Onetopic tab names override parseContentTree's section naming, so apply
+    // canonical naming for section 0 here (after tab name assignment + sort).
+    // Moodle's default "Abschnitt N" / "Thema N" names are unhelpful for the
+    // general section.
+    if (allSections.length > 0 && /^(?:Abschnitt|Thema|Topic|Section)\s+\d+$/i.test(allSections[0]!.sectionName.trim())) {
+      allSections[0] = { ...allSections[0]!, sectionName: "Allgemeines" };
+    }
 
     return { courseId, sections: allSections, summary: extractCourseDescription(body) ?? undefined };
   }
@@ -597,8 +605,12 @@ function parseContentTree(html: string, courseId: number, baseUrl: string, logge
     }
     // Guard: Moodle sometimes sets data-sectionname to a space or empty string for the
     // general/intro section (section 0). Fall back to a canonical name in that case.
+    // Also: Moodle's default section names "Abschnitt N" / "Thema N" / "Topic N" / "Section N"
+    // are unhelpful for section 0 — use "Allgemeines" instead.
     if (!sectionName.trim()) {
       sectionName = sectionIndex === 0 ? "Allgemeines" : `Section ${sectionIndex}`;
+    } else if (sectionIndex === 0 && /^(?:Abschnitt|Thema|Topic|Section)\s+\d+$/i.test(sectionName.trim())) {
+      sectionName = "Allgemeines";
     }
 
     const activities: Activity[] = [];

@@ -1,7 +1,7 @@
 // REQ-CLI-002, REQ-CLI-008, REQ-CLI-009, REQ-CLI-010
 import { validateOrRefreshSession } from "../auth/session.js";
 import { fetchCourseList, fetchEnrolledCourses, fetchContentTree, fetchFolderFiles, type Course, type ContentTree, type Activity, type Section } from "../scraper/courses.js";
-import { buildDownloadPlan } from "../scraper/dispatch.js";
+import { buildDownloadPlan, applyLabelSubfolders } from "../scraper/dispatch.js";
 import { buildCourseShortPaths } from "../scraper/course-naming.js";
 import { getResourceId } from "../scraper/resource-id.js";
 import { computeSyncPlan, SyncAction } from "../sync/incremental.js";
@@ -12,11 +12,12 @@ import { createLogger, LogLevel, type Logger } from "../logger.js";
 import { ConfigManager } from "../config.js";
 import { buildOutputPath, checkDiskSpace, atomicWrite } from "../fs/output.js";
 import { sanitiseFilename } from "../fs/sanitise.js";
-import { extractForumThreadUrls, extractPageContent } from "../scraper/forum.js";
+import { extractForumThreadUrls, extractPageContent, extractEmbeddedVideoUrls } from "../scraper/forum.js";
 import { extractAssignmentFeedback } from "../scraper/assign.js";
 import { DownloadQueue, type DownloadItem } from "../scraper/downloader.js";
 import { writeUrlFile } from "../scraper/content-types.js";
 import { filterSidecars, type SidecarItem } from "../scraper/sidecar-filter.js";
+import { createTurndown } from "../scraper/turndown.js";
 import { EXIT_CODES } from "../exit-codes.js";
 import { mkdirSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
@@ -111,6 +112,9 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   logger.info("");
   logger.info("Fetching course content...");
 
+  // Config values needed before the main download loop
+  const retryBaseDelayMs = ((await config.get("retryBaseDelayMs")) as number | undefined) ?? 5000;
+
   // Build courseId → courseName lookup
   const courseNameMap = new Map<number, string>();
   for (const course of courses) {
@@ -163,19 +167,21 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // as "user files" or be deleted by msc reset.
   // Write course README.md files for courses that have a summary description
   const generatedFiles: string[] = [];
+  // Track README content per course dir for dedup with section summaries
+  const readmeContentByDir = new Map<string, string>();
   if (!dryRun) {
-    let TurndownServiceForDesc: typeof import("turndown") | undefined;
     for (const tree of trees) {
       if (!tree.summary) continue;
-      if (!TurndownServiceForDesc) TurndownServiceForDesc = (await import("turndown")).default;
-      const descMd = new TurndownServiceForDesc().turndown(tree.summary).trim();
+      const descMd = createTurndown().turndown(tree.summary).trim();
       if (!descMd) continue;
       const sp = courseShortPaths.get(tree.courseId);
       const courseDirName = sanitiseFilename(sp?.shortName ?? courseNameMap.get(tree.courseId) ?? String(tree.courseId));
-      const readmePath = join(outputDir, ...(sp?.semesterDir ? [sp.semesterDir] : []), courseDirName, "README.md");
+      const courseDir = join(outputDir, ...(sp?.semesterDir ? [sp.semesterDir] : []), courseDirName);
+      const readmePath = join(courseDir, "README.md");
       mkdirSync(dirname(readmePath), { recursive: true });
       await atomicWrite(readmePath, Buffer.from(descMd + "\n", "utf8"));
       generatedFiles.push(readmePath);
+      readmeContentByDir.set(courseDir, descMd);
     }
 
     // Write section description files (_Abschnittsbeschreibung.md) for sections with summarytext
@@ -183,20 +189,25 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       const sp = courseShortPaths.get(tree.courseId);
       const courseDirName = sanitiseFilename(sp?.shortName ?? courseNameMap.get(tree.courseId) ?? String(tree.courseId));
       const courseDir = join(outputDir, ...(sp?.semesterDir ? [sp.semesterDir] : []), courseDirName);
-      let TdSect: typeof import("turndown") | undefined;
       for (const section of tree.sections) {
         if (!section.summary) continue;
-        if (!TdSect) TdSect = (await import("turndown")).default;
-        const summaryMd = new TdSect().turndown(section.summary).trim();
+        const summaryMd = createTurndown().turndown(section.summary).trim();
         if (!summaryMd) continue;
         // Skip summaries that contain only images/formatting with no meaningful text
         const textOnly = summaryMd.replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/[#*_\[\]()|\->\s]/g, "");
         if (!textOnly) continue;
+        // Skip section summaries identical to the course README.md (common in onetopic courses)
+        const readmeMd = readmeContentByDir.get(courseDir);
+        if (readmeMd && summaryMd.trim() === readmeMd.trim()) continue;
         const sectionDirName = sanitiseFilename(section.sectionName);
         const summaryPath = join(courseDir, sectionDirName, "_Abschnittsbeschreibung.md");
         mkdirSync(dirname(summaryPath), { recursive: true });
-        await atomicWrite(summaryPath, Buffer.from(summaryMd + "\n", "utf8"));
+        // Download embedded Moodle images and rewrite URLs to relative paths
+        const { downloadEmbeddedImages } = await import("../scraper/images.js");
+        const imgResult = await downloadEmbeddedImages(summaryMd, summaryPath, sessionCookies, retryBaseDelayMs);
+        await atomicWrite(summaryPath, Buffer.from(imgResult.content + "\n", "utf8"));
         generatedFiles.push(summaryPath);
+        for (const imgPath of imgResult.imagePaths) generatedFiles.push(imgPath);
       }
     }
   }
@@ -287,7 +298,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
               expandedActivities.push(activity);
             }
           }
-          return { ...section, activities: expandedActivities };
+          return { ...section, activities: applyLabelSubfolders(expandedActivities) };
         })
       );
       // Per-course checkmark after full expansion
@@ -414,7 +425,6 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   const maxConcurrent = ((await config.get("maxConcurrentDownloads")) as number | undefined) ?? 3;
-  const retryBaseDelayMs = ((await config.get("retryBaseDelayMs")) as number | undefined) ?? 5000;
 
   // Progress display: bar in normal mode, counter already embedded in log lines in verbose/debug mode
   const useProgressBar = !quiet && !verbose;
@@ -534,9 +544,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // ── Sidecar deduplication filter ──────────────────────────────────────────
   // Runs after classification, before any writes. Suppresses exact-duplicate sidecars and
   // consolidates short descriptions (≤60 chars) into per-dir _Beschreibungen.md files.
-  let TurndownService: typeof import("turndown") | undefined;
-  if (!TurndownService) TurndownService = (await import("turndown")).default;
-  const sidecarFilterResult = filterSidecars(specialItems as SidecarItem[], TurndownService, logger);
+  const sidecarFilterResult = filterSidecars(specialItems as SidecarItem[], undefined, logger);
   specialItems = sidecarFilterResult.filteredItems as typeof specialItems;
   const beschreibungenToWrite = sidecarFilterResult.beschreibungenFiles;
   const suppressedSidecarCount = sidecarFilterResult.suppressedCount;
@@ -611,35 +619,37 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const specialItemSubmissionPaths: Array<string[]> = specialItems.map(() => []);
   // specialItemImagePaths[i] stores any embedded image paths downloaded for page-md/label-md items
   const specialItemImagePaths: Array<string[]> = specialItems.map(() => []);
+  // Dedup map: dir+contentHash → destPath for page-md/info-md items to suppress byte-identical files
+  // (e.g. Moodle quiz that leaks another quiz's attempt data in the same course)
+  const pageMdContentByDir = new Map<string, Set<string>>();
   for (let si = 0; si < specialItems.length; si++) {
     const { item, destPath, strategy, label, description, activityType } = specialItems[si]!;
     try {
       mkdirSync(dirname(destPath), { recursive: true });
       let content: string | undefined;
       if (strategy === "url-txt") {
-        await writeUrlFile(destPath, item.url!);
+        await writeUrlFile(destPath, item.url!, { name: label, description });
         // url-txt: content is not buffered through atomicWrite, so specialItemHashes[si] stays "".
         // The file is still tracked via allDownloadedItems → FileState.localPath (no hash comparison).
       } else if (strategy === "page-md") {
         const { request } = await import("undici");
         const { body } = await request(item.url!, { headers: { cookie: sessionCookies } });
         const html = await body.text();
-        if (!TurndownService) TurndownService = (await import("turndown")).default;
-        const td = new TurndownService();
+        const td = createTurndown();
 
         if (activityType === "forum") {
           // Deep-dive: fetch each discussion thread and include content in the .md file
           const threads = extractForumThreadUrls(html, baseUrl);
           const sections: string[] = [`# ${label}`, ``];
           if (threads.length === 0) {
-            sections.push(td.turndown(extractPageContent(html)));
+            sections.push(td.turndown(extractPageContent(html)) + extractEmbeddedVideoUrls(html));
           } else {
             const delayMs = ((await config.get("requestDelayMs")) as number | undefined) ?? 500;
             for (const thread of threads) {
               try {
                 const { body: threadBody } = await request(thread.url, { headers: { cookie: sessionCookies } });
                 const threadHtml = await threadBody.text();
-                sections.push(`## [${thread.title}](${thread.url})`, ``, td.turndown(extractPageContent(threadHtml)), ``);
+                sections.push(`## [${thread.title}](${thread.url})`, ``, td.turndown(extractPageContent(threadHtml)) + extractEmbeddedVideoUrls(threadHtml), ``);
                 if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
               } catch {
                 sections.push(`## [${thread.title}](${thread.url})`, ``, `*(Konnte nicht geladen werden)*`, ``);
@@ -648,11 +658,19 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           }
           content = sections.join("\n");
         } else {
-          content = td.turndown(extractPageContent(html));
+          content = td.turndown(extractPageContent(html)) + extractEmbeddedVideoUrls(html);
+        }
+        // Moodle placeholder for empty books/pages — replace with description if available
+        if (content.trim() === "In diesem Buch wurde bisher kein Inhalt eingefügt") {
+          if (description) {
+            content = td.turndown(description);
+          } else {
+            logger.debug(`[SKIP-PLACEHOLDER] ${label} — Moodle empty book placeholder`);
+            content = undefined;
+          }
         }
       } else if (strategy === "info-md") {
-        if (!TurndownService) TurndownService = (await import("turndown")).default;
-        const td = new TurndownService();
+        const td = createTurndown();
         const descMd = description ? td.turndown(description) : "";
         const lines = [
           `# ${label}`,
@@ -704,10 +722,26 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         lines.push(``);
         content = lines.join("\n");
       } else if (strategy === "label-md" || strategy === "description-md") {
-        if (!TurndownService) TurndownService = (await import("turndown")).default;
-        content = new TurndownService().turndown(description ?? "");
+        content = createTurndown().turndown(description ?? "");
       }
       if (content !== undefined) {
+        // Dedup: suppress page-md/info-md files whose content is byte-identical to another
+        // file already written in the same directory (e.g. Moodle quiz that leaks another
+        // quiz's attempt data, producing identical .md files)
+        if (strategy === "page-md" || strategy === "info-md") {
+          const { createHash } = await import("node:crypto");
+          const contentHash = createHash("sha256").update(content).digest("hex");
+          const dir = dirname(destPath);
+          let dirSet = pageMdContentByDir.get(dir);
+          if (!dirSet) { dirSet = new Set(); pageMdContentByDir.set(dir, dirSet); }
+          if (dirSet.has(contentHash)) {
+            logger.debug(`[SUPPRESS-DEDUP] ${label} — content identical to another file in ${dir}`);
+            // Still count as downloaded (it was fetched), just skip writing
+            if (specialItems[si]!.isSidecar) { sidecarCount++; } else { downloadedCount++; progress.bar?.increment(1, { file: label }); }
+            continue;
+          }
+          dirSet.add(contentHash);
+        }
         // Download embedded Moodle images and rewrite URLs to relative paths
         if (strategy !== "url-txt") {
           const { downloadEmbeddedImages } = await import("../scraper/images.js");

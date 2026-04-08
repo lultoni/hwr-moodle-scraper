@@ -2,6 +2,7 @@
 // Activity type dispatch: maps each modtype to a download strategy and destination path.
 import { join } from "node:path";
 import { sanitiseFilename } from "../fs/sanitise.js";
+import { createTurndown } from "./turndown.js";
 import type { Activity } from "./courses.js";
 
 export type DownloadStrategy = "binary" | "url-txt" | "page-md" | "label-md" | "description-md" | "info-md";
@@ -153,4 +154,107 @@ export function buildDownloadPlan(
   }
 
   return items;
+}
+
+/**
+ * Determine whether a label's HTML description represents a visual "divider"
+ * — a short heading that Moodle instructors use to group activities visually.
+ *
+ * Divider labels are characterised by:
+ *   - Very short text content (≤ 80 chars after stripping images and formatting)
+ *   - At most 2 non-empty lines of text
+ *   - No list items (ul/ol markers in the Markdown output)
+ *   - No external links
+ *
+ * Content-rich labels (learning objectives, multi-paragraph descriptions) return false.
+ */
+export function isDividerLabel(descriptionHtml: string): boolean {
+  if (!descriptionHtml || !descriptionHtml.trim()) return false;
+
+  const td = createTurndown();
+  const md = td.turndown(descriptionHtml);
+
+  // Strip image markdown ![alt](url)
+  const stripped = md.replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+
+  // Strip heading markers and bold/italic
+  const text = stripped
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/\*{1,3}/g, "")
+    .replace(/_/g, " ")
+    .trim();
+
+  // Empty after stripping → not useful as divider
+  if (!text) return false;
+
+  // Must have at least 3 alphabetic characters to be a meaningful heading
+  const alphaOnly = text.replace(/[^a-zA-ZäöüÄÖÜß]/g, "");
+  if (alphaOnly.length < 3) return false;
+
+  // Count non-empty lines
+  const lines = text.split("\n").filter((l) => l.trim().length > 0);
+  if (lines.length > 2) return false;
+
+  // Total text length check
+  const totalText = lines.join(" ").trim();
+  if (totalText.length > 80) return false;
+
+  // No list items
+  if (/^[\s]*[-*+]\s/m.test(text)) return false;
+  if (/^\s*\d+\.\s/m.test(text)) return false;
+
+  // No external links [text](http...) — but exclude image links ![alt](http...)
+  // Strip images first, then check for remaining links
+  const mdWithoutImages = md.replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+  if (/\[[^\]]+\]\(https?:\/\/[^)]+\)/.test(mdWithoutImages)) return false;
+
+  return true;
+}
+
+/**
+ * Walk a section's activities in order and assign `subDir` to activities
+ * that follow divider labels, grouping them into subfolders.
+ *
+ * Safety: requires at least 2 divider labels in the section to activate.
+ * A single divider could be a false positive; with ≥2 the instructor
+ * clearly intends a visual structure.
+ *
+ * Does not mutate the input — returns a new array with cloned activities.
+ * Activities that already have a `subDir` (from folder expansion) keep it.
+ */
+export function applyLabelSubfolders(activities: Activity[]): Activity[] {
+  // First pass: identify divider labels and count them
+  const dividerIndices: number[] = [];
+  for (let i = 0; i < activities.length; i++) {
+    const act = activities[i]!;
+    if (act.activityType === "label" && act.description) {
+      if (isDividerLabel(act.description)) dividerIndices.push(i);
+    }
+  }
+
+  if (dividerIndices.length < 1) return activities;
+
+  // Second pass: assign subDirs
+  const result: Activity[] = [];
+  let currentSubDir: string | undefined;
+
+  for (let i = 0; i < activities.length; i++) {
+    const act = activities[i]!;
+    const clone = { ...act };
+
+    if (dividerIndices.includes(i)) {
+      // This is a divider label — use its name as the subfolder
+      currentSubDir = act.activityName;
+      clone.subDir = currentSubDir;
+    } else if (currentSubDir) {
+      // Activity after a divider — assign subDir unless it already has one
+      if (!clone.subDir) {
+        clone.subDir = currentSubDir;
+      }
+    }
+
+    result.push(clone);
+  }
+
+  return result;
 }

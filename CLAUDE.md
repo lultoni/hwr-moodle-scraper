@@ -20,7 +20,7 @@ Follow the phases in `docs/WORKFLOW.md` strictly:
 - **Never commit credentials or secrets**
 - **Always read source before modifying** — never modify a file you have not fully read
 - **Tests before features** — write or update the test first; the test must fail before the implementation exists
-- **After significant changes**: run `npx vitest run` — all 411 tests must pass; commit with a contextual message
+- **After significant changes**: run `npx vitest run` — all 452 tests must pass; commit with a contextual message
 - **Run file-checker before ending any session**: `node scripts/file-checker.js` must exit 0
 
 ## Critical Parsing Patterns — Do Not Regress
@@ -47,6 +47,15 @@ Three CSS class variants are tried in order: `\bsummary\b`, `course-summary-sect
 
 ### data-activityname (primary name source)
 `parseActivityFromElement` uses `data-activityname` as the **primary** activity name source, falling back to link text only if absent. This prevents cross-reference links inside `<li>` elements (e.g. customcert linking to its paired scorm) from polluting activity names. Do not change the priority order.
+
+### Onetopic sectionId mapping
+When merging onetopic tab sections into the main content tree, each tab's `sectionNum` is used directly: `sectionId: s${sectionNum}`. **Do not subtract 1** — the old formula `s${sectionNum - 1}` caused collisions when tab 0 exists (e.g. Betriebssystempraxis: tab 0 → "s0" collided with mainTree's section 0). The rename-to-"Allgemeines" heuristic checks `allSections[0]` after sorting by sectionId.
+
+### extractEmbeddedVideoUrls — Pattern 5 (data-embed-frame)
+HWR Moodle's `filter_youtube_sanitizer` plugin hides YouTube iframes inside a `data-embed-frame` attribute as HTML-entity-encoded markup (`&lt;iframe...src=&quot;URL&quot;...&gt;`). Pattern 5 in `extractEmbeddedVideoUrls` decodes entities then extracts the `src`. The `youtube-nocookie.com` domain (YouTube privacy-enhanced mode) is matched alongside `youtube.com` and `youtu.be` via the shared `DOMAINS` constant. **Do not remove Pattern 5 or the nocookie domain.**
+
+### isDividerLabel heuristic (label subfolder grouping)
+`isDividerLabel(html, turndownService)` in `dispatch.ts` detects labels that serve as visual section dividers (e.g. "Lernvideos", "Textmaterialien" in VdZ courses). After Turndown conversion: strips image markdown, then checks ≤2 lines, ≤80 chars, no external links, no list items, ≥3 alpha chars. `applyLabelSubfolders()` walks activities in order — each divider label starts a new subfolder; activities before the first divider stay at section root. **Heuristic tuned against all 42 courses — changing thresholds risks false positives.**
 
 ### Course name construction (shortname + fullname)
 `fetchEnrolledCourses` sets `courseName = shortname !== fullname ? \`${shortname} ${fullname}\` : fullname`. The shortname contains the WI#### module code needed by `parseCourseNameParts` for semester mapping. If shortname === fullname (e.g. "Bibliothek benutzen"), only one copy is used to prevent doubled folder names.
@@ -89,9 +98,9 @@ When a user reports broken files or before ending a session:
 
 ## Current Phase
 **Phase 5 — Iterative Improvements (ongoing)**
-- All 22 timeline steps fully implemented; 411/411 tests passing (34 test files)
+- All 22 timeline steps fully implemented; 452/452 tests passing (35 test files)
 - Full CLI: auth, scrape, status, wizard, reset, tui + first-run wizard
-- 29 cleanup/improvement passes completed (see `docs/FEATURE_TIMELINE.md` for full history)
+- 30 cleanup/improvement passes completed (see `docs/FEATURE_TIMELINE.md` for full history)
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.

@@ -104,6 +104,12 @@ describe("parseCourseNameParts — special categories", () => {
     expect(r.shortName.startsWith("SK_")).toBe(true);
   });
 
+  it("WI-5045 (hyphenated) → Semester_4, shortName DevOps-Engineering", () => {
+    const r = parseCourseNameParts("WI-M25-WI-5045-F05-SoSe-2026-59423 WI24 DevOps-Engineering SoSe-2026");
+    expect(r.semesterDir).toBe("Semester_4");
+    expect(r.shortName).toContain("DevOps");
+  });
+
   it("completely unrecognised name → Sonstiges", () => {
     const r = parseCourseNameParts("Some Random Course 2025");
     expect(r.semesterDir).toBe("Sonstiges");

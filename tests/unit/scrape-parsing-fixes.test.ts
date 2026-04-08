@@ -870,4 +870,169 @@ describe("Parsing: data-activityname preferred over link text", () => {
   });
 });
 
+describe("Parsing: generic section names (Abschnitt N) at section 0 → Allgemeines", () => {
+  it("renames 'Abschnitt 1' to 'Allgemeines' when it is section index 0", async () => {
+    // Betriebssystempraxis-style: Moodle sets data-sectionname="Abschnitt 1" for the
+    // first (general) section. The scraper should rename it to "Allgemeines".
+    const html = `<html><body>
+      <ul class="topics">
+        <li class="section" data-sectionname="Abschnitt 1" data-number="0">
+          <div class="content">
+            <li class="activity modtype_forum" data-activityname="Ankündigungen">
+              <a href="${BASE}/mod/forum/view.php?id=100">
+                <span class="instancename">Ankündigungen</span>
+              </a>
+            </li>
+          </div>
+        </li>
+        <li class="section" data-sectionname="Vorlesung 1" data-number="1">
+          <div class="content">
+            <li class="activity modtype_resource" data-activityname="Skript.pdf">
+              <a href="${BASE}/mod/resource/view.php?id=101">
+                <span class="instancename">Skript.pdf</span>
+              </a>
+            </li>
+          </div>
+        </li>
+      </ul>
+    </body></html>`;
 
+    mockAgent.get(BASE)
+      .intercept({ path: `/course/view.php?id=1`, method: "GET" })
+      .reply(200, html);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 1, sessionCookies: "" });
+
+    expect(tree.sections[0]?.sectionName).toBe("Allgemeines");
+    expect(tree.sections[1]?.sectionName).toBe("Vorlesung 1");
+  });
+
+  it("keeps 'Abschnitt 2' as-is for non-zero section index", async () => {
+    const html = `<html><body>
+      <ul class="topics">
+        <li class="section" data-sectionname="Allgemeines" data-number="0">
+          <div class="content"></div>
+        </li>
+        <li class="section" data-sectionname="Abschnitt 2" data-number="1">
+          <div class="content"></div>
+        </li>
+      </ul>
+    </body></html>`;
+
+    mockAgent.get(BASE)
+      .intercept({ path: `/course/view.php?id=1`, method: "GET" })
+      .reply(200, html);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 1, sessionCookies: "" });
+
+    expect(tree.sections[0]?.sectionName).toBe("Allgemeines");
+    expect(tree.sections[1]?.sectionName).toBe("Abschnitt 2");
+  });
+
+  it("renames 'Thema 1' to 'Allgemeines' when it is section index 0", async () => {
+    const html = `<html><body>
+      <ul class="topics">
+        <li class="section" data-sectionname="Thema 1" data-number="0">
+          <div class="content"></div>
+        </li>
+      </ul>
+    </body></html>`;
+
+    mockAgent.get(BASE)
+      .intercept({ path: `/course/view.php?id=1`, method: "GET" })
+      .reply(200, html);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 1, sessionCookies: "" });
+
+    expect(tree.sections[0]?.sectionName).toBe("Allgemeines");
+  });
+});
+
+describe("Parsing: onetopic with tab 0 — no sectionId collision", () => {
+  it("assigns unique sectionIds when onetopic tabs include section 0", async () => {
+    // Betriebssystempraxis pattern: tab 0 ("Allgemeines") and tab 1 ("Abschnitt 1")
+    // both exist. Old code assigned sectionId s${sectionNum-1}, so tab 1 → s0
+    // collided with mainTree's section 0 (also s0). Fixed: use s${sectionNum}.
+    const pool = mockAgent.get(BASE);
+
+    // Main page shows section 0 (active tab "Allgemeines") with no activities
+    pool
+      .intercept({ path: `/course/view.php?id=99`, method: "GET" })
+      .reply(200, `
+        <html><body class="format-onetopic">
+          <ul class="nav nav-tabs format_onetopic-tabs">
+            <li class="nav-item" id="onetabid-200">
+              <a class="nav-link active" href="${BASE}/course/view.php?id=99&section=0">Allgemeines</a>
+            </li>
+            <li class="nav-item" id="onetabid-201">
+              <a class="nav-link" href="${BASE}/course/view.php?id=99&section=1">Abschnitt 1</a>
+            </li>
+            <li class="nav-item" id="onetabid-202">
+              <a class="nav-link" href="${BASE}/course/view.php?id=99&section=2">Vorlesung 1</a>
+            </li>
+          </ul>
+          <ul class="onetopic">
+            <li id="section-0" class="section course-section main clearfix" data-sectionid="0" data-number="0">
+              <ul class="section" data-for="cmlist"></ul>
+            </li>
+          </ul>
+        </body></html>
+      `);
+
+    // Section 1 tab page — general content
+    pool
+      .intercept({ path: `/course/view.php?id=99&section=1`, method: "GET" })
+      .reply(200, `
+        <html><body class="format-onetopic">
+          <ul class="onetopic">
+            <li id="section-1" class="section course-section main clearfix" data-sectionid="1" data-number="1">
+              <ul class="section" data-for="cmlist">
+                <li class="activity forum modtype_forum" data-activityname="Ankündigungen">
+                  <a href="${BASE}/mod/forum/view.php?id=300">
+                    <span class="instancename">Ankündigungen</span>
+                  </a>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </body></html>
+      `);
+
+    // Section 2 tab page — lecture content
+    pool
+      .intercept({ path: `/course/view.php?id=99&section=2`, method: "GET" })
+      .reply(200, `
+        <html><body class="format-onetopic">
+          <ul class="onetopic">
+            <li id="section-2" class="section course-section main clearfix" data-sectionid="2" data-number="2">
+              <ul class="section" data-for="cmlist">
+                <li class="activity resource modtype_resource" data-activityname="Skript.pdf">
+                  <a href="${BASE}/mod/resource/view.php?id=301">
+                    <span class="instancename">Skript.pdf</span>
+                  </a>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </body></html>
+      `);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 99, sessionCookies: "" });
+
+    // All three sections should have unique sectionIds
+    const ids = tree.sections.map((s) => s.sectionId);
+    expect(new Set(ids).size).toBe(3); // no duplicates!
+
+    // Section names should be correct
+    const names = tree.sections.map((s) => s.sectionName);
+    expect(names).toContain("Allgemeines");
+    expect(names).toContain("Abschnitt 1");
+    expect(names).toContain("Vorlesung 1");
+
+    // Activities should be in correct sections
+    const section1 = tree.sections.find((s) => s.sectionName === "Abschnitt 1");
+    expect(section1?.activities.map((a) => a.activityName)).toContain("Ankündigungen");
+    const section2 = tree.sections.find((s) => s.sectionName === "Vorlesung 1");
+    expect(section2?.activities.map((a) => a.activityName)).toContain("Skript.pdf");
+  });
+});

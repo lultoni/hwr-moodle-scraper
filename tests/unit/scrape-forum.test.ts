@@ -6,7 +6,7 @@ import { MockAgent, setGlobalDispatcher, getGlobalDispatcher, Dispatcher } from 
 import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { extractForumThreadUrls, extractPageContent } from "../../src/scraper/forum.js";
+import { extractForumThreadUrls, extractPageContent, extractEmbeddedVideoUrls } from "../../src/scraper/forum.js";
 
 const BASE = "https://moodle.example.com";
 
@@ -147,5 +147,66 @@ describe("extractPageContent — unit tests", () => {
     const result = extractPageContent(html);
     expect(result).toContain("Deep content");
     expect(result).not.toContain("Sidebar");
+  });
+});
+
+describe("extractEmbeddedVideoUrls — iframe/consent wrapper extraction", () => {
+  it("extracts YouTube URL from iframe data-src behind consent wrapper", () => {
+    const html = `<div role="main">
+      <p>Das Video wird mit Youtube abgespielt. Mit Anklicken willigen Sie ein.</p>
+      <iframe data-src="https://www.youtube.com/embed/dQw4w9WgXcQ" class="mediaplugin"></iframe>
+    </div>`;
+    const result = extractEmbeddedVideoUrls(html);
+    expect(result).toContain("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  });
+
+  it("extracts YouTube URL from iframe src attribute", () => {
+    const html = `<iframe src="https://www.youtube.com/embed/abc123?rel=0" width="600"></iframe>`;
+    const result = extractEmbeddedVideoUrls(html);
+    expect(result).toContain("https://www.youtube.com/watch?v=abc123");
+  });
+
+  it("returns empty string when no video embeds found", () => {
+    const html = `<div role="main"><p>Just text, no videos.</p></div>`;
+    expect(extractEmbeddedVideoUrls(html)).toBe("");
+  });
+
+  it("deduplicates same video appearing multiple times", () => {
+    const html = `
+      <iframe data-src="https://www.youtube.com/embed/xyz789"></iframe>
+      <iframe src="https://www.youtube.com/embed/xyz789"></iframe>`;
+    const result = extractEmbeddedVideoUrls(html);
+    const matches = result.match(/youtube\.com/g);
+    expect(matches).toHaveLength(1);
+  });
+
+  it("handles youtu.be short URLs", () => {
+    const html = `<iframe src="https://youtu.be/shortVid123"></iframe>`;
+    const result = extractEmbeddedVideoUrls(html);
+    expect(result).toContain("youtu.be/shortVid123");
+  });
+
+  it("handles Vimeo embed URLs", () => {
+    const html = `<iframe data-src="https://player.vimeo.com/video/987654"></iframe>`;
+    const result = extractEmbeddedVideoUrls(html);
+    expect(result).toContain("vimeo.com");
+  });
+
+  it("extracts YouTube URL from filter_youtube_sanitizer data-embed-frame attribute", () => {
+    // Real HWR Moodle HTML: filter_youtube_sanitizer wraps videos in a consent overlay
+    // with the iframe markup HTML-encoded in data-embed-frame
+    const html = `<div class="yt-container_inner">
+      <div class="yt-player" data-embed-frame="&lt;iframe width=&quot;100%&quot; height=&quot;100%&quot; src=&quot;https://www.youtube-nocookie.com/embed/EIrAYddf1Ak?feature=oembed&amp;autoplay=1&quot; frameborder=&quot;0&quot; allow=&quot;accelerometer; autoplay&quot; allowfullscreen title=&quot;Theoretische Informatik&quot;&gt;&lt;/iframe&gt;">
+        <svg class="yt-privacy-play-btn"></svg>
+      </div>
+    </div>`;
+    const result = extractEmbeddedVideoUrls(html);
+    expect(result).toContain("https://www.youtube.com/watch?v=EIrAYddf1Ak");
+  });
+
+  it("handles youtube-nocookie.com domain in iframe src", () => {
+    const html = `<iframe src="https://www.youtube-nocookie.com/embed/Test123?rel=0"></iframe>`;
+    const result = extractEmbeddedVideoUrls(html);
+    expect(result).toContain("https://www.youtube.com/watch?v=Test123");
   });
 });

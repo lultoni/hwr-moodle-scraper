@@ -81,7 +81,7 @@
 4. Run `npx vitest run` — all tests must pass before committing
 5. Run `node scripts/file-checker.js` — must exit 0 before ending the session
 
-**Current status**: 29 cleanup passes completed (2026-03-27 to 2026-04-08). 408/408 tests passing. See `docs/FEATURE_TIMELINE.md` and `CLAUDE.md` for full history.
+**Current status**: 30 cleanup passes completed (2026-03-27 to 2026-04-09). 452/452 tests passing (35 test files). See `docs/FEATURE_TIMELINE.md` and `CLAUDE.md` for full history.
 
 ---
 

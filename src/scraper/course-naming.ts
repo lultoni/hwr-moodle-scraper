@@ -25,7 +25,7 @@ const MODULE_SEMESTER: Record<string, string> = {
   "WI1031": "Semester_3", "WI2032": "Semester_3", "WI2033": "Semester_3",
   "WI2034": "Semester_3", "WI4035": "Semester_3",
   "WI1041": "Semester_4", "WI3042": "Semester_4", "WI2044": "Semester_4",
-  "WI3043": "Semester_4",
+  "WI3043": "Semester_4", "WI5045": "Semester_4",
   "WI1051": "Semester_5", "WI1052": "Semester_5", "WI3053": "Semester_5",
   "WI4054": "Semester_5", "WI4055": "Semester_5",
   "WI3062": "Semester_6", "WI3063": "Semester_6",
@@ -75,9 +75,11 @@ function isSkCourse(rawName: string): boolean {
 
 function detectSemesterDir(rawName: string): string {
   // Find WI#### module code (e.g. WI2032, WI6036)
-  const moduleMatch = /\b(WI\d{4})\b/.exec(rawName);
+  // Also matches hyphenated form WI-5045 (some AJAX course names use this)
+  const moduleMatch = /\b(WI\d{4})\b/.exec(rawName) ?? /\bWI-(\d{4})\b/.exec(rawName);
   if (moduleMatch) {
-    const code = moduleMatch[1]!;
+    const digits = moduleMatch[1]!;
+    const code = digits.length === 4 && !digits.startsWith("WI") ? `WI${digits}` : digits;
     if (/^WI6/.test(code)) {
       // WI6xxx = Schlüsselkompetenzen — derive plain semester from SK number in code prefix
       return detectSkSemester(rawName);

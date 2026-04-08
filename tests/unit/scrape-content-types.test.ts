@@ -14,6 +14,7 @@ import {
   writeForumPost,
   appendLabelContent,
 } from "../../src/scraper/content-types.js";
+import { createTurndown } from "../../src/scraper/turndown.js";
 
 describe("STEP-015: External URL handler", () => {
   let tmpDir: string;
@@ -26,6 +27,19 @@ describe("STEP-015: External URL handler", () => {
     await writeUrlFile(dest, "https://docs.moodle.org");
     const content = readFileSync(dest, "utf8");
     expect(content.split("\n")[0]).toBe("https://docs.moodle.org");
+  });
+
+  it("writes URL file with name header and description when provided", async () => {
+    const dest = join(tmpDir, "Die Betriebssysteme.url.txt");
+    await writeUrlFile(dest, "https://example.com/history", {
+      name: "Die Betriebssysteme im Laufe der Zeit",
+      description: "<p>Eine Übersicht der Betriebssystem-Geschichte</p>",
+    });
+    const content = readFileSync(dest, "utf8");
+    expect(content).toContain("# Die Betriebssysteme im Laufe der Zeit");
+    expect(content).toContain("https://example.com/history");
+    expect(content).toContain("Betriebssystem-Geschichte");
+    expect(content).not.toContain("<p>");
   });
 
   it("file extension is .url.txt", async () => {
@@ -109,5 +123,28 @@ describe("STEP-015: Inline label handler", () => {
     // First label appears before second
     expect(content.indexOf("First")).toBeLessThan(content.indexOf("Second"));
     expect(content).not.toContain("<p>"); // HTML converted
+  });
+});
+
+describe("GFM table support via createTurndown", () => {
+  it("converts HTML table to markdown table with pipes", () => {
+    const td = createTurndown();
+    const html = `<table>
+      <thead><tr><th>Period</th><th>Hours</th></tr></thead>
+      <tbody><tr><td>Monday</td><td>10-18</td></tr><tr><td>Friday</td><td>10-17</td></tr></tbody>
+    </table>`;
+    const md = td.turndown(html);
+    expect(md).toContain("|");
+    expect(md).toContain("Period");
+    expect(md).toContain("Hours");
+    expect(md).toContain("Monday");
+    expect(md).toContain("10-18");
+  });
+
+  it("preserves strikethrough in GFM mode", () => {
+    const td = createTurndown();
+    const html = "<p>This is <s>wrong</s> correct.</p>";
+    const md = td.turndown(html);
+    expect(md).toContain("~wrong~");
   });
 });

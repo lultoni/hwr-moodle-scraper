@@ -5,6 +5,7 @@
 // such descriptions exist in the same folder.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { createTurndown } from "./turndown.js";
 import type { Logger } from "../logger.js";
 
 /** Maximum character length for a description to be treated as "short". */
@@ -50,7 +51,7 @@ export interface FilterResult {
  */
 export function filterSidecars(
   specialItems: SidecarItem[],
-  TurndownService: new () => { turndown(html: string): string },
+  _TurndownService?: new () => { turndown(html: string): string },
   logger?: Logger,
 ): FilterResult {
   // ── 1. Partition ──────────────────────────────────────────────────────────
@@ -69,7 +70,7 @@ export function filterSidecars(
   }
 
   // ── 2. Convert HTML → MD for each candidate ───────────────────────────────
-  const td = new TurndownService();
+  const td = createTurndown();
   const converted: Array<{ candidate: SidecarItem; descMd: string; dir: string }> = [];
   for (const candidate of sidecarCandidates) {
     const descMd = td.turndown(candidate.description ?? "").trim().normalize("NFC");

@@ -16,6 +16,75 @@
 // links from the forum index page so `runScrape` can fetch and include each thread's
 // content in the single .md file written for the forum activity.
 
+/**
+ * Extract embedded video URLs from page HTML that are hidden behind
+ * GDPR consent wrappers or lazy-loaded iframes.
+ *
+ * Moodle's filter_oembed, media plugin, and filter_youtube_sanitizer wrap
+ * YouTube/Vimeo embeds in consent overlays. The actual video URL may be in:
+ *   - data-src or src on iframe elements
+ *   - data-oembed-url or data-video-url attributes
+ *   - data-embed-frame (HTML-encoded iframe, used by filter_youtube_sanitizer)
+ *   - Plain <a href> links
+ *
+ * Returns markdown-formatted video links to append to the page content.
+ */
+export function extractEmbeddedVideoUrls(html: string): string {
+  const videoUrls: string[] = [];
+  const seen = new Set<string>();
+
+  const DOMAINS = "youtube\\.com|youtube-nocookie\\.com|youtu\\.be|vimeo\\.com";
+
+  // Pattern 1: <iframe ... data-src="...youtube/vimeo..." ...>
+  const iframeDataSrcRe = new RegExp(`<iframe[^>]+data-src="([^"]*(?:${DOMAINS})[^"]*)"`, "gi");
+  // Pattern 2: <iframe ... src="...youtube/vimeo..." ...>
+  const iframeSrcRe = new RegExp(`<iframe[^>]+src="([^"]*(?:${DOMAINS})[^"]*)"`, "gi");
+  // Pattern 3: Moodle filter_oembed consent wrapper — data-oembed-url or data-video-url
+  const oembedRe = new RegExp(`data-(?:oembed|video)-url="([^"]*(?:${DOMAINS})[^"]*)"`, "gi");
+  // Pattern 4: Plain <a href="...youtube/vimeo..."> links with video provider domains
+  const anchorVideoRe = new RegExp(`<a[^>]+href="([^"]*(?:youtube\\.com\\/watch|youtube-nocookie\\.com\\/|youtu\\.be\\/|vimeo\\.com\\/\\d)[^"]*)"`, "gi");
+  // Pattern 5: filter_youtube_sanitizer — data-embed-frame="&lt;iframe...src=&quot;URL&quot;...&gt;"
+  // The attribute contains HTML-entity-encoded iframe markup.
+  const embedFrameRe = new RegExp(`data-embed-frame="([^"]*)"`, "gi");
+
+  for (const re of [iframeDataSrcRe, iframeSrcRe, oembedRe, anchorVideoRe]) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) !== null) {
+      let url = m[1]!.replace(/&amp;/g, "&");
+      // Normalize YouTube embed URLs to watch URLs
+      const embedMatch = /youtube(?:-nocookie)?\.com\/embed\/([^?&#]+)/.exec(url);
+      if (embedMatch) url = `https://www.youtube.com/watch?v=${embedMatch[1]}`;
+      if (!seen.has(url)) {
+        seen.add(url);
+        videoUrls.push(url);
+      }
+    }
+  }
+
+  // Pattern 5 needs special handling: decode HTML entities first, then extract src
+  {
+    let m: RegExpExecArray | null;
+    while ((m = embedFrameRe.exec(html)) !== null) {
+      const decoded = m[1]!
+        .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+      const srcMatch = new RegExp(`src="([^"]*(?:${DOMAINS})[^"]*)"`, "i").exec(decoded);
+      if (srcMatch) {
+        let url = srcMatch[1]!.replace(/&amp;/g, "&");
+        const embedMatch = /youtube(?:-nocookie)?\.com\/embed\/([^?&#]+)/.exec(url);
+        if (embedMatch) url = `https://www.youtube.com/watch?v=${embedMatch[1]}`;
+        if (!seen.has(url)) {
+          seen.add(url);
+          videoUrls.push(url);
+        }
+      }
+    }
+  }
+
+  if (videoUrls.length === 0) return "";
+  return "\n\n---\n\n" + videoUrls.map((u) => `[Video](${u})`).join("\n");
+}
+
 const MAX_THREADS = 100;
 
 /**

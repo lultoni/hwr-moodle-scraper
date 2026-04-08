@@ -135,4 +135,74 @@ describe("downloadEmbeddedImages", () => {
     expect(call.destPath).toBe("/out/Section/images/Übersicht.png");
     expect(result.content).toContain("./images/Übersicht.png");
   });
+
+  it("strips s_ thumbnail prefix and downloads full-res image", async () => {
+    vol.fromJSON({ "/out/Course/Section/placeholder": "" });
+
+    const thumbUrl = "https://moodle.hwr-berlin.de/pluginfile.php/456/mod_label/intro/s_WS2425_BWL_Image.jpg";
+    const fullResUrl = "https://moodle.hwr-berlin.de/pluginfile.php/456/mod_label/intro/WS2425_BWL_Image.jpg";
+    const md = `![Bild](${thumbUrl})`;
+
+    mockedDownloadFile.mockResolvedValueOnce({
+      finalPath: "/out/Course/Section/images/WS2425_BWL_Image.jpg",
+      hash: "full",
+    });
+
+    const result = await downloadEmbeddedImages(md, "/out/Course/Section/page.md", cookies, retryMs);
+
+    // Should try full-res URL (without s_ prefix)
+    expect(mockedDownloadFile).toHaveBeenCalledTimes(1);
+    const call = mockedDownloadFile.mock.calls[0]![0] as { url: string; destPath: string };
+    expect(call.url).toBe(fullResUrl);
+    expect(call.destPath).toContain("WS2425_BWL_Image.jpg");
+    expect(call.destPath).not.toContain("s_");
+    expect(result.imagePaths).toHaveLength(1);
+  });
+
+  it("falls back to s_ thumbnail URL when full-res version fails", async () => {
+    vol.fromJSON({ "/out/Course/Section/placeholder": "" });
+
+    const thumbUrl = "https://moodle.hwr-berlin.de/pluginfile.php/456/mod_label/intro/s_thumbnail.png";
+    const md = `![Bild](${thumbUrl})`;
+
+    // First call (full-res) fails, second call (thumbnail) succeeds
+    mockedDownloadFile
+      .mockRejectedValueOnce(new Error("404"))
+      .mockResolvedValueOnce({
+        finalPath: "/out/Course/Section/images/s_thumbnail.png",
+        hash: "thumb",
+      });
+
+    const result = await downloadEmbeddedImages(md, "/out/Course/Section/page.md", cookies, retryMs);
+
+    expect(mockedDownloadFile).toHaveBeenCalledTimes(2);
+    // First call tried without s_ prefix
+    const firstCall = mockedDownloadFile.mock.calls[0]![0] as { url: string };
+    expect(firstCall.url).toContain("/thumbnail.png");
+    expect(firstCall.url).not.toContain("s_");
+    // Second call used original s_ URL
+    const secondCall = mockedDownloadFile.mock.calls[1]![0] as { url: string };
+    expect(secondCall.url).toContain("/s_thumbnail.png");
+    expect(result.imagePaths).toHaveLength(1);
+  });
+
+  it("processes section summary markdown with pluginfile image URLs", async () => {
+    // Simulates _Abschnittsbeschreibung.md containing embedded Moodle image
+    vol.fromJSON({ "/out/Course/WorkflowEngine/placeholder": "" });
+
+    const imgUrl = "https://moodle.hwr-berlin.de/pluginfile.php/4884637/course/section/905722/Bildschirmfoto%202021-11-20%20um%2022.26.53.png";
+    const summaryMd = `![](${imgUrl})  \n\nHier gibt es Infos...`;
+
+    mockedDownloadFile.mockResolvedValueOnce({
+      finalPath: "/out/Course/WorkflowEngine/images/Bildschirmfoto 2021-11-20 um 22.26.53.png",
+      hash: "abc",
+    });
+
+    const result = await downloadEmbeddedImages(summaryMd, "/out/Course/WorkflowEngine/_Abschnittsbeschreibung.md", cookies, retryMs);
+
+    expect(mockedDownloadFile).toHaveBeenCalledTimes(1);
+    expect(result.content).toContain("./images/Bildschirmfoto 2021-11-20 um 22.26.53.png");
+    expect(result.content).not.toContain("pluginfile.php");
+    expect(result.imagePaths).toHaveLength(1);
+  });
 });

@@ -1,11 +1,22 @@
 // REQ-SCRAPE-005, REQ-SCRAPE-006, REQ-SCRAPE-007, REQ-SCRAPE-008
 import { writeFileSync, appendFileSync } from "node:fs";
-import TurndownService from "turndown";
+import { createTurndown } from "./turndown.js";
 
-const td = new TurndownService();
+const td = createTurndown();
 
-export async function writeUrlFile(destPath: string, url: string): Promise<void> {
-  writeFileSync(destPath, url + "\n", { mode: 0o600 });
+export async function writeUrlFile(
+  destPath: string,
+  url: string,
+  opts?: { name?: string; description?: string },
+): Promise<void> {
+  const lines: string[] = [];
+  if (opts?.name) lines.push(`# ${opts.name}`, "");
+  lines.push(url);
+  if (opts?.description) {
+    lines.push("", "## Beschreibung", "", td.turndown(opts.description).trim());
+  }
+  lines.push("");
+  writeFileSync(destPath, lines.join("\n"), { mode: 0o600 });
 }
 
 export interface AssignmentMeta {

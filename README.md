@@ -119,7 +119,7 @@ npm run test:watch        # watch mode
 npm run test:coverage     # with coverage report
 ```
 
-All 408 tests pass across 34 test files (Phase 5: 29 cleanup/improvement passes, including embedded image download from pluginfile.php URLs, sidecar batch content deduplication, orphan marking for renamed resources, scrape/reset count reconciliation with categorized breakdown, &nbsp; filename sanitisation, empty section description filtering, and smart folder subfolders with _Ordnerbeschreibung.md).
+All 452 tests pass across 35 test files (Phase 5: 30 cleanup/improvement passes, including embedded image download from pluginfile.php URLs, sidecar batch content deduplication, orphan marking for renamed resources, scrape/reset count reconciliation with categorized breakdown, &nbsp; filename sanitisation, empty section description filtering, smart folder subfolders with _Ordnerbeschreibung.md, YouTube extraction enhancements with `data-embed-frame` pattern, and onetopic sectionId collision fixes).
 
 ### Type-check
 
