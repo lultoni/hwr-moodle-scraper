@@ -144,7 +144,8 @@ function detectSkSemester(rawName: string): string {
 function extractShortName(rawName: string): string {
   // Primary: cohort → human name → semester tag
   // Handles optional extra numeric IDs before the cohort: "59420 59421 WI24ABC"
-  const m = /WI\d{2}[A-Z]{1,6}\s+(.*?)\s+(?:WiSe|SoSe)-\d{4}\s*$/.exec(rawName);
+  // [A-Z]{0,6} allows both "WI24" (no suffix) and "WI24ABC" (with suffix)
+  const m = /WI\d{2}[A-Z]{0,6}\b\s+(.*?)\s+(?:WiSe|SoSe)-\d{4}\s*$/.exec(rawName);
   if (m && m[1]) {
     return m[1].trim().replace(/\s+/g, " ");
   }

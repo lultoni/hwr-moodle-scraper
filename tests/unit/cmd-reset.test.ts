@@ -25,6 +25,10 @@ const mockGroupUserFiles = vi.fn().mockReturnValue([]);
 vi.mock("../../src/fs/collect.js", () => ({
   collectFiles: (...args: unknown[]) => mockCollectFiles(...args),
   groupUserFiles: (...args: unknown[]) => mockGroupUserFiles(...args),
+  renderTree: (paths: string[], rootDir: string) => {
+    const { relative } = require("node:path");
+    return paths.map((p: string) => relative(rootDir, p)).join("\n");
+  },
 }));
 
 // --- selectItem mock ---

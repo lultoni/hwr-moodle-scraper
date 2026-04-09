@@ -93,8 +93,35 @@ export function buildDownloadPlan(
     const sectionDir = semesterDir
       ? join(outputDir, semesterDir, safeCourse, safeSection)
       : join(outputDir, safeCourse, safeSection);
+
+    // Skip separator-only labels (just <hr>, "* * *", nbsp, etc.)
+    if (activity.activityType === "label" && activity.description && isEmptyLabel(activity.description)) continue;
+
     // Optional subfolder (e.g. when two folders contain same-named files)
-    const fileDir = activity.subDir ? join(sectionDir, sanitiseFilename(activity.subDir)) : sectionDir;
+    // Compound subDir (e.g. "Materialien/Foliensammlung") is split into segments
+    const fileDir = activity.subDir
+      ? join(sectionDir, ...activity.subDir.split("/").map(sanitiseFilename))
+      : sectionDir;
+
+    // Divider labels that are heading-only (e.g. "Textmaterialien") are visual
+    // section headings — skip them. But content-rich dividers (e.g. "Lernziele"
+    // with learning objectives) should be written as _SubfolderName.md inside
+    // their subfolder, similar to _Ordnerbeschreibung.md for folders.
+    if (activity.isDivider) {
+      if (!activity.description || !isDividerContentRich(activity.description)) continue;
+      // Content-rich divider → write as _SubfolderName.md
+      const subDirName = activity.subDir?.split("/").pop() || sanitiseFilename(activity.activityName || "unnamed");
+      const richDestPath = join(fileDir, `_${sanitiseFilename(subDirName)}.md`);
+      items.push({
+        activity,
+        url: activity.url,
+        destPath: richDestPath,
+        strategy: "label-md",
+        courseName,
+        sectionName,
+      });
+      continue;
+    }
 
     let destPath: string;
     let strategy: DownloadStrategy;
@@ -157,19 +184,77 @@ export function buildDownloadPlan(
 }
 
 /**
+ * Extract the heading text from an "icon-heading" label pattern.
+ *
+ * WissArb-style labels use `<img>` + `<h3>`/`<h4>`/`<h5>` to create visual
+ * section dividers. The `data-activityname` attribute is often polluted with
+ * icon attribution text (e.g. "Material\nIcons erstellt von Eucalyp..."),
+ * but the heading element contains the clean name.
+ *
+ * Detects two sub-patterns:
+ *   1. `<img>` anywhere before a heading (`<h3>`, `<h4>`, `<h5>`)
+ *   2. `<img>` inside a heading tag
+ *
+ * Returns the cleaned heading text, or `null` if the pattern is not found.
+ */
+export function extractIconHeadingText(html: string): string | null {
+  if (!html) return null;
+
+  // Must contain an <img> tag
+  if (!/<img\s/i.test(html)) return null;
+
+  // Pattern A: <img> inside a heading tag — extract text after the img
+  // e.g. <h3><img src="...">Literatur zum Teil I</h3>
+  const insideHeading = /<h([3-5])[^>]*>(?:<[^>]*>)*<img\s[^>]*>(?:<\/[^>]+>)*\s*(&nbsp;|[\s\u00a0])*([\s\S]*?)<\/h\1>/i.exec(html);
+  if (insideHeading) {
+    const raw = insideHeading[3]!
+      .replace(/<[^>]+>/g, "")  // strip remaining HTML tags
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (raw.length >= 2) return raw;
+  }
+
+  // Pattern B: <img> in a preceding element, then a heading follows
+  // e.g. <div><img src="..."></div>\n<h3><span>Lernziele</span></h3>
+  const afterImg = /<img\s[^>]*>[\s\S]*?<h([3-5])[^>]*>([\s\S]*?)<\/h\1>/i.exec(html);
+  if (afterImg) {
+    const raw = afterImg[2]!
+      .replace(/<[^>]+>/g, "")  // strip HTML tags (e.g. <span>)
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (raw.length >= 2) return raw;
+  }
+
+  return null;
+}
+
+/**
  * Determine whether a label's HTML description represents a visual "divider"
  * — a short heading that Moodle instructors use to group activities visually.
  *
- * Divider labels are characterised by:
- *   - Very short text content (≤ 80 chars after stripping images and formatting)
- *   - At most 2 non-empty lines of text
- *   - No list items (ul/ol markers in the Markdown output)
- *   - No external links
+ * Two detection paths:
  *
- * Content-rich labels (learning objectives, multi-paragraph descriptions) return false.
+ * 1. **Icon-heading pattern** (WissArb): `<img>` + `<h3>`/`<h4>`/`<h5>`.
+ *    These are always dividers regardless of subsequent content (attribution
+ *    links, learning objectives, etc.).
+ *
+ * 2. **Text heuristic** (VdZ, FRbüro): short text (≤80 chars, ≤2 lines),
+ *    no list items, no external links, ≥3 alpha chars.
+ *
+ * Content-rich labels without the icon-heading pattern return false.
  */
 export function isDividerLabel(descriptionHtml: string): boolean {
   if (!descriptionHtml || !descriptionHtml.trim()) return false;
+
+  // Check for icon-heading pattern: a small decorative image (<= 100px)
+  // followed by or inside a heading tag (h3/h4/h5). This is a common Moodle
+  // pattern where instructors create visual section breaks with an icon + heading.
+  // When detected with a small icon, it's always a divider regardless of
+  // body text that may follow (e.g. learning objectives under the heading).
+  const headingText = extractIconHeadingText(descriptionHtml);
+  if (headingText !== null && hasSmallIcon(descriptionHtml)) return true;
 
   const td = createTurndown();
   const md = td.turndown(descriptionHtml);
@@ -212,6 +297,92 @@ export function isDividerLabel(descriptionHtml: string): boolean {
 }
 
 /**
+ * Check if the HTML contains a small decorative icon image (width or height ≤ 100px).
+ * Small icons are typically used as visual decorations in section-divider labels,
+ * not as content images.
+ */
+function hasSmallIcon(html: string): boolean {
+  // Match <img> tags and check for width/height attributes
+  const imgRegex = /<img\s[^>]*>/gi;
+  let m;
+  while ((m = imgRegex.exec(html)) !== null) {
+    const tag = m[0];
+    const widthMatch = /\bwidth=["']?(\d+)["']?/i.exec(tag);
+    const heightMatch = /\bheight=["']?(\d+)["']?/i.exec(tag);
+    if (widthMatch && Number(widthMatch[1]) <= 100) return true;
+    if (heightMatch && Number(heightMatch[1]) <= 100) return true;
+  }
+  return false;
+}
+
+/**
+ * Strip trailing "(Kopie)" patterns from a label name.
+ * Moodle's internal `data-activityname` often contains "(Kopie)" from instructor
+ * copy-paste operations, even though the rendered HTML shows clean names.
+ */
+function stripKopie(name: string): string {
+  return name.replace(/\s*\(Kopie\)/gi, "").trim();
+}
+
+/**
+ * Returns true if a label's HTML description is effectively empty —
+ * just separators (`<hr>`, `* * *`), `&nbsp;`, or whitespace.
+ * These should not produce `.md` files.
+ */
+export function isEmptyLabel(descriptionHtml: string): boolean {
+  const td = createTurndown();
+  const md = td.turndown(descriptionHtml);
+
+  // Strip image markdown, horizontal rules, whitespace, and non-alpha chars
+  const stripped = md
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/^[-*_]{3,}\s*$/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Check if fewer than 3 alphabetic characters remain
+  const alpha = stripped.replace(/[^a-zA-ZäöüÄÖÜß]/g, "");
+  return alpha.length < 3;
+}
+
+/**
+ * Checks whether a divider label's HTML contains substantial content
+ * beyond the heading, icon, and attribution text.
+ *
+ * Strips: the heading element (h3/h4/h5), <img> tags, and "Icons erstellt von"
+ * credit paragraphs. If meaningful content (lists, paragraphs with ≥10 alpha chars)
+ * remains, the divider is content-rich and should be written as a file.
+ */
+export function isDividerContentRich(descriptionHtml: string): boolean {
+  if (!descriptionHtml) return false;
+
+  let html = descriptionHtml;
+
+  // Strip heading tags (h3/h4/h5) and their contents
+  html = html.replace(/<h[3-5][^>]*>[\s\S]*?<\/h[3-5]>/gi, "");
+
+  // Strip all <img> tags
+  html = html.replace(/<img\s[^>]*>/gi, "");
+
+  // Strip "Icons erstellt von" credit paragraphs (font-size: 9px or matching text)
+  html = html.replace(/<p[^>]*>[\s\S]*?Icons\s+erstellt\s+von[\s\S]*?<\/p>/gi, "");
+
+  // Now convert remaining HTML to text to check for content
+  const td = createTurndown();
+  const md = td.turndown(html);
+
+  // Strip image markdown, links markdown syntax, whitespace
+  const stripped = md
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Check if meaningful alpha content remains (≥10 chars indicates real content)
+  const alpha = stripped.replace(/[^a-zA-ZäöüÄÖÜß]/g, "");
+  return alpha.length >= 10;
+}
+
+/**
  * Walk a section's activities in order and assign `subDir` to activities
  * that follow divider labels, grouping them into subfolders.
  *
@@ -227,12 +398,12 @@ export function applyLabelSubfolders(activities: Activity[]): Activity[] {
   const dividerIndices: number[] = [];
   for (let i = 0; i < activities.length; i++) {
     const act = activities[i]!;
-    if (act.activityType === "label" && act.description) {
+    if (act.activityType === "label" && act.description && !act.subDir) {
       if (isDividerLabel(act.description)) dividerIndices.push(i);
     }
   }
 
-  if (dividerIndices.length < 1) return activities;
+  if (dividerIndices.length < 2) return activities;
 
   // Second pass: assign subDirs
   const result: Activity[] = [];
@@ -244,11 +415,17 @@ export function applyLabelSubfolders(activities: Activity[]): Activity[] {
 
     if (dividerIndices.includes(i)) {
       // This is a divider label — use its name as the subfolder
-      currentSubDir = act.activityName;
+      // Prefer heading text extracted from icon-heading HTML (clean, no attribution noise)
+      const headingText = act.description ? extractIconHeadingText(act.description) : null;
+      currentSubDir = stripKopie(headingText || act.activityName);
       clone.subDir = currentSubDir;
+      clone.isDivider = true;
     } else if (currentSubDir) {
-      // Activity after a divider — assign subDir unless it already has one
-      if (!clone.subDir) {
+      // Activity after a divider — nest under divider subfolder
+      if (clone.subDir) {
+        // Already has subDir (e.g. from folder expansion) → compound path
+        clone.subDir = currentSubDir + "/" + clone.subDir;
+      } else {
         clone.subDir = currentSubDir;
       }
     }

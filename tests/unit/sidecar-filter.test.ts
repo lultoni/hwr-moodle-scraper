@@ -249,4 +249,90 @@ describe("filterSidecars()", () => {
     expect(result.filteredItems.filter((i) => i.isSidecar)).toHaveLength(0);
     expect(result.suppressedCount).toBe(1);
   });
+
+  // ── Test 10: identical short descriptions deduped in _Beschreibungen.md ──
+  it("deduplicates identical short descriptions — only unique entries in _Beschreibungen.md", () => {
+    const dir = join(tmpDir, "Section");
+    mkdirSync(dir);
+
+    // FiMa case: 4 items all have "Zinssatz" → should produce only 1 unique entry
+    const items: SidecarItem[] = [
+      makeSidecar({
+        destPath: join(dir, "FiMa Skript.description.md"),
+        label: "FiMa Skript",
+        item: { resourceId: "resA", courseId: 1 },
+        description: "<p>Zinssatz</p>",
+      }),
+      makeSidecar({
+        destPath: join(dir, "FiMa Folien.description.md"),
+        label: "FiMa Folien",
+        item: { resourceId: "resB", courseId: 1 },
+        description: "<p>Zinssatz</p>",
+      }),
+      makeSidecar({
+        destPath: join(dir, "FiMa Formeln.description.md"),
+        label: "FiMa Formeln",
+        item: { resourceId: "resC", courseId: 1 },
+        description: "<p>Zinssatz</p>",
+      }),
+      makeSidecar({
+        destPath: join(dir, "FiMa 4.1.description.md"),
+        label: "FiMa 4.1",
+        item: { resourceId: "resD", courseId: 1 },
+        description: "<p>Zinssatz</p>",
+      }),
+      makeSidecar({
+        destPath: join(dir, "FimaAufgaben.description.md"),
+        label: "FimaAufgaben",
+        item: { resourceId: "resE", courseId: 1 },
+        description: "<p>Aufgabe 4/10 korrigiert</p>",
+      }),
+    ];
+
+    const result = filterSidecars(items, TurndownService);
+    expect(result.beschreibungenFiles).toHaveLength(1);
+    const bf = result.beschreibungenFiles[0]!;
+    // Only 2 unique entries: "Zinssatz" and "Aufgabe 4/10 korrigiert"
+    expect(bf.content).toContain("Zinssatz");
+    expect(bf.content).toContain("Aufgabe 4/10 korrigiert");
+    // Count occurrences of "Zinssatz" in the content — should be exactly 1
+    const zinssatzMatches = bf.content.match(/Zinssatz/g) ?? [];
+    expect(zinssatzMatches).toHaveLength(1);
+    // 3 duplicates suppressed + 2 consolidated
+    expect(result.suppressedCount).toBe(3);
+    expect(result.consolidatedCount).toBe(2);
+  });
+
+  // ── Test 11: label-md suppressed when content duplicates another item ────
+  it("suppresses label-md when content is subset of another item in same directory", () => {
+    const dir = join(tmpDir, "Section");
+    mkdirSync(dir);
+
+    // "Teams Meeting.md" (label-md) duplicates "Virtual Meeting Space.md" (info-md)
+    const infoMdItem: SidecarItem = {
+      item: { resourceId: "res-bbb", courseId: 1 },
+      destPath: join(dir, "Virtual Meeting Space.md"),
+      strategy: "info-md",
+      label: "Virtual Meeting Space",
+      description: "<p>Meeting room link: https://bbb.example.com/room/123</p>",
+      activityType: "bigbluebuttonbn",
+      isSidecar: false,
+    };
+    const labelMdItem: SidecarItem = {
+      item: { resourceId: "res-label", courseId: 1 },
+      destPath: join(dir, "Teams Meeting.md"),
+      strategy: "label-md",
+      label: "Teams Meeting",
+      description: "<p>Meeting room link: https://bbb.example.com/room/123</p>",
+      activityType: "label",
+      isSidecar: false,
+    };
+
+    const result = filterSidecars([infoMdItem, labelMdItem], TurndownService);
+    // info-md kept, label-md suppressed
+    const kept = result.filteredItems.filter(i => !i.isSidecar);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]!.strategy).toBe("info-md");
+    expect(result.suppressedCount).toBe(1);
+  });
 });

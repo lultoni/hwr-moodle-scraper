@@ -3,7 +3,7 @@
 // activities are grouped under them until the next divider.
 
 import { describe, it, expect } from "vitest";
-import { isDividerLabel, applyLabelSubfolders } from "../../src/scraper/dispatch.js";
+import { isDividerLabel, applyLabelSubfolders, extractIconHeadingText } from "../../src/scraper/dispatch.js";
 import type { Activity } from "../../src/scraper/courses.js";
 
 // ── isDividerLabel heuristic ──────────────────────────────────────────
@@ -101,6 +101,81 @@ describe("isDividerLabel — identifies short heading labels as dividers", () =>
   it("empty description is not a divider", () => {
     expect(isDividerLabel("")).toBe(false);
     expect(isDividerLabel("   ")).toBe(false);
+  });
+
+  // ── WissArb icon-heading pattern ────────────────────────────────────
+
+  it("WissArb: icon + h3 heading + icon credit links is a divider (Material)", () => {
+    // Real HTML from WissArb I section 2: <img> inside <h3>, followed by icon credit with external links
+    const html = `<div class="no-overflow"><div class="no-overflow"><div><img src="https://moodle.hwr-berlin.de/pluginfile.php/4334583/mod_label/intro/material.png" alt="Material" width="40" height="40" class="img-responsive atto_image_button_left"></div>
+<h3><span style="font-size: 1.5rem;">Material</span></h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.flaticon.com/de/autoren/eucalyp" title="Eucalyp">Eucalyp</a> from <a href="https://www.flaticon.com/de/" title="Flaticon">www.flaticon.com</a></p></div></div>`;
+    expect(isDividerLabel(html)).toBe(true);
+  });
+
+  it("WissArb: img inside h3 + icon credit links is a divider (Literatur)", () => {
+    const html = `<div class="no-overflow"><div class="no-overflow"><h3 style="text-align: left;"><img src="https://moodle.hwr-berlin.de/pluginfile.php/4334589/mod_label/intro/buch.png" alt="Bücher" width="40" height="40" class="img-responsive atto_image_button_text-bottom">Literatur zum Teil I - Forschungskompetenz</h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.flaticon.com/de/autoren/mikan933" title="mikan933">mikan933</a> from <a href="https://www.flaticon.com/de/" title="Flaticon">www.flaticon.com</a></p></div></div>`;
+    expect(isDividerLabel(html)).toBe(true);
+  });
+
+  it("WissArb: img + h3 + nbsp + icon credit is a divider (Zusatzmaterial)", () => {
+    const html = `<div class="no-overflow"><div class="no-overflow"><h3 style="text-align: left;"><img src="https://moodle.hwr-berlin.de/pluginfile.php/4334595/mod_label/intro/zusatz.png" alt="Zusatzmaterial" width="40" height="40" class="img-responsive atto_image_button_text-bottom">&nbsp;Zusatzmaterial</h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.flaticon.com/de/autoren/stockes-design" title="Stockes Design">Stockes Design</a> from <a href="https://www.flaticon.com/de/" title="Flaticon">www.flaticon.com</a></p></div></div>`;
+    expect(isDividerLabel(html)).toBe(true);
+  });
+
+  it("WissArb: icon-heading with rich content below is STILL a divider (Lernziele)", () => {
+    // Lernziele: has an img + h3 header structure, but also contains detailed learning objectives below.
+    // The icon-heading pattern makes it a divider regardless of subsequent content.
+    const html = `<div class="no-overflow"><div class="no-overflow"><div><img src="https://moodle.hwr-berlin.de/pluginfile.php/4334582/mod_label/intro/tor.png" alt="Lernziele" width="40" height="40" class="img-responsive atto_image_button_left"></div>
+<h3><span style="font-size: 1.5rem;">Lernziele</span></h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.freepik.com" title="Freepik">Freepik</a> from <a href="https://www.flaticon.com/de/" title="Flaticon">www.flaticon.com</a></p><p style="">Aus dem Modulhandbuch:</p><p style=""><em>Fach- / Methodenkompetenz:</em></p><p style="">Formale Grundlagen umsetzen</p><ul><li>Begriffe kennen</li><li>Strukturen kennen</li></ul></div></div>`;
+    expect(isDividerLabel(html)).toBe(true);
+  });
+});
+
+// ── extractIconHeadingText ──────────────────────────────────────────────
+
+describe("extractIconHeadingText — extracts clean heading from icon-heading labels", () => {
+  it("returns heading text from img + h3 (Material pattern)", () => {
+    const html = `<div class="no-overflow"><div class="no-overflow"><div><img src="https://moodle.hwr-berlin.de/pluginfile.php/4334583/mod_label/intro/material.png" alt="Material" width="40" height="40" class="img-responsive atto_image_button_left"></div>
+<h3><span style="font-size: 1.5rem;">Material</span></h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.flaticon.com/de/autoren/eucalyp" title="Eucalyp">Eucalyp</a> from <a href="https://www.flaticon.com/de/" title="Flaticon">www.flaticon.com</a></p></div></div>`;
+    expect(extractIconHeadingText(html)).toBe("Material");
+  });
+
+  it("returns heading text when img is inside h3 (Literatur pattern)", () => {
+    const html = `<h3 style="text-align: left;"><img src="buch.png" alt="Bücher" width="40" height="40">Literatur zum Teil I - Forschungskompetenz</h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.flaticon.com">mikan933</a></p>`;
+    expect(extractIconHeadingText(html)).toBe("Literatur zum Teil I - Forschungskompetenz");
+  });
+
+  it("strips &nbsp; from heading text (Zusatzmaterial pattern)", () => {
+    const html = `<h3 style="text-align: left;"><img src="zusatz.png" alt="Zusatzmaterial" width="40" height="40">&nbsp;Zusatzmaterial</h3>`;
+    expect(extractIconHeadingText(html)).toBe("Zusatzmaterial");
+  });
+
+  it("returns heading text from img + h3 with span (Lernziele pattern)", () => {
+    const html = `<div><img src="tor.png" alt="Lernziele" width="40" height="40"></div>
+<h3><span style="font-size: 1.5rem;">Lernziele</span></h3>
+<p>Aus dem Modulhandbuch:</p><ul><li>punkt 1</li></ul>`;
+    expect(extractIconHeadingText(html)).toBe("Lernziele");
+  });
+
+  it("returns null for label without img element", () => {
+    const html = `<h3>Just a heading</h3><p>Some content</p>`;
+    expect(extractIconHeadingText(html)).toBeNull();
+  });
+
+  it("returns null for label with img but no heading", () => {
+    const html = `<img src="icon.png"><p>Some paragraph text without heading</p>`;
+    expect(extractIconHeadingText(html)).toBeNull();
+  });
+
+  it("handles h4 and h5 headings", () => {
+    const html = `<img src="icon.png"><h4>Section Title</h4>`;
+    expect(extractIconHeadingText(html)).toBe("Section Title");
   });
 });
 
@@ -216,7 +291,7 @@ describe("applyLabelSubfolders — groups activities under divider labels", () =
     expect(result[2]!.subDir).toBeUndefined();
   });
 
-  it("preserves existing subDir from folder expansion", () => {
+  it("nests folder-expanded items under label subfolder (compound subDir)", () => {
     const activities: Activity[] = [
       makeActivity("Divider A", "label", {
         description: `<h5>Section A</h5>`,
@@ -239,13 +314,13 @@ describe("applyLabelSubfolders — groups activities under divider labels", () =
     expect(result[1]!.subDir).toBe("Divider A");
     // Second divider
     expect(result[2]!.subDir).toBe("Materialien");
-    // Activity with existing subDir keeps it (folder subDir takes priority)
-    expect(result[3]!.subDir).toBe("Foliensammlung");
+    // Activity with existing subDir gets nested under label subfolder
+    expect(result[3]!.subDir).toBe("Materialien/Foliensammlung");
     // Activity without existing subDir gets divider subDir
     expect(result[4]!.subDir).toBe("Materialien");
   });
 
-  it("single divider label with subsequent activities does create a subfolder", () => {
+  it("single divider label does NOT create subfolders (requires ≥2 dividers)", () => {
     const activities: Activity[] = [
       makeActivity("Only Divider", "label", {
         description: `<h5>Materialien</h5>`,
@@ -256,10 +331,10 @@ describe("applyLabelSubfolders — groups activities under divider labels", () =
 
     const result = applyLabelSubfolders(activities);
 
-    // Single divider → grouping activated
-    expect(result[0]!.subDir).toBe("Only Divider");
-    expect(result[1]!.subDir).toBe("Only Divider");
-    expect(result[2]!.subDir).toBe("Only Divider");
+    // Single divider → safety check prevents grouping (could be false positive)
+    expect(result[0]!.subDir).toBeUndefined();
+    expect(result[1]!.subDir).toBeUndefined();
+    expect(result[2]!.subDir).toBeUndefined();
   });
 
   it("FRbüro: plain text divider grouping", () => {
@@ -304,5 +379,132 @@ describe("applyLabelSubfolders — groups activities under divider labels", () =
     expect(original[2]!.subDir).toBeUndefined();
     // Result should have subDirs (uses activityName, not heading text)
     expect(result[2]!.subDir).toBe("Divider B");
+  });
+
+  it("labels with existing subDir (from folder expansion) are NOT treated as dividers", () => {
+    const activities: Activity[] = [
+      // Real divider
+      makeActivity("Textmaterialien", "label", {
+        description: `<h5><img src="x.png"> <b>Textmaterialien</b></h5>`,
+      }),
+      // Folder-description label with short text that would pass isDividerLabel
+      // BUT already has subDir from folder expansion → must NOT become a divider
+      makeActivity("_Ordnerbeschreibung", "label", {
+        description: `Vorlesungsfolien`,
+        subDir: "Foliensammlung Lerneinheit 1",
+      }),
+      // This resource should stay under Textmaterialien, NOT under _Ordnerbeschreibung
+      makeActivity("HBR Artikel", "url", { url: "https://example.com/article" }),
+      // Second divider
+      makeActivity("Aktivitäten", "label", {
+        description: `<h5><img src="x.png"> <b>Aktivitäten</b></h5>`,
+      }),
+      makeActivity("Gruppenarbeit", "etherpadlite", { url: "https://moodle.example.com/mod/etherpadlite/view.php?id=1" }),
+    ];
+
+    const result = applyLabelSubfolders(activities);
+
+    expect(result[0]!.subDir).toBe("Textmaterialien");
+    // Folder-description keeps its own subDir, not treated as divider
+    expect(result[1]!.subDir).toBe("Textmaterialien/Foliensammlung Lerneinheit 1");
+    // HBR Artikel stays under Textmaterialien (not captured by _Ordnerbeschreibung)
+    expect(result[2]!.subDir).toBe("Textmaterialien");
+    expect(result[3]!.subDir).toBe("Aktivitäten");
+    expect(result[4]!.subDir).toBe("Aktivitäten");
+  });
+
+  it("strips trailing (Kopie) patterns from divider subfolder names", () => {
+    const activities: Activity[] = [
+      makeActivity("Lernvideos  (Kopie)", "label", {
+        description: `<h5><img src="x.png"> <b>Lernvideos</b></h5>`,
+      }),
+      makeActivity("Video 1", "url", { url: "https://example.com/v1" }),
+      makeActivity("Textmaterialien (Kopie) (Kopie)", "label", {
+        description: `<h5><img src="x.png"> <b>Textmaterialien</b></h5>`,
+      }),
+      makeActivity("Artikel", "url", { url: "https://example.com/a1" }),
+    ];
+
+    const result = applyLabelSubfolders(activities);
+
+    // (Kopie) stripped — clean subfolder names
+    expect(result[0]!.subDir).toBe("Lernvideos");
+    expect(result[1]!.subDir).toBe("Lernvideos");
+    expect(result[2]!.subDir).toBe("Textmaterialien");
+    expect(result[3]!.subDir).toBe("Textmaterialien");
+  });
+
+  it("marks divider labels with isDivider: true", () => {
+    const activities: Activity[] = [
+      // Content label — NOT a divider
+      makeActivity("Intro", "label", {
+        description: `<p>Welcome text with content</p><ul><li>point 1</li><li>point 2</li></ul>`,
+      }),
+      // Divider label
+      makeActivity("Lernvideos", "label", {
+        description: `<h5><img src="x.png"> <b>Lernvideos</b></h5>`,
+      }),
+      makeActivity("File", "resource", { url: "https://moodle.example.com/mod/resource/view.php?id=1" }),
+      // Another divider
+      makeActivity("Materialien", "label", {
+        description: `<h5>Materialien</h5>`,
+      }),
+    ];
+
+    const result = applyLabelSubfolders(activities);
+
+    expect(result[0]!.isDivider).toBeFalsy();
+    expect(result[1]!.isDivider).toBe(true);
+    expect(result[2]!.isDivider).toBeFalsy();
+    expect(result[3]!.isDivider).toBe(true);
+  });
+
+  it("WissArb: icon-heading labels use heading text for subfolder names (not activityName)", () => {
+    // Real WissArb pattern: data-activityname is polluted with icon attribution text,
+    // but the heading inside the HTML has the clean name.
+    const activities: Activity[] = [
+      makeActivity("Lernziele Icons erstellt von Freepik from www.flat...", "label", {
+        description: `<div class="no-overflow"><div><img src="tor.png" alt="Lernziele" width="40" height="40"></div>
+<h3><span style="font-size: 1.5rem;">Lernziele</span></h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.freepik.com">Freepik</a></p><p>Aus dem Modulhandbuch:</p></div>`,
+      }),
+      makeActivity("1 Grundlagen - Folien Tag 1", "resource", {
+        url: "https://moodle.example.com/mod/resource/view.php?id=1",
+      }),
+      makeActivity("\nMaterial\nIcons erstellt von Eucalyp from www.fl...", "label", {
+        description: `<div class="no-overflow"><div><img src="material.png" alt="Material" width="40" height="40"></div>
+<h3><span style="font-size: 1.5rem;">Material</span></h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.flaticon.com/de/autoren/eucalyp">Eucalyp</a></p></div>`,
+      }),
+      makeActivity("1 Grundlagen - Folien Tag 2", "resource", {
+        url: "https://moodle.example.com/mod/resource/view.php?id=2",
+      }),
+      makeActivity("Literatur zum Teil I - Forschungskompetenz\nIcons ...", "label", {
+        description: `<h3><img src="buch.png" alt="Bücher" width="40" height="40">Literatur zum Teil I - Forschungskompetenz</h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.flaticon.com">mikan933</a></p>`,
+      }),
+      makeActivity("Buch: Kritisch denken", "page", {
+        url: "https://moodle.example.com/mod/page/view.php?id=1",
+      }),
+      makeActivity("&nbsp;Zusatzmaterial\nIcons erstellt von Stockes D...", "label", {
+        description: `<h3><img src="zusatz.png" alt="Zusatzmaterial" width="40" height="40">&nbsp;Zusatzmaterial</h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.flaticon.com">Stockes Design</a></p>`,
+      }),
+      makeActivity("Informationen Schlüsselkompetenzen", "url", {
+        url: "https://example.com/info",
+      }),
+    ];
+
+    const result = applyLabelSubfolders(activities);
+
+    // Subfolder names should come from heading text, NOT from data-activityname
+    expect(result[0]!.subDir).toBe("Lernziele");
+    expect(result[1]!.subDir).toBe("Lernziele");
+    expect(result[2]!.subDir).toBe("Material");
+    expect(result[3]!.subDir).toBe("Material");
+    expect(result[4]!.subDir).toBe("Literatur zum Teil I - Forschungskompetenz");
+    expect(result[5]!.subDir).toBe("Literatur zum Teil I - Forschungskompetenz");
+    expect(result[6]!.subDir).toBe("Zusatzmaterial");
+    expect(result[7]!.subDir).toBe("Zusatzmaterial");
   });
 });

@@ -22,6 +22,9 @@ First run pulls everything; subsequent runs are incremental (only new or changed
 | See what would be deleted (no files removed) | `msc reset --dry-run` |
 | See sync summary and per-course breakdown | `msc status` |
 | Find missing or orphaned files | `msc status --issues` |
+| Delete user-added files (stale orphans) | `msc clean` |
+| Move user-added files to "User Files/" instead | `msc clean --move` |
+| Preview what clean would do | `msc clean --dry-run` |
 | Change output folder | `msc config set outputDir ~/Documents/Moodle` |
 | Enable a log file | `msc config set logFile ~/moodle-scraper.log` |
 | See all config values | `msc config list` |
@@ -85,6 +88,7 @@ msc auth status                  Check if credentials and session are valid
 msc config get/set/list          Get, set, or list configuration
 msc config reset                 Reset configuration to defaults
 msc status [--issues]            Show last sync summary (with optional issue details)
+msc clean [--move] [--dry-run]   Delete or move user-added files from output folder
 msc --help                       Full help
 ```
 
@@ -119,7 +123,7 @@ npm run test:watch        # watch mode
 npm run test:coverage     # with coverage report
 ```
 
-All 452 tests pass across 35 test files (Phase 5: 30 cleanup/improvement passes, including embedded image download from pluginfile.php URLs, sidecar batch content deduplication, orphan marking for renamed resources, scrape/reset count reconciliation with categorized breakdown, &nbsp; filename sanitisation, empty section description filtering, smart folder subfolders with _Ordnerbeschreibung.md, YouTube extraction enhancements with `data-embed-frame` pattern, and onetopic sectionId collision fixes).
+All 501 tests pass across 37 test files (Phase 5: 33 cleanup/improvement passes, including embedded image download from pluginfile.php URLs, sidecar batch content deduplication, orphan marking for renamed resources, scrape/reset count reconciliation with categorized breakdown, &nbsp; filename sanitisation, empty section description filtering, smart folder subfolders with _Ordnorbeschreibung.md, YouTube extraction enhancements with `data-embed-frame` pattern, onetopic sectionId collision fixes, Pass 31 label subfolder grouping refinements with sidecar deduplication and headingless table conversion, Pass 32 icon-heading subfolder detection for divider labels, and Pass 33 content-rich divider preservation as _SubfolderName.md).
 
 ### Type-check
 
@@ -142,14 +146,14 @@ src/
 ├── logger.ts             # Logger with credential redaction
 ├── exit-codes.ts         # Exit code constants (0–5)
 ├── auth/                 # Keychain, session validation, interactive prompt
-├── commands/             # scrape, auth, status, wizard
+├── commands/             # scrape, auth, status, clean, wizard
 ├── fs/                   # Sanitise filenames, atomic writes, sidecar metadata
 ├── http/                 # HTTPS-only client, rate limiter, retry
 ├── scraper/              # Course list, content tree parsing, downloader, dispatch
 └── sync/                 # State file, incremental sync plan
 tests/
-├── unit/                 # 32 test files (including Phase 5 fixes and regression tests)
-└── integration/          # Full-scrape and incremental-sync end-to-end tests
+├── unit/                 # 35 test files (including Phase 5 fixes and regression tests)
+└── integration/          # 2 full-scrape and incremental-sync end-to-end tests
 docs/
 ├── REQUIREMENTS.md       # 75 gap-free requirements
 ├── FEATURE_TIMELINE.md   # 22-step implementation plan with traceability

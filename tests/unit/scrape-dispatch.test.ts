@@ -9,7 +9,7 @@
 //   chat, lti, imscp, grouptool, bigbluebuttonbn → info-md (title + URL + description)
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { buildDownloadPlan, type DownloadPlanItem } from "../../src/scraper/dispatch.js";
+import { buildDownloadPlan, type DownloadPlanItem, isEmptyLabel, isDividerContentRich } from "../../src/scraper/dispatch.js";
 import type { Activity } from "../../src/scraper/courses.js";
 
 function makeActivity(overrides: Partial<Activity>): Activity {
@@ -285,5 +285,181 @@ describe("buildDownloadPlan: activity type dispatch", () => {
     expect(binary).toBeDefined();
     expect(desc).toBeDefined();
     expect(desc?.destPath).toMatch(/\.description\.md$/);
+  });
+
+  it("heading-only divider labels (isDivider: true) are skipped — no plan items", () => {
+    const act = makeActivity({
+      activityType: "label",
+      activityName: "Textmaterialien",
+      url: "",
+      description: `<h5><img src="x.png"> <b>Textmaterialien</b></h5>`,
+      isDivider: true,
+    });
+    const items = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
+    expect(items).toHaveLength(0);
+  });
+
+  it("heading-only divider with icon credit is skipped (Material pattern)", () => {
+    const act = makeActivity({
+      activityType: "label",
+      activityName: "Material",
+      url: "",
+      description: `<div><img src="material.png" alt="Material" width="40" height="40"></div>
+<h3><span style="font-size: 1.5rem;">Material</span></h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.flaticon.com/de/autoren/eucalyp">Eucalyp</a> from <a href="https://www.flaticon.com/de/">www.flaticon.com</a></p>`,
+      isDivider: true,
+      subDir: "Material",
+    });
+    const items = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
+    expect(items).toHaveLength(0);
+  });
+
+  it("content-rich divider label produces _SubfolderName.md inside subfolder (Lernziele)", () => {
+    const act = makeActivity({
+      activityType: "label",
+      activityName: "Lernziele",
+      url: "",
+      description: `<div><img src="tor.png" alt="Lernziele" width="40" height="40"></div>
+<h3><span style="font-size: 1.5rem;">Lernziele</span></h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.freepik.com">Freepik</a></p>
+<p>Aus dem Modulhandbuch:</p>
+<p><em>Fach- / Methodenkompetenz:</em></p>
+<p>Formale Grundlagen umsetzen</p>
+<ul><li>Begriffe kennen</li><li>Strukturen kennen</li></ul>`,
+      isDivider: true,
+      subDir: "Lernziele",
+    });
+    const items = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
+    expect(items).toHaveLength(1);
+    expect(items[0]?.strategy).toBe("label-md");
+    // Written as _Lernziele.md inside the Lernziele/ subfolder
+    expect(items[0]?.destPath).toContain("/Lernziele/");
+    expect(items[0]?.destPath).toMatch(/_Lernziele\.md$/);
+  });
+
+  it("content-rich divider label with VdZ Einführung pattern produces .md file", () => {
+    const act = makeActivity({
+      activityType: "label",
+      activityName: "Einführung in das digitale Zeitalter",
+      url: "",
+      description: `<h5><img src="x.png" width="50" height="50"> <b>Einführung in das digitale Zeitalter</b></h5>
+<p><b>In dieser ersten Lerneinheit lernen Sie:</b></p>
+<ul>
+<li>die wesentlichen begrifflichen Grundlagen</li>
+<li>die Eigenschaften des digitalen Zeitalters sowie</li>
+<li>die Entwicklung und Trends des digitalen Zeitalters.</li>
+</ul>
+<p><b>Die Lernziele dieser Einheit sind:</b></p>
+<ol>
+<li>Was sind die grundlegenden Eigenschaften?</li>
+<li>Welche grundlegenden Mechanismen bestimmen über die Wirkungsweise?</li>
+</ol>`,
+      isDivider: true,
+      subDir: "Einführung in das digitale Zeitalter",
+    });
+    const items = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
+    expect(items).toHaveLength(1);
+    expect(items[0]?.strategy).toBe("label-md");
+    expect(items[0]?.destPath).toMatch(/_Einführung in das digitale Zeitalter\.md$/);
+  });
+
+  it("separator-only labels (hr, nbsp) are skipped — no plan items", () => {
+    const act = makeActivity({
+      activityType: "label",
+      activityName: "Textfeld",
+      url: "",
+      description: `<p>&nbsp; &nbsp;.</p>`,
+    });
+    const items = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
+    expect(items).toHaveLength(0);
+  });
+
+  it("compound subDir is split into nested path segments", () => {
+    const act = makeActivity({
+      activityType: "resource",
+      activityName: "Folie.pdf",
+      url: "https://moodle.example.com/mod/resource/view.php?id=1",
+      subDir: "Materialien/Foliensammlung",
+    });
+    const items = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
+    expect(items).toHaveLength(1);
+    // Path should contain both segments as separate directories
+    expect(items[0]?.destPath).toContain("/Materialien/Foliensammlung/");
+  });
+});
+
+// ── isEmptyLabel helper ──────────────────────────────────────────────
+
+describe("isEmptyLabel — detects separator-only labels", () => {
+  it("nbsp + dot → empty", () => {
+    expect(isEmptyLabel(`<p>&nbsp; &nbsp;.</p>`)).toBe(true);
+  });
+
+  it("<hr> only → empty", () => {
+    expect(isEmptyLabel(`<hr>`)).toBe(true);
+  });
+
+  it("* * * separator → empty", () => {
+    expect(isEmptyLabel(`<p>* * *</p>`)).toBe(true);
+  });
+
+  it("just whitespace → empty", () => {
+    expect(isEmptyLabel(`<p>   </p>`)).toBe(true);
+  });
+
+  it("meaningful text → not empty", () => {
+    expect(isEmptyLabel(`<p>Wichtige Hinweise zum Kurs</p>`)).toBe(false);
+  });
+
+  it("short but meaningful text → not empty", () => {
+    expect(isEmptyLabel(`<p>Hinweis</p>`)).toBe(false);
+  });
+});
+
+// ── isDividerContentRich helper ──────────────────────────────────────
+
+describe("isDividerContentRich — detects dividers with substantial content", () => {
+  it("heading + icon credit only (Material) → not content-rich", () => {
+    const html = `<div><img src="material.png" alt="Material" width="40" height="40"></div>
+<h3><span style="font-size: 1.5rem;">Material</span></h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.flaticon.com/de/autoren/eucalyp">Eucalyp</a> from <a href="https://www.flaticon.com/de/">www.flaticon.com</a></p>`;
+    expect(isDividerContentRich(html)).toBe(false);
+  });
+
+  it("heading + icon credit + learning objectives (Lernziele) → content-rich", () => {
+    const html = `<div><img src="tor.png" alt="Lernziele" width="40" height="40"></div>
+<h3><span style="font-size: 1.5rem;">Lernziele</span></h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.freepik.com">Freepik</a></p>
+<p>Aus dem Modulhandbuch:</p>
+<p><em>Fach- / Methodenkompetenz:</em></p>
+<p>Formale Grundlagen umsetzen</p>
+<ul><li>Begriffe kennen</li><li>Strukturen kennen</li></ul>`;
+    expect(isDividerContentRich(html)).toBe(true);
+  });
+
+  it("simple heading only (Textmaterialien) → not content-rich", () => {
+    const html = `<h5><img src="x.png"> <b>Textmaterialien</b></h5>`;
+    expect(isDividerContentRich(html)).toBe(false);
+  });
+
+  it("VdZ Einführung with lists → content-rich", () => {
+    const html = `<h5><img src="x.png" width="50" height="50"> <b>Einführung in das digitale Zeitalter</b></h5>
+<p><b>In dieser ersten Lerneinheit lernen Sie:</b></p>
+<ul>
+<li>die wesentlichen begrifflichen Grundlagen</li>
+<li>die Eigenschaften des digitalen Zeitalters sowie</li>
+<li>die Entwicklung und Trends des digitalen Zeitalters.</li>
+</ul>`;
+    expect(isDividerContentRich(html)).toBe(true);
+  });
+
+  it("empty/null → not content-rich", () => {
+    expect(isDividerContentRich("")).toBe(false);
+  });
+
+  it("heading with img inside (Literatur) + credit only → not content-rich", () => {
+    const html = `<h3><img src="buch.png" alt="Bücher" width="40" height="40">Literatur zum Teil I</h3>
+<p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.flaticon.com">mikan933</a></p>`;
+    expect(isDividerContentRich(html)).toBe(false);
   });
 });

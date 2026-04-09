@@ -65,11 +65,11 @@
 
 **Checklist**:
 - [x] All 22 steps implemented
-- [x] All 408 tests passing (34 test files)
+- [x] All 501 tests passing (37 test files)
 - [x] Full CLI with auth, scrape, status, wizard, reset, tui commands
 - [x] Security: keychain integration, credential handling, HTTPS + retry logic
 - [x] Sync: rate limiting, incremental updates, state management
-- [x] Phase 5 improvements: 29 cleanup/enhancement passes completed
+- [x] Phase 5 improvements: 33 cleanup/enhancement passes completed
 
 ---
 
@@ -81,7 +81,7 @@
 4. Run `npx vitest run` — all tests must pass before committing
 5. Run `node scripts/file-checker.js` — must exit 0 before ending the session
 
-**Current status**: 30 cleanup passes completed (2026-03-27 to 2026-04-09). 452/452 tests passing (35 test files). See `docs/FEATURE_TIMELINE.md` and `CLAUDE.md` for full history.
+**Current status**: 33 cleanup passes completed (2026-03-27 to 2026-04-09). 501/501 tests passing (37 test files). See `docs/FEATURE_TIMELINE.md` and `CLAUDE.md` for full history.
 
 ---
 

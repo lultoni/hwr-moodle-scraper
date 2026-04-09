@@ -5,7 +5,7 @@ import { StateManager, removeEmptyDirs } from "../sync/state.js";
 import { ConfigManager } from "../config.js";
 import { KeychainAdapter } from "../auth/keychain.js";
 import { deleteSessionFile } from "../auth/session.js";
-import { collectFiles, groupUserFiles, type UserFileGroup } from "../fs/collect.js";
+import { collectFiles, groupUserFiles, renderTree, type UserFileGroup } from "../fs/collect.js";
 import { selectItem } from "../tui/select.js";
 import type { PromptFn } from "../auth/prompt.js";
 
@@ -16,62 +16,6 @@ export interface ResetOptions {
   dryRun?: boolean;
   moveUserFiles?: boolean;
   promptFn?: PromptFn;
-}
-
-/**
- * Render a sorted list of absolute paths as a tree relative to `rootDir`.
- *
- * Example output (written to stdout, no trailing newline):
- *   Course_A/
- *   ├── Section_1/
- *   │   ├── file.pdf
- *   │   └── file.description.md
- *   └── Section_2/
- *       └── doc.url.txt
- */
-function renderTree(paths: string[], rootDir: string): string {
-  // Build a nested map: segment[] → children map
-  type Tree = Map<string, Tree>;
-
-  const root: Tree = new Map();
-
-  for (const p of paths) {
-    const rel = relative(rootDir, p);
-    const parts = rel.split(sep);
-    let node = root;
-    for (const part of parts) {
-      if (!node.has(part)) node.set(part, new Map());
-      node = node.get(part)!;
-    }
-  }
-
-  const lines: string[] = [];
-
-  function walk(node: Tree, prefix: string): void {
-    const entries = [...node.entries()];
-    entries.forEach(([name, children], idx) => {
-      const isLast = idx === entries.length - 1;
-      const connector = isLast ? "└── " : "├── ";
-      const hasChildren = children.size > 0;
-      lines.push(prefix + connector + name + (hasChildren ? "/" : ""));
-      if (hasChildren) {
-        walk(children, prefix + (isLast ? "    " : "│   "));
-      }
-    });
-  }
-
-  // Top-level entries (no prefix)
-  const topEntries = [...root.entries()];
-  topEntries.forEach(([name, children], idx) => {
-    const isLast = idx === topEntries.length - 1;
-    const hasChildren = children.size > 0;
-    lines.push(name + (hasChildren ? "/" : ""));
-    if (hasChildren) {
-      walk(children, isLast ? "    " : "│   ");
-    }
-  });
-
-  return lines.join("\n");
 }
 
 type MoveTarget = "output-root" | `parent:${string}` | `custom:${string}` | "skip";

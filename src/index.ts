@@ -13,6 +13,7 @@ import { createLogger, LogLevel, type Logger } from "./logger.js";
 import { runScrape } from "./commands/scrape.js";
 import { runAuthSet, runAuthClear, runAuthStatus } from "./commands/auth.js";
 import { runStatus } from "./commands/status.js";
+import { runClean } from "./commands/clean.js";
 import { runReset } from "./commands/reset.js";
 import { runWizard, shouldRunWizard } from "./commands/wizard.js";
 import { runTui } from "./commands/tui.js";
@@ -233,6 +234,35 @@ program
     const outputDir = (await mgr.get("outputDir")) as string;
     try {
       await runStatus({ outputDir, showIssues: opts.issues });
+    } catch (err) {
+      const code = (err as { exitCode?: number }).exitCode ?? EXIT_CODES.ERROR;
+      process.stderr.write(`Error: ${(err as Error).message}\n`);
+      process.exit(code);
+    }
+  });
+
+// --- clean ---
+program
+  .command("clean")
+  .description("Delete or move user-added files from output folder")
+  .option("--move", 'Move files to "User Files/" folder instead of deleting', false)
+  .option("--dry-run", "Show what would happen without acting", false)
+  .option("--force", "Skip confirmation prompt", false)
+  .action(async (opts: { move: boolean; dryRun: boolean; force: boolean }) => {
+    const mgr = new ConfigManager();
+    const outputDir = (await mgr.get("outputDir")) as string;
+    if (!outputDir) {
+      process.stderr.write("Error: outputDir is not configured.\n");
+      process.exit(EXIT_CODES.USAGE_ERROR);
+    }
+    try {
+      await runClean({
+        outputDir,
+        move: opts.move,
+        dryRun: opts.dryRun,
+        force: opts.force,
+        ...(!opts.force ? { promptFn: makePromptFn() } : {}),
+      });
     } catch (err) {
       const code = (err as { exitCode?: number }).exitCode ?? EXIT_CODES.ERROR;
       process.stderr.write(`Error: ${(err as Error).message}\n`);

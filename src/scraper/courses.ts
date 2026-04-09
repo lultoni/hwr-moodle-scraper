@@ -18,6 +18,8 @@ export interface Activity {
   description?: string;
   /** Optional subdirectory inside the section dir (used when folder files collide across folders). */
   subDir?: string;
+  /** True if this label is a visual divider heading that creates a subfolder. Set by applyLabelSubfolders. */
+  isDivider?: boolean;
 }
 
 export interface FolderFile {
