@@ -34,6 +34,7 @@ vi.mock("../../src/sync/state.js", () => ({
   StateManager: vi.fn().mockImplementation((outputDir: string) => ({
     load: mockLoad,
     statePath: `${outputDir}/.moodle-scraper-state.json`,
+    backupPath: `${outputDir}/.moodle-scraper-state.json.bak`,
   })),
   removeEmptyDirs: (...args: unknown[]) => mockRemoveEmptyDirs(...args),
 }));

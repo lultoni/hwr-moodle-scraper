@@ -71,14 +71,22 @@ const INFO_MD_TYPES = new Set([
  * Inaccessible activities are excluded.
  * Labels without description content are also excluded (nothing to save).
  */
+export interface DownloadPlanResult {
+  items: DownloadPlanItem[];
+  /** Activity types that were not in PAGE_MD_TYPES or INFO_MD_TYPES — treated as binary. */
+  unknownTypes: Map<string, string[]>;
+}
+
 export function buildDownloadPlan(
   activities: Activity[],
   courseName: string,
   sectionName: string,
   outputDir: string,
   semesterDir?: string,
-): DownloadPlanItem[] {
+): DownloadPlanResult {
   const items: DownloadPlanItem[] = [];
+  /** modtype → list of activity names with that type */
+  const unknownTypes = new Map<string, string[]>();
 
   for (const activity of activities) {
     if (!activity.isAccessible) continue;
@@ -150,6 +158,12 @@ export function buildDownloadPlan(
           // resource, folder files (already expanded), and unknown types → binary
           destPath = join(fileDir, safeName);
           strategy = "binary";
+          // Track truly unknown types (not resource/folder which are expected binary)
+          if (activity.activityType !== "resource" && activity.activityType !== "folder") {
+            const list = unknownTypes.get(activity.activityType) ?? [];
+            list.push(activity.activityName);
+            unknownTypes.set(activity.activityType, list);
+          }
         }
         break;
     }
@@ -180,7 +194,7 @@ export function buildDownloadPlan(
     }
   }
 
-  return items;
+  return { items, unknownTypes };
 }
 
 /**

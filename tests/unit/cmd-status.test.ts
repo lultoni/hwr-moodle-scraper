@@ -11,6 +11,15 @@ vi.mock("../../src/sync/state.js", () => ({
   StateManager: vi.fn(),
 }));
 
+const mockCollectFiles = vi.fn().mockReturnValue([]);
+vi.mock("../../src/fs/collect.js", async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  return {
+    ...actual,
+    collectFiles: (...args: unknown[]) => mockCollectFiles(...args),
+  };
+});
+
 import { runStatus } from "../../src/commands/status.js";
 import { StateManager } from "../../src/sync/state.js";
 
@@ -161,6 +170,28 @@ describe("STEP-021: status command — richer output", () => {
     expect(output).toContain("file.pdf");
     expect(output).toContain("Orphaned");
 
+    stdoutSpy.mockRestore();
+  });
+
+  it("shows msc clean tip when user-added files are detected", async () => {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue(makeState()),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+
+    // collectFiles returns an extra file that is NOT in state → user-added
+    mockCollectFiles.mockReturnValue([
+      "/tmp/test/Macro/Section/file0.pdf",
+      "/tmp/test/Macro/Section/file1.pdf",
+      "/tmp/test/Macro/Section/my-notes.txt",
+    ]);
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test" });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output).toContain("msc clean");
+    expect(output).toContain("User-added files: 1");
     stdoutSpy.mockRestore();
   });
 

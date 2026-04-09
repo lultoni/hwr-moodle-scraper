@@ -226,9 +226,12 @@ export async function runReset(opts: ResetOptions): Promise<void> {
     removeEmptyDirs(d, outputDir);
   }
 
-  // Delete state file
+  // Delete state file and backup
   if (existsSync(sm.statePath)) {
     unlinkSync(sm.statePath);
+  }
+  if (existsSync(sm.backupPath)) {
+    unlinkSync(sm.backupPath);
   }
 
   // --full: also clear config and credentials

@@ -1,5 +1,5 @@
 // REQ-SYNC-001, REQ-SYNC-002, REQ-SEC-007
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmdirSync, renameSync as fsRenameSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmdirSync, renameSync as fsRenameSync, copyFileSync } from "node:fs";
 import { join, relative, sep, dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { renameSync } from "node:fs";
@@ -51,9 +51,11 @@ export type PartialState = { courses: Record<string, Partial<CourseState>>; gene
 
 export class StateManager {
   readonly statePath: string;
+  readonly backupPath: string;
 
   constructor(outputDir: string) {
     this.statePath = join(outputDir, ".moodle-scraper-state.json");
+    this.backupPath = this.statePath + ".bak";
   }
 
   async load(): Promise<State | null> {
@@ -62,6 +64,17 @@ export class StateManager {
       const raw = readFileSync(this.statePath, "utf8");
       return JSON.parse(raw) as State;
     } catch {
+      // Primary state corrupt — try backup
+      if (existsSync(this.backupPath)) {
+        try {
+          const backupRaw = readFileSync(this.backupPath, "utf8");
+          const backupState = JSON.parse(backupRaw) as State;
+          process.stderr.write("Warning: state file corrupt — restored from backup.\n");
+          return backupState;
+        } catch {
+          // Backup also corrupt
+        }
+      }
       process.stderr.write("Warning: state file corrupt — starting fresh sync.\n");
       return null;
     }
@@ -75,6 +88,10 @@ export class StateManager {
       ...(data.generatedFiles ? { generatedFiles: data.generatedFiles } : {}),
     };
     mkdirSync(join(this.statePath, ".."), { recursive: true });
+    // Back up current state before overwriting (single rolling backup)
+    if (existsSync(this.statePath)) {
+      try { copyFileSync(this.statePath, this.backupPath); } catch { /* best-effort */ }
+    }
     const tmpPath = this.statePath + "." + randomBytes(4).toString("hex") + ".tmp";
     writeFileSync(tmpPath, JSON.stringify(state, null, 2));
     renameSync(tmpPath, this.statePath);

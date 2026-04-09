@@ -20,6 +20,7 @@ export function collectFiles(dir: string): string[] {
   if (!existsSync(dir)) return results;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === ".moodle-scraper-state.json") continue;
+    if (entry.name === ".moodle-scraper-state.json.bak") continue;
     if (entry.name.endsWith(".meta.json")) continue;
     // Normalise to NFC — macOS HFS+/APFS returns NFD filenames from readdir,
     // but the state always stores NFC (paths originate from Moodle HTML).

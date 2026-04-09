@@ -32,6 +32,7 @@ vi.mock("../../src/sync/state.js", () => ({
     load: vi.fn().mockResolvedValue(null),
     save: vi.fn().mockResolvedValue(undefined),
     statePath: "/tmp/test/.moodle-scraper-state.json",
+    backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
   })),
   migrateStatePaths: vi.fn().mockImplementation((state: unknown) => ({ state, changed: false })),
   relocateFiles: vi.fn().mockImplementation((state: unknown) => ({ state, changed: false })),

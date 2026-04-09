@@ -185,6 +185,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   write("");
   if (userFiles.length > 0) {
     write(`User-added files: ${userFiles.length}  (not managed by scraper — safe to keep)`);
+    write(`  Tip: Run \`msc clean\` to remove them, or \`msc clean --move\` to relocate to "User Files/".`);
   }
 
   if (!showIssues) {

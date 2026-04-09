@@ -59,6 +59,41 @@ describe("STEP-018: Retry on transient errors", () => {
   });
 });
 
+describe("STEP-018: Retry jitter", () => {
+  it("retry delay includes jitter (within [baseDelay/2, baseDelay*1.5])", async () => {
+    // Use real timers but spy on setTimeout to capture the delay value
+    const delays: number[] = [];
+    const origSetTimeout = globalThis.setTimeout;
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation((fn: Function, delay?: number) => {
+      if (delay && delay >= 100) delays.push(delay);
+      // Call immediately to avoid hanging
+      fn();
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    });
+
+    let attempts = 0;
+    const operation = vi.fn(async () => {
+      attempts++;
+      if (attempts < 3) throw new Error("fail");
+      return "ok";
+    });
+
+    const result = await withRetry(operation, { maxAttempts: 3, baseDelayMs: 1000 });
+    expect(result).toBe("ok");
+    expect(delays).toHaveLength(2);
+
+    // Attempt 1 retry: baseDelay = 1000 * 2^0 = 1000, jitter range [500, 1500]
+    expect(delays[0]).toBeGreaterThanOrEqual(500);
+    expect(delays[0]).toBeLessThanOrEqual(1500);
+
+    // Attempt 2 retry: baseDelay = 1000 * 2^1 = 2000, jitter range [1000, 3000]
+    expect(delays[1]).toBeGreaterThanOrEqual(1000);
+    expect(delays[1]).toBeLessThanOrEqual(3000);
+
+    setTimeoutSpy.mockRestore();
+  });
+});
+
 describe("STEP-018: HTTP 403 handling", () => {
   // REQ-ERR-003
   it("logs 'Access denied' and does not throw", async () => {

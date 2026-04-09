@@ -19,8 +19,9 @@ import { writeUrlFile } from "../scraper/content-types.js";
 import { filterSidecars, type SidecarItem } from "../scraper/sidecar-filter.js";
 import { createTurndown } from "../scraper/turndown.js";
 import { EXIT_CODES } from "../exit-codes.js";
+import { registerShutdownHandlers } from "../process/shutdown.js";
 import { mkdirSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, relative } from "node:path";
 import { writeFile } from "node:fs/promises";
 
 export interface ScrapeOptions {
@@ -136,6 +137,23 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     if (relocateChanged) logger.info("Moved files to updated folder layout.");
   }
 
+  // Mutable container for partial state — updated during downloads so SIGINT can save progress
+  const generatedFiles: string[] = [];
+  const partialState: { courses: Record<string, CourseState>; generatedFiles: string[] } = {
+    courses: { ...(state.courses as Record<string, CourseState>) },
+    generatedFiles: [...(state.generatedFiles ?? [])],
+  };
+
+  // Register SIGINT/SIGTERM handlers to save partial state + clean up .tmp files
+  const shutdown = registerShutdownHandlers({
+    stateManager,
+    outputDir,
+    getPartialState: () => ({
+      courses: partialState.courses,
+      generatedFiles: [...new Set([...partialState.generatedFiles, ...generatedFiles])],
+    }),
+  });
+
   logger.debug("Fetching content trees…");
 
   // Content trees — fetch in parallel
@@ -166,7 +184,6 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // metadata files, not scraped Moodle resources, and must not appear in msc status
   // as "user files" or be deleted by msc reset.
   // Write course README.md files for courses that have a summary description
-  const generatedFiles: string[] = [];
   // Track README content per course dir for dedup with section summaries
   const readmeContentByDir = new Map<string, string>();
   if (!dryRun) {
@@ -329,6 +346,16 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     }
   }
 
+  // Build set of resourceIds already in state (to distinguish new vs updated in change report)
+  const existingResourceIds = new Set<string>();
+  for (const course of Object.values(state.courses)) {
+    for (const section of Object.values(course.sections ?? {})) {
+      for (const resourceId of Object.keys(section.files ?? {})) {
+        existingResourceIds.add(resourceId);
+      }
+    }
+  }
+
   // Sync plan
   const plan = computeSyncPlan({ state, currentTree: expandedTrees, force, checkFiles, dryRun });
 
@@ -466,6 +493,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   let specialItems: Array<{ item: typeof downloads[0]; destPath: string; strategy: string; label: string; description?: string; activityType?: string; isSidecar: boolean }> = [];
   // Items that are acknowledged but not downloadable (e.g. assign, forum, quiz) — save to state so they're not re-planned
   const acknowledgedItems: Array<typeof downloads[0]> = [];
+  /** modtype → count of activities with that unknown type (for end-of-scrape summary) */
+  const allUnknownTypes = new Map<string, number>();
 
   const totalItems = downloads.length;
 
@@ -499,7 +528,15 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       continue;
     }
 
-    const planItems = buildDownloadPlan([meta.activity], courseName, sectionName, outputDir, semesterDir);
+    const { items: planItems, unknownTypes: sectionUnknownTypes } = buildDownloadPlan([meta.activity], courseName, sectionName, outputDir, semesterDir);
+    // Accumulate unknown types for end-of-scrape summary
+    for (const [modtype, names] of sectionUnknownTypes) {
+      for (const name of names) {
+        logger.debug(`[UNKNOWN-TYPE] modtype="${modtype}" for "${name}" — treated as binary`);
+      }
+      const existing = allUnknownTypes.get(modtype) ?? 0;
+      allUnknownTypes.set(modtype, existing + names.length);
+    }
     if (planItems.length === 0) {
       // Nothing to save (e.g. label with no description) — acknowledge so it's not re-planned
       logger.debug(`[SKIP-TYPE] ${courseName} / ${sectionName} / ${meta.activity.activityName} (${meta.activity.activityType} — nothing to save)`);
@@ -770,6 +807,19 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     process.stdout.write("\n");
   }
 
+  // Build change report entries from completed downloads
+  const changeEntries: Array<{ relativePath: string; isNew: boolean }> = [];
+  for (let i = 0; i < binaryItems.length; i++) {
+    const fp = binaryFinalPaths[i]?.path ?? binaryItems[i]!.downloadItem.destPath;
+    const resourceId = binaryItems[i]!.planItem.resourceId ?? "";
+    if (fp) changeEntries.push({ relativePath: relative(outputDir, fp), isNew: !existingResourceIds.has(resourceId) });
+  }
+  for (const si of specialItems) {
+    if (si.isSidecar) continue; // don't list sidecars in change report
+    const resourceId = si.item.resourceId ?? "";
+    if (si.destPath) changeEntries.push({ relativePath: relative(outputDir, si.destPath), isNew: !existingResourceIds.has(resourceId) });
+  }
+
   const failedMsg = failedCount > 0 ? `, ${failedCount} failed` : "";
   const submissionTotal = specialItemSubmissionPaths.reduce((n, arr) => n + arr.length, 0);
   const imageTotal = specialItemImagePaths.reduce((n, arr) => n + arr.length, 0);
@@ -794,6 +844,34 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     filterParts.push(`${consolidatedShortCount} short description${consolidatedShortCount === 1 ? "" : "s"} consolidated into ${nFiles} _Beschreibungen.md file${nFiles === 1 ? "" : "s"}`);
   }
   if (filterParts.length > 0) logger.info(`  ${filterParts.join(", ")}.`);
+
+  // Change report — show new/updated files this run (skip on --quiet, skip when nothing changed)
+  if (!quiet && changeEntries.length > 0) {
+    const newCount = changeEntries.filter((e) => e.isNew).length;
+    const updatedCount = changeEntries.length - newCount;
+    const parts: string[] = [];
+    if (newCount > 0) parts.push(`${newCount} new`);
+    if (updatedCount > 0) parts.push(`${updatedCount} updated`);
+    logger.info("");
+    logger.info(`Changes this run: ${parts.join(", ")}`);
+    // Sort by path for consistent output, cap at 30 lines to avoid flooding terminal
+    const sorted = changeEntries.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+    const maxLines = 30;
+    const shown = sorted.slice(0, maxLines);
+    for (const entry of shown) {
+      const prefix = entry.isNew ? "  + " : "  ~ ";
+      logger.info(`${prefix}${entry.relativePath}`);
+    }
+    if (sorted.length > maxLines) {
+      logger.info(`  ... and ${sorted.length - maxLines} more`);
+    }
+  }
+
+  // Unknown activity types summary
+  if (!quiet && allUnknownTypes.size > 0) {
+    const totalUnknown = [...allUnknownTypes.values()].reduce((a, b) => a + b, 0);
+    logger.info(`Note: ${totalUnknown} activit${totalUnknown === 1 ? "y" : "ies"} with unrecognised type${allUnknownTypes.size === 1 ? "" : "s"} (${[...allUnknownTypes.keys()].join(", ")}) downloaded as binary. Use --verbose for details.`);
+  }
 
   // One-time hint to enable log file (only after a real download run, only once)
   const logHintShown = (await config.get("logHintShown")) as boolean | undefined;
@@ -874,6 +952,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
     sections[sectionId] = { files };
     updatedCourses[courseIdStr] = { name: courseName, sections };
+    // Keep partial state in sync for SIGINT handler
+    partialState.courses = updatedCourses;
   }
 
   // Mark orphaned resources in state (e.g. resourceId changed due to name sanitisation fix)
@@ -898,6 +978,9 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const existingGeneratedFiles = state.generatedFiles ?? [];
   const mergedGeneratedFiles = [...new Set([...existingGeneratedFiles, ...generatedFiles])];
   await stateManager.save({ courses: updatedCourses, generatedFiles: mergedGeneratedFiles });
+
+  // Deregister shutdown handlers — scrape completed normally
+  shutdown.unregister();
 }
 
 /** Get display metadata for a sync plan item (used for skip/download log messages). */

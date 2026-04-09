@@ -2,7 +2,7 @@
 //
 // Tests for state file creation, update, location, and secret exclusion.
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -199,6 +199,68 @@ describe("migrateStatePaths — state file path migration", () => {
     const { state: migrated } = migrateStatePaths(state, tmpDir, courseShortPaths);
 
     expect(migrated.courses["1"]!.sections["s1"]!.files["res1"]!.localPath).toBe(oldPath);
+  });
+});
+
+describe("State file backup", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "msc-backup-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("creates .bak file on second save", async () => {
+    const sm = new StateManager(tmpDir);
+    await sm.save({ courses: { "1": { name: "First", sections: {} } } });
+    expect(existsSync(sm.backupPath)).toBe(false); // no backup on first save
+
+    await sm.save({ courses: { "1": { name: "Second", sections: {} } } });
+    expect(existsSync(sm.backupPath)).toBe(true);
+
+    // Backup should contain the FIRST save's data
+    const backup = JSON.parse(readFileSync(sm.backupPath, "utf8"));
+    expect(backup.courses["1"].name).toBe("First");
+
+    // Main state should contain the SECOND save's data
+    const main = JSON.parse(readFileSync(sm.statePath, "utf8"));
+    expect(main.courses["1"].name).toBe("Second");
+  });
+
+  it("load() recovers from backup when main state is corrupt", async () => {
+    const sm = new StateManager(tmpDir);
+    await sm.save({ courses: { "1": { name: "Good", sections: {} } } });
+    await sm.save({ courses: { "1": { name: "Updated", sections: {} } } });
+
+    // Corrupt the main state file
+    writeFileSync(sm.statePath, "{{not valid json");
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const loaded = await sm.load();
+    const output = stderrSpy.mock.calls.map((c) => c[0]).join("");
+    stderrSpy.mockRestore();
+
+    expect(loaded).not.toBeNull();
+    expect(loaded!.courses["1"]!.name).toBe("Good"); // recovered from backup
+    expect(output).toContain("restored from backup");
+  });
+
+  it("load() returns null when both main and backup are corrupt", async () => {
+    const sm = new StateManager(tmpDir);
+    await sm.save({ courses: {} });
+    await sm.save({ courses: {} });
+
+    writeFileSync(sm.statePath, "corrupt");
+    writeFileSync(sm.backupPath, "also corrupt");
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const loaded = await sm.load();
+    stderrSpy.mockRestore();
+
+    expect(loaded).toBeNull();
   });
 });
 
