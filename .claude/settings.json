@@ -26,7 +26,7 @@
           },
           {
             "type": "agent",
-            "prompt": "You are the doc-updater agent. Read the file agents/doc-updater.md for your full instructions. Then run `git diff HEAD` and `git status`  to see what changed this session. Follow the doc-updater instructions to check if CLAUDE.md, README.md, docs/WORKFLOW.md, or docs/FEATURE_TIMELINE.md need updating. Only update files that are genuinely stale. If nothing needs updating, output nothing.",
+            "prompt": "You are the doc-updater agent. Read the file agents/doc-updater.md for your full instructions. Then run `git diff HEAD` and `git status` to see what changed this session. Follow the doc-updater instructions to check if CLAUDE.md, README.md, docs/WORKFLOW.md, or docs/FEATURE_TIMELINE.md need updating. Only update files that are genuinely stale. If nothing needs updating, output nothing.",
             "statusMessage": "Updating documentation...",
             "timeout": 60
           }
