@@ -13,7 +13,7 @@ interface AnyConfig {
 }
 
 export interface WizardOptions {
-  keychain: KeychainAdapter;
+  keychain: KeychainAdapter | null;
   config: AnyConfig;
   promptFn: PromptFn;
   httpClient: HttpClient;
@@ -21,8 +21,8 @@ export interface WizardOptions {
   logger?: Logger;
 }
 
-export async function shouldRunWizard(opts: { keychain: KeychainAdapter; config: AnyConfig }): Promise<boolean> {
-  const creds = await opts.keychain.readCredentials();
+export async function shouldRunWizard(opts: { keychain: KeychainAdapter | null; config: AnyConfig }): Promise<boolean> {
+  const creds = opts.keychain ? await opts.keychain.readCredentials() : null;
   if (creds == null) return true; // no credentials → always run wizard
   const outputDir = (await opts.config.get("outputDir")) as string | undefined;
   return !outputDir; // outputDir missing or empty → run wizard to reconfigure
@@ -31,7 +31,7 @@ export async function shouldRunWizard(opts: { keychain: KeychainAdapter; config:
 export async function runWizard(opts: WizardOptions): Promise<void> {
   const { keychain, config, promptFn, httpClient, nonInteractive = false, logger } = opts;
 
-  const creds = await keychain.readCredentials();
+  const creds = keychain ? await keychain.readCredentials() : null;
   const storedOutputDir = ((await config.get("outputDir")) as string | undefined) ?? "";
 
   // Nothing to do if both credentials and outputDir are already set

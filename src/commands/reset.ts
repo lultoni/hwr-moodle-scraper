@@ -3,7 +3,7 @@ import { existsSync, unlinkSync, readdirSync, mkdirSync, renameSync } from "node
 import { relative, dirname, sep, join, basename } from "node:path";
 import { StateManager, removeEmptyDirs } from "../sync/state.js";
 import { ConfigManager } from "../config.js";
-import { KeychainAdapter } from "../auth/keychain.js";
+import { tryCreateKeychain } from "../auth/keychain.js";
 import { deleteSessionFile } from "../auth/session.js";
 import { collectFiles, groupUserFiles, renderTree, type UserFileGroup } from "../fs/collect.js";
 import { selectItem } from "../tui/select.js";
@@ -237,9 +237,9 @@ export async function runReset(opts: ResetOptions): Promise<void> {
   // --full: also clear config and credentials
   if (full) {
     const config = new ConfigManager();
-    const keychain = new KeychainAdapter();
+    const keychain = tryCreateKeychain();
     await config.reset();
-    await keychain.deleteCredentials();
+    if (keychain) await keychain.deleteCredentials();
     await deleteSessionFile();
   }
 

@@ -1,8 +1,23 @@
 // REQ-AUTH-002, REQ-SEC-001, REQ-SEC-004
-import keytar from "keytar";
 import { platform } from "node:os";
 
 const SERVICE = "moodle-scraper";
+
+// Lazy-loaded keytar module (optional dependency — may not be installed on non-macOS)
+type KeytarModule = typeof import("keytar");
+let _keytar: KeytarModule | undefined;
+
+async function getKeytar(): Promise<KeytarModule> {
+  if (_keytar) return _keytar;
+  try {
+    _keytar = (await import("keytar")).default as unknown as KeytarModule;
+    return _keytar;
+  } catch {
+    throw new Error(
+      "keytar is not available. Install it with: npm install keytar"
+    );
+  }
+}
 
 export class PlatformNotSupportedError extends Error {
   constructor(plat: string) {
@@ -38,7 +53,7 @@ export class KeychainAdapter {
   async storeCredentials(username: string, password: string): Promise<void> {
     return this.assertedOp(async () => {
       try {
-        await keytar.setPassword(SERVICE, username, password);
+        await (await getKeytar()).setPassword(SERVICE, username, password);
         this.storedUsername = username;
       } catch (err) {
         throw new Error(
@@ -51,14 +66,15 @@ export class KeychainAdapter {
   async readCredentials(): Promise<Credentials | null> {
     return this.assertedOp(async () => {
       try {
+        const kt = await getKeytar();
         // If we have a username in memory, do a direct lookup
         if (this.storedUsername) {
-          const password = await keytar.getPassword(SERVICE, this.storedUsername);
+          const password = await kt.getPassword(SERVICE, this.storedUsername);
           if (password === null) return null;
           return { username: this.storedUsername, password };
         }
         // Otherwise discover stored accounts for this service
-        const found = await keytar.findCredentials(SERVICE);
+        const found = await kt.findCredentials(SERVICE);
         if (found.length === 0) return null;
         const { account, password } = found[0]!;
         this.storedUsername = account;
@@ -74,7 +90,7 @@ export class KeychainAdapter {
   async deleteCredentials(): Promise<void> {
     return this.assertedOp(async () => {
       if (this.storedUsername) {
-        await keytar.deletePassword(SERVICE, this.storedUsername);
+        await (await getKeytar()).deletePassword(SERVICE, this.storedUsername);
         this.storedUsername = null;
       }
     });
@@ -83,4 +99,13 @@ export class KeychainAdapter {
   setStoredUsername(username: string): void {
     this.storedUsername = username;
   }
+}
+
+/**
+ * Attempt to create a KeychainAdapter. Returns null on non-macOS platforms,
+ * allowing callers to degrade gracefully to prompt-every-time mode.
+ */
+export function tryCreateKeychain(): KeychainAdapter | null {
+  if (platform() !== "darwin") return null;
+  return new KeychainAdapter();
 }

@@ -7,7 +7,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXIT_CODES } from "./exit-codes.js";
 import { ConfigManager } from "./config.js";
-import { KeychainAdapter } from "./auth/keychain.js";
+import { tryCreateKeychain } from "./auth/keychain.js";
 import { createHttpClient } from "./http/client.js";
 import { createLogger, LogLevel, type Logger } from "./logger.js";
 import { runScrape } from "./commands/scrape.js";
@@ -90,7 +90,7 @@ program
   }) => {
     const globalOpts = program.opts<{ debug: boolean }>();
     const config = new ConfigManager();
-    const keychain = new KeychainAdapter();
+    const keychain = tryCreateKeychain();
     const httpClient = createHttpClient();
     // Password will be added to redact list once collected — logger created first without it
     const logger = makeLogger(globalOpts.debug);
@@ -101,6 +101,7 @@ program
     }
 
     const outputDir = opts.outputDir ?? (await config.get("outputDir")) as string;
+    const promptFn = makePromptFn();
     const scrapeOpts: Parameters<typeof runScrape>[0] = {
       outputDir,
       dryRun: opts.dryRun,
@@ -111,6 +112,7 @@ program
       quiet: opts.quiet,
       verbose: opts.verbose,
       metadata: opts.metadata,
+      ...(!opts.nonInteractive ? { promptFn } : {}),
       ...withLogger(logger),
     };
     if (opts.courses) scrapeOpts.courses = opts.courses.split(",").map(Number);
@@ -133,7 +135,7 @@ auth
   .option("--non-interactive", "Fail instead of prompting", false)
   .action(async (opts: { nonInteractive: boolean }) => {
     const globalOpts = program.opts<{ debug: boolean }>();
-    const keychain = new KeychainAdapter();
+    const keychain = tryCreateKeychain();
     const httpClient = createHttpClient();
     const logger = makeLogger(globalOpts.debug);
     try {
@@ -150,7 +152,7 @@ auth
   .description("Remove stored credentials and session")
   .option("--force", "Skip confirmation prompt", false)
   .action(async (opts: { force: boolean }) => {
-    const keychain = new KeychainAdapter();
+    const keychain = tryCreateKeychain();
     const clearOpts: Parameters<typeof runAuthClear>[0] = { keychain, force: opts.force };
     if (!opts.force) clearOpts.promptFn = makePromptFn();
     try {
@@ -166,7 +168,7 @@ auth
   .command("status")
   .description("Check if credentials and session are valid")
   .action(async () => {
-    const keychain = new KeychainAdapter();
+    const keychain = tryCreateKeychain();
     const httpClient = createHttpClient();
     try {
       await runAuthStatus({ keychain, httpClient });

@@ -24,13 +24,17 @@ afterEach(() => {
   mockAgent.close();
 });
 
-vi.mock("../../src/auth/keychain.js", () => ({
-  KeychainAdapter: vi.fn().mockImplementation(() => ({
+vi.mock("../../src/auth/keychain.js", () => {
+  const mockKeychain = {
     readCredentials: vi.fn().mockResolvedValue({ username: "alice", password: "pass" }),
     storeCredentials: vi.fn(),
     deleteCredentials: vi.fn(),
-  })),
-}));
+  };
+  return {
+    KeychainAdapter: vi.fn().mockImplementation(() => mockKeychain),
+    tryCreateKeychain: vi.fn(() => mockKeychain),
+  };
+});
 
 const BASE = "https://moodle.example.com";
 

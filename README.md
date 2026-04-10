@@ -1,264 +1,154 @@
 # HWR Moodle Scraper
 
-> Download all content from HWR Berlin's Moodle LMS into a structured local folder for offline study.
+> Download all your Moodle course materials into a local folder — organized by semester, ready for offline study.
 
-First run pulls everything; subsequent runs are incremental (only new or changed files).
-
----
-
-## Quick Start
-
-| Scenario | Command |
-|----------|---------|
-| First time setup + download everything | `msc scrape` |
-| Download new / changed files only | `msc scrape` |
-| Re-download everything from scratch | `msc scrape --force` |
-| Re-download only files missing from disk | `msc scrape --check-files` |
-| See what would be downloaded (no files written) | `msc scrape --dry-run` |
-| Scrape specific courses only | `msc scrape --courses 12345,67890` |
-| Override low-disk-space warning | `msc scrape --skip-disk-check` |
-| Delete scraped files, keep personal files | `msc reset` |
-| Full wipe (files + config + credentials) | `msc reset --full` |
-| See what would be deleted (no files removed) | `msc reset --dry-run` |
-| See sync summary and per-course breakdown | `msc status` |
-| Find missing or orphaned files | `msc status --issues` |
-| Delete user-added files (stale orphans) | `msc clean` |
-| Move user-added files to "User Files/" instead | `msc clean --move` |
-| Preview what clean would do | `msc clean --dry-run` |
-| Change output folder | `msc config set outputDir ~/Documents/Moodle` |
-| Enable a log file | `msc config set logFile ~/moodle-scraper.log` |
-| See all config values | `msc config list` |
-
-> **Your output folder is yours** — feel free to add your own notes, highlights, and files
-> alongside the downloaded content. The scraper only manages files it downloaded and will
-> never delete your personal additions. `msc status` shows how many user-added files you have.
+- Study on the train, in the library, or anywhere without WiFi
+- Everything sorted into `Semester_1/`, `Semester_2/`, etc. — no more clicking through Moodle
+- Run it again anytime — it only downloads new or changed files
 
 ---
 
-## Requirements
+## What You Need
 
-| Requirement | Notes |
-|-------------|-------|
-| macOS | Required — credentials are stored in the native macOS Keychain via `keytar` |
-| Node.js ≥ 20 | `node --version` to check |
-| Xcode Command Line Tools | Needed to compile `keytar`'s native binding: `xcode-select --install` |
-| HWR Berlin Moodle account | Targets `moodle.hwr-berlin.de` specifically |
+| | |
+|---|---|
+| **macOS, Linux, or Windows** | macOS recommended (credentials saved in Keychain). On Linux/Windows, you'll be asked for your password each run |
+| **Node.js 20 or newer** | Check with `node --version` in Terminal. Download from [nodejs.org](https://nodejs.org) if needed |
+| **HWR Berlin Moodle account** | Your normal HWR login — same as for `moodle.hwr-berlin.de` |
+
+> On macOS, the first time you run `npm install` (next section), macOS may ask you to install "Command Line Tools". Click **Install** when prompted — this is normal and only happens once.
 
 ---
 
 ## Installation
 
+Open Terminal and run these commands one by one:
+
 ```bash
-# 1. Install dependencies (compiles native keytar binding)
+# 1. Download the project (or unzip it if you got it as a .zip)
+git clone <repo-url>
+cd hwr-moodle-scraper
+
+# 2. Install dependencies
 npm install
 
-# 2. Build TypeScript → dist/
+# 3. Build the project
 npm run build
 
-# 3. Link the CLI globally
+# 4. Make the "msc" command available everywhere
 npm link
 ```
 
-After `npm link`, two commands are available:
-
-| Command | Description |
-|---------|-------------|
-| `msc` | Short alias — use this for everyday use |
-| `moodle-scraper` | Full name — same as `msc` |
-
-> **Note:** If `msc` is already taken by another globally installed tool, `npm link` will silently overwrite it. To check first: `which msc`. If it's taken, you can still use the full `moodle-scraper` command which is less likely to conflict.
+After this, you can use `msc` from anywhere in Terminal:
 
 ```bash
-msc --version   # quick check
+msc --version   # should print a version number
 ```
+
+> If `msc` doesn't work, try closing and reopening Terminal, or use the full name `moodle-scraper` instead.
 
 ---
 
-## Usage
-
-### Commands
-
-All commands are available via the short alias `msc` (or the full `moodle-scraper`):
+## First Run
 
 ```bash
-msc scrape                       Download / sync Moodle content to local folder
-msc auth set                     Store credentials in macOS Keychain
-msc auth clear                   Remove stored credentials
-msc auth status                  Check if credentials and session are valid
-msc config get/set/list          Get, set, or list configuration
-msc config reset                 Reset configuration to defaults
-msc status [--issues]            Show last sync summary (with optional issue details)
-msc clean [--move] [--dry-run]   Delete or move user-added files from output folder
-msc --help                       Full help
-```
-
-### Key flags (scrape)
-
-```
---dry-run       Show what would be downloaded without writing files
---check-files   Re-download any files missing from disk (useful if files deleted locally)
---force         Re-download everything, ignoring cached state
---quiet         Suppress all output except errors
---verbose       Debug-level output
---output <dir>  Override output directory (default: ~/moodle-scraper-output)
-```
-
-### First run
-
-```bash
-# On first run the setup wizard prompts for output directory and Moodle credentials.
-# Credentials are stored in macOS Keychain — never written to disk in plaintext.
 msc scrape
 ```
 
+On the first run, a setup wizard asks you two things:
+1. **Where to save files** — pick any folder (default: `~/moodle-scraper-output`)
+2. **Your Moodle login** — username and password, stored securely in your Mac's Keychain (never saved as a file)
+
+macOS will show a Keychain permission dialog — click **Always Allow** so it doesn't ask again.
+
+The first download takes roughly **10-20 minutes** and uses about **2-3 GB** of disk space (depending on how many courses you're enrolled in - this is from a 4th semester perspective). After that, re-running `msc scrape` only takes a few minutes since it skips files you already have.
+
 ---
 
-## Development
+## Everyday Use
 
-### Run tests
+| What you want to do | Command |
+|---|---|
+| Download new / changed files | `msc scrape` |
+| Re-download everything from scratch | `msc scrape --force` |
+| See what would be downloaded (without actually downloading) | `msc scrape --dry-run` |
+| See a summary of what you have | `msc status` |
+| Delete all downloaded files and start fresh | `msc reset` |
+| Delete leftover files from old folder structures | `msc clean` |
+| Move leftover files to a "User Files" folder instead | `msc clean --move` |
+| Change the output folder | `msc config set outputDir ~/Documents/Moodle` |
+| Update your Moodle password | `msc auth set` |
+| See all available commands | `msc --help` |
 
-```bash
-npm test                  # run all tests once
-npm run test:watch        # watch mode
-npm run test:coverage     # with coverage report
-```
+---
 
-All 512 tests pass across 38 test files (Phase 5: 34 cleanup/improvement passes, including embedded image download from pluginfile.php URLs, sidecar batch content deduplication, orphan marking for renamed resources, scrape/reset count reconciliation with categorized breakdown, &nbsp; filename sanitisation, empty section description filtering, smart folder subfolders with _Ordnorbeschreibung.md, YouTube extraction enhancements with `data-embed-frame` pattern, onetopic sectionId collision fixes, Pass 31 label subfolder grouping refinements with sidecar deduplication and headingless table conversion, Pass 32 icon-heading subfolder detection for divider labels, Pass 33 content-rich divider preservation as _SubfolderName.md, and Pass 34 feature gap cleanup: change report after scrape, graceful Ctrl+C with partial state save, state file backup with auto-recovery, `msc clean` tip in status, unknown activity type logging, retry jitter).
+## Your Files Are Safe
 
-### Type-check
+Feel free to add your own notes, highlights, or files alongside the downloaded content. The scraper **only manages files it downloaded** and will never delete your personal additions.
 
-```bash
-npm run typecheck
-```
+`msc status` shows how many personal files you have. If you want to clean up old leftover files (e.g. after the scraper reorganized folders), use `msc clean` — it only touches files that aren't tracked by the scraper.
 
-### Build
+---
 
-```bash
-npm run build             # compiles src/ → dist/ via tsup
-```
+## Output Folder
 
-### Project structure
-
-```
-src/
-├── index.ts              # CLI entry point (commander)
-├── config.ts             # ConfigManager (~/.config/moodle-scraper/)
-├── logger.ts             # Logger with credential redaction
-├── exit-codes.ts         # Exit code constants (0–5)
-├── auth/                 # Keychain, session validation, interactive prompt
-├── commands/             # scrape, auth, status, clean, wizard
-├── fs/                   # Sanitise filenames, atomic writes, sidecar metadata
-├── http/                 # HTTPS-only client, rate limiter, retry
-├── scraper/              # Course list, content tree parsing, downloader, dispatch
-└── sync/                 # State file, incremental sync plan
-tests/
-├── unit/                 # 35 test files (including Phase 5 fixes and regression tests)
-└── integration/          # 2 full-scrape and incremental-sync end-to-end tests
-docs/
-├── REQUIREMENTS.md       # 75 gap-free requirements
-├── FEATURE_TIMELINE.md   # 22-step implementation plan with traceability
-├── TECH_STACK.md         # Technology decisions and rationale
-└── WORKFLOW.md           # Phased development process
-```
-
-### Output folder structure
-
-Downloaded content is organized by semester and course:
+Your files are organized by semester and course:
 
 ```
 ~/moodle-scraper-output/
 ├── Semester_1/
-│   ├── Betriebswirtschaftliche_Grundlagen/
-│   │   └── <section_name>/
-│   │       └── <file>
-│   └── Finanzbuchführung/
-│       └── <section_name>/
-│           └── <file>
+│   ├── Betriebswirtschaftliche Grundlagen/
+│   │   ├── Einführung/
+│   │   │   ├── Vorlesung_1.pdf
+│   │   │   └── Übung_1.pdf
+│   │   └── Marketing/
+│   │       └── Fallstudie.pdf
+│   ├── Finanzbuchführung/
+│   └── Analysis/
 ├── Semester_2/
-│   └── Rechnersysteme/
-│       └── <section_name>/
-│           └── <file>
-├── Schluesselkompetenzen/
-│   ├── Wissenschaftliches_Arbeiten_I/
-│   └── Digitale_Kompetenzen_-_Betriebssystempraxis/
+│   ├── Projektmanagement/
+│   ├── Rechnersysteme/
+│   └── Netzwerke/
+├── Semester_3/
+├── Semester_4/
 └── Sonstiges/
-    └── <other_courses>/
+    ├── Bibliothek benutzen/
+    └── ...
 ```
 
-State and metadata:
-- `.moodle-scraper-state.json` — sync state (incrementally updated)
-- `<filename>.meta.json` — metadata sidecar (only if `--metadata` flag passed)
-
----
-
-## Security
-
-- **HTTPS only** — `http://` URLs are rejected before any network call
-- **Keychain storage** — credentials stored in macOS Keychain, never in config files or logs
-- **Credential redaction** — all log output is scanned and secrets replaced with `[REDACTED]`
-- **Atomic writes** — files written to `.tmp` first, then renamed to prevent partial downloads
-
----
-
-## Reset
-
-| Command | What it does |
-|---------|-------------|
-| `msc reset` | Deletes all scraped files and clears the sync state. Config and credentials are kept — next `msc scrape` re-downloads everything. |
-| `msc reset --full` | Same as above, plus clears config settings and stored credentials. Next run acts exactly like a first-time install. |
-| `msc reset --dry-run` | Shows what would be deleted without deleting anything. |
-| `msc reset --force` | Skips the confirmation prompt (useful for scripting). |
-
-> **Safe for personal files:** `msc reset` only deletes files it originally downloaded.
-> Any files you added to the output folder yourself are never touched.
+- **Semester_1 through Semester_6** — courses mapped by their module code
+- **Sonstiges** — courses that couldn't be mapped to a semester (library, exchange programs, etc.)
+- Inside each course: one folder per Moodle section, containing PDFs, slides, Markdown notes, etc.
 
 ---
 
 ## Troubleshooting
 
-### `keytar` fails to compile (`Error: ENOENT: no such file or directory, spawn xcodebuild`)
-Xcode Command Line Tools are required to compile `keytar`'s native macOS binding.
-```bash
-xcode-select --install
-npm install
-```
+**macOS asks to install "Command Line Tools"**
+This is needed once for the initial setup. Click Install and wait for it to finish, then run `npm install` again.
 
-### "No courses found"
-The `courseSearch` config key must be set to a keyword that matches your course names on Moodle.
-```bash
-msc config set courseSearch "WI"
-```
+**"No courses found"**
+The scraper searches your Moodle dashboard for courses. If none are found, make sure you're enrolled in at least one course on `moodle.hwr-berlin.de`.
 
-### "0 files to download" on every run
-All files are already up to date according to the sync state. To verify:
-- `msc status` — shows last sync summary
-- `msc scrape --check-files` — re-downloads any files that are missing from disk
-- `msc scrape --force` — re-downloads everything regardless of state
+**"0 files to download" on every run**
+Everything is already up to date. To double-check:
+- `msc status` — shows what you have
+- `msc scrape --check-files` — re-downloads files that got deleted from disk
+- `msc scrape --force` — re-downloads everything regardless
 
-### macOS Keychain dialog appears on first run
-This is expected. macOS asks for permission the first time `msc` accesses the Keychain.
-Select **Always Allow** to prevent the dialog on subsequent runs.
+**Keychain dialog keeps appearing**
+Select **Always Allow** (not just "Allow") when macOS shows the Keychain prompt.
 
-### Session expires during a long scrape
-The scraper automatically re-authenticates using stored Keychain credentials. If re-auth fails after 3 attempts, run `msc auth set` to refresh your credentials.
+**Session expires during a long download**
+The scraper automatically re-authenticates. If it fails repeatedly, update your password with `msc auth set`.
 
 ---
 
-## Exit codes
+## For Developers
 
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | General error |
-| 2 | Usage / bad arguments |
-| 3 | Authentication failure |
-| 4 | Network error |
-| 5 | Filesystem error |
+```bash
+npm test          # run all tests
+npm run build     # compile TypeScript → dist/
+```
 
----
-
-## Tech stack
-
-Node.js 20 LTS · TypeScript 5 (strict) · `keytar` · `undici` · `commander` · `p-limit` · `turndown` · `vitest`
-
-See [`docs/TECH_STACK.md`](docs/TECH_STACK.md) for full decisions and rationale.
+See `docs/REQUIREMENTS.md`, `docs/FEATURE_TIMELINE.md`, and `docs/WORKFLOW.md` for architecture and development process details.

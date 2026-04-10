@@ -59,10 +59,12 @@ vi.mock("../../src/config.js", () => ({
 
 // --- KeychainAdapter mock ---
 const mockDeleteCredentials = vi.fn().mockResolvedValue(undefined);
+const mockKeychain = {
+  deleteCredentials: mockDeleteCredentials,
+};
 vi.mock("../../src/auth/keychain.js", () => ({
-  KeychainAdapter: vi.fn().mockImplementation(() => ({
-    deleteCredentials: mockDeleteCredentials,
-  })),
+  KeychainAdapter: vi.fn().mockImplementation(() => mockKeychain),
+  tryCreateKeychain: vi.fn(() => mockKeychain),
 }));
 
 // --- deleteSessionFile mock ---

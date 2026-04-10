@@ -26,7 +26,7 @@ export async function deleteSessionFile(): Promise<void> {
 
 export interface SessionOptions {
   httpClient: HttpClient;
-  keychain: KeychainAdapter;
+  keychain: KeychainAdapter | null;
   baseUrl?: string;
   maxRetries?: number;
   interactivePromptFallback?: () => Promise<void>;
@@ -105,7 +105,7 @@ export async function validateOrRefreshSession(opts: SessionOptions): Promise<st
   if (!response.url.includes("/login/")) return response.effectiveCookies || extractCookies(response.headers); // session valid
 
   // Session expired — try Keychain credentials
-  const creds = await keychain.readCredentials();
+  const creds = keychain ? await keychain.readCredentials() : null;
   if (!creds) {
     if (interactivePromptFallback) {
       await interactivePromptFallback();

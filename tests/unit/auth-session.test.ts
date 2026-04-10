@@ -5,13 +5,17 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../../src/auth/keychain.js", () => ({
-  KeychainAdapter: vi.fn().mockImplementation(() => ({
+vi.mock("../../src/auth/keychain.js", () => {
+  const mockKeychain = {
     readCredentials: vi.fn(),
     storeCredentials: vi.fn(),
     deleteCredentials: vi.fn(),
-  })),
-}));
+  };
+  return {
+    KeychainAdapter: vi.fn().mockImplementation(() => mockKeychain),
+    tryCreateKeychain: vi.fn(() => mockKeychain),
+  };
+});
 
 import { validateOrRefreshSession } from "../../src/auth/session.js";
 import { KeychainAdapter } from "../../src/auth/keychain.js";

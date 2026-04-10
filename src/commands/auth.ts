@@ -7,13 +7,17 @@ import type { HttpClient } from "../http/client.js";
 import type { Logger } from "../logger.js";
 
 export interface AuthClearOptions {
-  keychain: KeychainAdapter;
+  keychain: KeychainAdapter | null;
   force?: boolean;
   promptFn?: PromptFn;
 }
 
 export async function runAuthClear(opts: AuthClearOptions): Promise<void> {
   const { keychain, force = false, promptFn } = opts;
+  if (!keychain) {
+    process.stdout.write("No credential storage available on this platform.\n");
+    return;
+  }
   const creds = await keychain.readCredentials();
   if (!creds) {
     process.stdout.write("No credentials stored.\n");
@@ -29,13 +33,17 @@ export async function runAuthClear(opts: AuthClearOptions): Promise<void> {
 }
 
 export interface AuthStatusOptions {
-  keychain: KeychainAdapter;
+  keychain: KeychainAdapter | null;
   httpClient?: HttpClient;
   baseUrl?: string;
 }
 
 export async function runAuthStatus(opts: AuthStatusOptions): Promise<void> {
   const { keychain, httpClient, baseUrl } = opts;
+  if (!keychain) {
+    process.stdout.write("Credential storage: not available (non-macOS platform)\n");
+    return;
+  }
   const creds = await keychain.readCredentials();
   if (!creds) {
     process.stdout.write("Credentials: not stored\n");
@@ -53,7 +61,7 @@ export async function runAuthStatus(opts: AuthStatusOptions): Promise<void> {
 }
 
 export interface AuthSetOptions {
-  keychain: KeychainAdapter;
+  keychain: KeychainAdapter | null;
   promptFn: PromptFn;
   nonInteractive?: boolean;
   httpClient?: HttpClient;
@@ -63,7 +71,10 @@ export interface AuthSetOptions {
 
 export async function runAuthSet(opts: AuthSetOptions): Promise<void> {
   const { keychain, promptFn, nonInteractive = false, httpClient, baseUrl, logger } = opts;
-  const existing = await keychain.readCredentials();
+  const existing = keychain ? await keychain.readCredentials() : null;
+  if (!keychain) {
+    process.stdout.write("Note: credentials will not be saved (macOS Keychain not available).\n");
+  }
   if (existing) {
     if (nonInteractive) {
       throw Object.assign(

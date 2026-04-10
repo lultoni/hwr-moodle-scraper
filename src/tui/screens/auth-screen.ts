@@ -3,7 +3,7 @@
  * Shows auth status and allows set/clear operations.
  */
 
-import { KeychainAdapter } from "../../auth/keychain.js";
+import { tryCreateKeychain } from "../../auth/keychain.js";
 import { runAuthSet, runAuthClear, runAuthStatus } from "../../commands/auth.js";
 import { createHttpClient } from "../../http/client.js";
 import { selectItem } from "../select.js";
@@ -14,7 +14,7 @@ export async function authScreen(promptFn: PromptFn): Promise<void> {
   process.stdout.write("\u001b[2J\u001b[H");
   process.stdout.write("─── Auth ───\n\n");
 
-  const keychain = new KeychainAdapter();
+  const keychain = tryCreateKeychain();
   const httpClient = createHttpClient();
   await runAuthStatus({ keychain, httpClient });
 

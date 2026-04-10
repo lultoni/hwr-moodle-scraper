@@ -9,7 +9,7 @@
   },
   "scripts": {
     "prebuild": "vitest run",
-    "build": "tsup src/index.ts --format esm --dts",
+    "build": "tsup src/index.ts --format esm --dts --external keytar",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -19,11 +19,13 @@
     "cli-progress": "^3.12.0",
     "commander": "^12.1.0",
     "conf": "^13.0.1",
-    "keytar": "^7.9.0",
     "p-limit": "^6.1.0",
     "turndown": "^7.2.0",
     "turndown-plugin-gfm": "^1.0.2",
     "undici": "^6.19.2"
+  },
+  "optionalDependencies": {
+    "keytar": "^7.9.0"
   },
   "devDependencies": {
     "@types/cli-progress": "^3.11.6",

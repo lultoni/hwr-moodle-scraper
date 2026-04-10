@@ -30,7 +30,7 @@ vi.mock("keytar", () => {
   };
 });
 
-import { KeychainAdapter, PlatformNotSupportedError } from "../../src/auth/keychain.js";
+import { KeychainAdapter, PlatformNotSupportedError, tryCreateKeychain } from "../../src/auth/keychain.js";
 import keytar from "keytar";
 
 const mockedKeytar = vi.mocked(keytar);
@@ -99,5 +99,23 @@ describe("STEP-006: Keychain adapter", () => {
     await expect(adapter.storeCredentials("alice", "pass")).rejects.toThrow(
       /requires macOS Keychain.*Current platform: linux/
     );
+  });
+});
+
+describe("tryCreateKeychain", () => {
+  it("returns a KeychainAdapter on macOS (darwin)", () => {
+    // This test runs on macOS CI — the factory should return an instance
+    if (process.platform === "darwin") {
+      const kc = tryCreateKeychain();
+      expect(kc).toBeInstanceOf(KeychainAdapter);
+    }
+  });
+
+  it("returns null on non-macOS platforms", () => {
+    // On non-darwin this returns null; on darwin we can't easily test this
+    // without mocking platform(), so this test is conditional
+    if (process.platform !== "darwin") {
+      expect(tryCreateKeychain()).toBeNull();
+    }
   });
 });

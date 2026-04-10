@@ -1,12 +1,13 @@
 // REQ-CLI-002, REQ-CLI-008, REQ-CLI-009, REQ-CLI-010
 import { validateOrRefreshSession } from "../auth/session.js";
+import { promptAndAuthenticate, type PromptFn } from "../auth/prompt.js";
 import { fetchCourseList, fetchEnrolledCourses, fetchContentTree, fetchFolderFiles, type Course, type ContentTree, type Activity, type Section } from "../scraper/courses.js";
 import { buildDownloadPlan, applyLabelSubfolders } from "../scraper/dispatch.js";
 import { buildCourseShortPaths } from "../scraper/course-naming.js";
 import { getResourceId } from "../scraper/resource-id.js";
 import { computeSyncPlan, SyncAction } from "../sync/incremental.js";
 import { StateManager, migrateStatePaths, relocateFiles, type CourseState, type State } from "../sync/state.js";
-import { KeychainAdapter } from "../auth/keychain.js";
+import { tryCreateKeychain } from "../auth/keychain.js";
 import { createHttpClient } from "../http/client.js";
 import { createLogger, LogLevel, type Logger } from "../logger.js";
 import { ConfigManager } from "../config.js";
@@ -38,6 +39,8 @@ export interface ScrapeOptions {
   verbose?: boolean;
   courses?: number[];
   metadata?: boolean;
+  /** Prompt function for interactive credential entry (used as fallback when keychain unavailable). */
+  promptFn?: PromptFn;
   logger?: Logger;
 }
 
@@ -67,14 +70,25 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const logger = opts.logger ?? createLogger({ level, redact: [], logFile: logFileCfg ?? null });
 
   const httpClient = createHttpClient();
-  const keychain = new KeychainAdapter();
+  const keychain = tryCreateKeychain();
   const stateManager = new StateManager(outputDir);
+
+  // On non-macOS, inform the user that credentials won't be stored
+  if (!keychain && !quiet) {
+    logger.info("Note: macOS Keychain not available — you'll be asked for credentials each run.");
+  }
 
   // Auth — returns the session cookie for use in subsequent requests
   const sessionCookies = await validateOrRefreshSession({
     httpClient,
     keychain,
     baseUrl,
+    // When keychain is unavailable (non-macOS), provide an interactive fallback
+    // so the user can enter credentials instead of getting an auth error.
+    ...(opts.promptFn ? {
+      interactivePromptFallback: () =>
+        promptAndAuthenticate({ promptFn: opts.promptFn!, httpClient, keychain, baseUrl, ...(opts.logger ? { logger: opts.logger } : {}) }),
+    } : {}),
     ...(opts.logger ? { logger: opts.logger } : {}),
   });
 

@@ -8,13 +8,17 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../../src/auth/keychain.js", () => ({
-  KeychainAdapter: vi.fn().mockImplementation(() => ({
+vi.mock("../../src/auth/keychain.js", () => {
+  const mockKeychain = {
     storeCredentials: vi.fn(),
     readCredentials: vi.fn().mockResolvedValue(null),
     deleteCredentials: vi.fn(),
-  })),
-}));
+  };
+  return {
+    KeychainAdapter: vi.fn().mockImplementation(() => mockKeychain),
+    tryCreateKeychain: vi.fn(() => mockKeychain),
+  };
+});
 
 vi.mock("../../src/http/client.js", () => ({
   createHttpClient: vi.fn(),

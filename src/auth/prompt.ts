@@ -21,7 +21,7 @@ export interface PromptFn {
 export interface PromptAuthOptions {
   promptFn: PromptFn;
   httpClient: HttpClient;
-  keychain?: KeychainAdapter;
+  keychain?: KeychainAdapter | null;
   baseUrl?: string;
   logger?: Logger;
 }
