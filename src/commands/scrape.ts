@@ -374,7 +374,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const plan = computeSyncPlan({ state, currentTree: expandedTrees, force, checkFiles, dryRun });
 
   // Promote SKIP → DOWNLOAD for entries that need re-processing:
-  //   (a) info-md types (assign, feedback, etc.) — contain live personal data; always re-fetch
+  //   (a) info-md types (assign, feedback, etc.) — contain live personal data; re-fetch if >24 h old
   //   (b) md/url-strategy types whose localPath lacks the expected extension (legacy mis-classification)
   //   (c) binary items whose localPath has no recognised file extension (ENAMETOOLONG/BUG-C legacy)
   const INFO_MD_ACTIVITY_TYPES = new Set(["assign","feedback","choice","vimp","hvp","h5pactivity","scorm","flashcard","survey","chat","lti","imscp","grouptool","bigbluebuttonbn","customcert","etherpadlite"]);
@@ -396,17 +396,23 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       if (activityType) break;
     }
     if (!activityType) continue;
-    // Get existing localPath from state
-    const fileState = state.courses[courseIdStr]?.sections;
+    // Get existing localPath and lastModified from state
+    const courseSections = state.courses[courseIdStr]?.sections;
     let existingPath: string | undefined;
-    for (const section of Object.values(fileState ?? {})) {
+    let existingLastModified: string | undefined;
+    for (const section of Object.values(courseSections ?? {})) {
       const f = section.files?.[item.resourceId];
-      if (f) { existingPath = f.localPath; break; }
+      if (f) { existingPath = f.localPath; existingLastModified = f.lastModified; break; }
     }
     const isInfoMd = INFO_MD_ACTIVITY_TYPES.has(activityType);
     const shouldBeMd = isInfoMd || PAGE_MD_ACTIVITY_TYPES.has(activityType) || activityType === "url";
-    // (a) info-md: always re-fetch (live personal data)
-    if (isInfoMd) { item.action = SyncAction.DOWNLOAD; continue; }
+    // (a) info-md: re-fetch if older than 24 h (live personal data like grades/feedback)
+    if (isInfoMd) {
+      const staleMs = 24 * 60 * 60 * 1000;
+      const age = existingLastModified ? Date.now() - new Date(existingLastModified).getTime() : Infinity;
+      if (age >= staleMs) { item.action = SyncAction.DOWNLOAD; }
+      continue;
+    }
     // (b) md/url types with wrong extension in state
     if (shouldBeMd && existingPath && !existingPath.endsWith(".md") && !existingPath.endsWith(".url.txt")) {
       item.action = SyncAction.DOWNLOAD; continue;

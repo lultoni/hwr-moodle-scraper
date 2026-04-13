@@ -36,7 +36,7 @@ npm install
 npm run build
 
 # 4. Make the "msc" command available everywhere
-npm link
+sudo npm link
 ```
 
 After this, you can use `msc` from anywhere in Terminal:
