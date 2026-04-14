@@ -1,8 +1,14 @@
 // REQ-SCRAPE-003, REQ-SCRAPE-004, REQ-SCRAPE-009, REQ-SCRAPE-010, REQ-SCRAPE-011
 import { atomicWrite } from "../fs/output.js";
 import { withRetry } from "../http/retry.js";
+import { isSameOrigin } from "../http/url-guard.js";
 import { extname, dirname, join, basename } from "node:path";
-import { mkdirSync, renameSync } from "node:fs";
+import { mkdirSync, renameSync, createWriteStream, unlinkSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+
+const MAX_DOWNLOAD_SIZE_BYTES = 500 * 1024 * 1024; // 500 MB
+/** Files above this threshold are streamed to disk instead of buffered in memory. */
+const STREAM_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50 MB
 
 export interface ProgressEvent {
   bytesReceived: number;
@@ -165,12 +171,16 @@ export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadF
       const { request } = await import("undici");
       let currentUrl = url;
       const maxRedirects = 10;
+      // Track whether we've left the original domain (SSRF defense)
+      let cookiesForRequest = sessionCookies;
 
       for (let hop = 0; hop <= maxRedirects; hop++) {
         if (!currentUrl.startsWith("https://")) throw new Error(`Insecure redirect URL rejected (http:// not allowed): ${currentUrl}`);
 
         const { statusCode, headers, body } = await request(currentUrl, {
-          headers: { cookie: sessionCookies },
+          headers: { ...(cookiesForRequest ? { cookie: cookiesForRequest } : {}) },
+          headersTimeout: 30_000,
+          bodyTimeout: 300_000, // 5 minutes for large file downloads
         });
 
         // Follow redirects
@@ -179,6 +189,10 @@ export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadF
           if (!location) break;
           const loc = Array.isArray(location) ? location[0]! : location;
           currentUrl = loc.startsWith("http") ? loc : new URL(loc, currentUrl).toString();
+          // Strip cookies when redirecting to an external domain
+          if (!isSameOrigin(currentUrl, url)) {
+            cookiesForRequest = "";
+          }
           await body.dump();
           continue;
         }
@@ -218,9 +232,47 @@ export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadF
           ? parseInt(headers["content-length"] as string, 10)
           : undefined;
 
-        // Note: entire file is buffered in memory before writing.
-        // Acceptable for typical Moodle files (<50 MB). If video streaming is added,
-        // switch to a pipe-based atomic write to avoid holding large buffers.
+        // Reject downloads that declare a size exceeding the safety limit
+        if (totalBytes !== undefined && totalBytes > MAX_DOWNLOAD_SIZE_BYTES) {
+          await body.dump(); // drain to avoid connection leak
+          throw new Error(`Download too large: ${url} reports ${(totalBytes / 1024 / 1024).toFixed(0)} MB (limit: ${MAX_DOWNLOAD_SIZE_BYTES / 1024 / 1024} MB)`);
+        }
+
+        // Large file streaming: for files above STREAM_THRESHOLD_BYTES, stream directly to
+        // a temp file to avoid holding large buffers in memory (prevents OOM on 3×500MB).
+        const useStreaming = totalBytes !== undefined && totalBytes > STREAM_THRESHOLD_BYTES;
+
+        if (useStreaming) {
+          mkdirSync(dirname(finalPath), { recursive: true });
+          const tmpPath = join(dirname(finalPath), "." + randomBytes(4).toString("hex") + ".tmp");
+          const ws = createWriteStream(tmpPath, { mode: 0o600 });
+          const hash = createHash("sha256");
+          let bytesReceived = 0;
+          try {
+            for await (const chunk of body) {
+              const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+              ws.write(buf);
+              hash.update(buf);
+              bytesReceived += buf.length;
+              if (bytesReceived > MAX_DOWNLOAD_SIZE_BYTES) {
+                ws.close();
+                try { unlinkSync(tmpPath); } catch { /* best-effort */ }
+                throw new Error(`Download too large: ${url} exceeded ${MAX_DOWNLOAD_SIZE_BYTES / 1024 / 1024} MB during streaming`);
+              }
+              onProgress?.({ bytesReceived, ...(totalBytes !== undefined ? { totalBytes } : {}) });
+            }
+            ws.end();
+            await new Promise<void>((resolve, reject) => { ws.on("finish", resolve); ws.on("error", reject); });
+            renameSync(tmpPath, finalPath);
+            computedHash = hash.digest("hex");
+          } catch (err) {
+            try { unlinkSync(tmpPath); } catch { /* best-effort */ }
+            throw err;
+          }
+          return;
+        }
+
+        // Small file path: buffer in memory (acceptable for typical Moodle files <50 MB)
         const chunks: Buffer[] = [];
         let bytesReceived = 0;
 
@@ -228,6 +280,9 @@ export async function downloadFile(opts: DownloadFileOptions): Promise<DownloadF
           const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
           chunks.push(buf);
           bytesReceived += buf.length;
+          if (bytesReceived > MAX_DOWNLOAD_SIZE_BYTES) {
+            throw new Error(`Download too large: ${url} exceeded ${MAX_DOWNLOAD_SIZE_BYTES / 1024 / 1024} MB during streaming`);
+          }
           onProgress?.({ bytesReceived, ...(totalBytes !== undefined ? { totalBytes } : {}) });
         }
 

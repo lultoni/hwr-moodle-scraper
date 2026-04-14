@@ -117,3 +117,41 @@ describe("STEP-003: Collision resolution", () => {
     expect(resolveCollision("unnamed", new Set(["unnamed"]))).toBe("unnamed_2");
   });
 });
+
+describe("Security: HTML entity decode — code point overflow", () => {
+  it("decodes valid hex entity &#x41; to 'A'", () => {
+    expect(sanitiseFilename("file&#x41;.txt")).toBe("fileA.txt");
+  });
+
+  it("decodes valid decimal entity &#65; to 'A'", () => {
+    expect(sanitiseFilename("file&#65;.txt")).toBe("fileA.txt");
+  });
+
+  it("drops out-of-range hex entity &#xFFFFFF; without crashing", () => {
+    const result = sanitiseFilename("test&#xFFFFFF;file.txt");
+    expect(result).not.toContain("&#xFFFFFF;");
+    expect(result).toMatch(/^test.*file\.txt$/);
+  });
+
+  it("drops out-of-range decimal entity &#9999999; without crashing", () => {
+    const result = sanitiseFilename("test&#9999999;file.txt");
+    expect(result).not.toContain("&#9999999;");
+    expect(result).toMatch(/^test.*file\.txt$/);
+  });
+
+  it("drops &#x0; (null code point)", () => {
+    const result = sanitiseFilename("before&#x0;after.txt");
+    // Null byte is stripped by the NULL_BYTE regex
+    expect(result).toBe("beforeafter.txt");
+  });
+});
+
+describe("Security: resolveCollision — loop bound", () => {
+  it("throws after exceeding maximum collision attempts", () => {
+    // Create a huge set where all candidates are taken
+    const existing = new Set<string>();
+    existing.add("file.txt");
+    for (let i = 2; i <= 10_002; i++) existing.add(`file_${i}.txt`);
+    expect(() => resolveCollision("file.txt", existing)).toThrow(/exceeded/i);
+  });
+});

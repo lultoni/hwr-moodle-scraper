@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { EXIT_CODES } from "../exit-codes.js";
 import type { Logger } from "../logger.js";
 import { extractCookies } from "./cookies.js";
+import { isSameOrigin, sanitiseUrlForLog } from "./url-guard.js";
 
 // Resolve version: prefer build-time env injection, fall back to package.json discovery
 const VERSION = process.env.npm_package_version ?? (() => {
@@ -20,7 +21,7 @@ const USER_AGENT = `moodle-scraper/${VERSION} (https://github.com/hwr-moodle-scr
 
 export class InsecureURLError extends Error {
   constructor(url: string) {
-    super(`Insecure URL rejected (http:// not allowed): ${url}`);
+    super(`Non-HTTPS URL rejected: ${sanitiseUrlForLog(url)}`);
     this.name = "InsecureURLError";
   }
 }
@@ -50,10 +51,14 @@ export interface HttpRequestOptions {
   followRedirects?: boolean;
   maxRedirects?: number;
   logger?: Logger;
+  /** Timeout for receiving response headers (ms). Default 30 000. */
+  headersTimeout?: number;
+  /** Timeout for receiving the full response body (ms). Default 120 000. */
+  bodyTimeout?: number;
 }
 
 function assertHttps(url: string): void {
-  if (url.startsWith("http://")) throw new InsecureURLError(url);
+  if (!url.startsWith("https://")) throw new InsecureURLError(url);
 }
 
 function checkMaintenanceMode(html: string, url: string): void {
@@ -80,6 +85,9 @@ function mergeCookies(existing: string, incoming: string): string {
   return Array.from(map.values()).join("; ");
 }
 
+const MAX_429_RETRIES = 3;
+const MAX_RETRY_AFTER_SEC = 300;
+
 export function createHttpClient(): HttpClient {
   async function doRequest(
     method: "GET" | "POST",
@@ -87,12 +95,16 @@ export function createHttpClient(): HttpClient {
     body?: unknown,
     options: HttpRequestOptions = {},
     _sentCookies?: string,
+    _retryCount429 = 0,
   ): Promise<HttpResponse> {
     assertHttps(url);
     const { logger } = options;
 
     logger?.debug(`→ ${method} ${url}`);
-    if (options.cookie) logger?.debug(`  Cookie: ${options.cookie}`);
+    if (options.cookie) {
+      logger?.addSecret(options.cookie); // ensure cookie values are always redacted
+      logger?.debug(`  Cookie: ${options.cookie}`);
+    }
 
     const sentCookies = _sentCookies ?? options.cookie ?? "";
 
@@ -110,6 +122,8 @@ export function createHttpClient(): HttpClient {
     const { statusCode, headers: resHeaders, body: resBody } = await request(url, {
       method,
       headers,
+      headersTimeout: options.headersTimeout ?? 30_000,
+      bodyTimeout: options.bodyTimeout ?? 120_000,
       ...(body ? { body: new URLSearchParams(body as Record<string, string>).toString() } : {}),
     });
 
@@ -126,11 +140,20 @@ export function createHttpClient(): HttpClient {
       logger?.warn(`Access denied: ${url}`);
     }
 
-    // Handle 429: respect Retry-After then retry
+    // Handle 429: respect Retry-After then retry (bounded)
     if (statusCode === 429) {
-      const retryAfter = parseInt(resHeaders["retry-after"] as string ?? "1", 10) * 1000;
-      await new Promise((r) => setTimeout(r, retryAfter));
-      return doRequest(method, url, body, options);
+      if (_retryCount429 >= MAX_429_RETRIES) {
+        logger?.warn(`429 rate-limited ${MAX_429_RETRIES} times for ${url} — giving up`);
+        // Fall through to return the 429 response
+      } else {
+        const rawRetryAfter = parseInt(resHeaders["retry-after"] as string ?? "1", 10);
+        const retryAfterSec = Number.isFinite(rawRetryAfter)
+          ? Math.min(Math.max(rawRetryAfter, 1), MAX_RETRY_AFTER_SEC)
+          : 1;
+        logger?.debug(`429 from ${url}, retrying after ${retryAfterSec}s (attempt ${_retryCount429 + 1}/${MAX_429_RETRIES})`);
+        await new Promise((r) => setTimeout(r, retryAfterSec * 1000));
+        return doRequest(method, url, body, options, _sentCookies, _retryCount429 + 1);
+      }
     }
 
     // Handle 5xx with retry
@@ -162,12 +185,18 @@ export function createHttpClient(): HttpClient {
         const mergedCookie = newCookies
           ? mergeCookies(options.cookie ?? "", newCookies)
           : options.cookie;
-        logger?.debug(`  ↪ redirect → ${absoluteLocation}`);
+        // SSRF defense: strip session cookies when redirecting to an external domain
+        const crossDomain = !isSameOrigin(absoluteLocation, url);
+        if (crossDomain && mergedCookie) {
+          logger?.debug(`  ↪ redirect → ${absoluteLocation} (external — cookies stripped)`);
+        } else {
+          logger?.debug(`  ↪ redirect → ${absoluteLocation}`);
+        }
         return doRequest("GET", absoluteLocation, undefined, {
           ...options,
-          ...(mergedCookie ? { cookie: mergedCookie } : {}),
+          ...(crossDomain ? {} : mergedCookie ? { cookie: mergedCookie } : {}),
           maxRedirects: maxRedirects - 1,
-        }, mergedCookie || undefined);
+        }, crossDomain ? undefined : mergedCookie || undefined);
       }
     }
 

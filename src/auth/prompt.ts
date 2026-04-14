@@ -67,7 +67,8 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
       process.stderr.write("Password must not be empty.\n");
     }
   }
-  logger?.debug(`[auth] password entered: ${password.length} characters`);
+  logger?.addSecret(password);
+  logger?.debug("[auth] password entered");
 
   // Fetch login page to obtain the CSRF logintoken AND the session cookie.
   // Moodle validates the logintoken against the session established by this GET,
@@ -79,6 +80,7 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
     const loginPage = await httpClient.get(`${baseUrl}/login/index.php`, logger ? { logger } : {});
     loginToken = extractLoginToken(loginPage.body);
     sessionCookie = extractCookies(loginPage.headers);
+    if (sessionCookie) logger?.addSecret(sessionCookie);
     logger?.debug(`[auth] loginToken: ${loginToken ?? "(none)"}`);
     logger?.debug(`[auth] sessionCookie: ${sessionCookie || "(none)"}`);
   } catch (err) {
@@ -91,7 +93,7 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
   try {
     const body: Record<string, string> = { username, password };
     if (loginToken) body["logintoken"] = loginToken;
-    logger?.debug(`[auth] POSTing to ${baseUrl}/login/index.php (logintoken=${loginToken ?? "none"}, cookie=${sessionCookie || "none"})`);
+    logger?.debug(`[auth] POSTing to ${baseUrl}/login/index.php`);
     response = await httpClient.post(
       `${baseUrl}/login/index.php`,
       body,
@@ -113,7 +115,8 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
     // Session established — verify by fetching /my/ with the cookies from the final response
     try {
       const finalCookies = extractCookies(response.headers);
-      logger?.debug(`[auth] testsession detected — verifying via ${baseUrl}/my/ with cookie: ${finalCookies}`);
+      if (finalCookies) logger?.addSecret(finalCookies);
+      logger?.debug(`[auth] testsession detected — verifying via ${baseUrl}/my/`);
       const myPage = await httpClient.get(`${baseUrl}/my/`, {
         followRedirects: true,
         ...(finalCookies ? { cookie: finalCookies } : {}),

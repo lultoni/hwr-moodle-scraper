@@ -2,6 +2,7 @@
 import { mkdirSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { downloadFile } from "./downloader.js";
+import { isSameOrigin } from "../http/url-guard.js";
 
 /** Regex to find markdown image references with Moodle pluginfile URLs. */
 const MD_IMAGE_RE = /!\[([^\]]*)\]\((https?:\/\/[^)]*\/pluginfile\.php\/[^)]+)\)/g;
@@ -25,6 +26,7 @@ export async function downloadEmbeddedImages(
   mdFilePath: string,
   sessionCookies: string,
   retryBaseDelayMs: number,
+  baseUrl?: string,
 ): Promise<ImageDownloadResult> {
   const imagePaths: string[] = [];
   const mdDir = dirname(mdFilePath);
@@ -49,6 +51,9 @@ export async function downloadEmbeddedImages(
 
   for (const { full, alt, url } of matches) {
     try {
+      // SSRF defense: skip image URLs that point to external domains
+      if (baseUrl && !isSameOrigin(url, baseUrl)) continue;
+
       // Derive filename from URL
       const urlPath = new URL(url).pathname;
       let fname = decodeURIComponent(urlPath.split("/").pop() ?? "image.png");

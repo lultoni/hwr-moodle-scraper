@@ -3,6 +3,13 @@
 const ILLEGAL = /[/\\:*?"<>|]/g;
 const NULL_BYTE = /\x00/g;
 const MAX_BYTES = 255;
+const MAX_COLLISION_ATTEMPTS = 10_000;
+
+/** Safe Unicode code point decode — drops invalid/out-of-range values. */
+function safeFromCodePoint(n: number): string {
+  if (n < 1 || n > 0x10FFFF) return "";
+  try { return String.fromCodePoint(n); } catch { return ""; }
+}
 
 export function sanitiseFilename(name: string): string {
   // Remove null bytes first (they must disappear, not become _)
@@ -10,8 +17,8 @@ export function sanitiseFilename(name: string): string {
   // Decode common HTML entities to their character equivalents
   // (Moodle double-encodes some attributes, leaving residual entities after the main decode pass)
   s = s
-    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCharCode(parseInt(h, 16)))
-    .replace(/&#(\d+);/gi, (_, d: string) => String.fromCharCode(parseInt(d, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => safeFromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/gi, (_, d: string) => safeFromCodePoint(parseInt(d, 10)))
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
@@ -51,9 +58,10 @@ export function resolveCollision(filename: string, existing: Set<string>): strin
   const base = hasExt ? filename.slice(0, dotIdx) : filename;
 
   let n = 2;
-  while (true) {
+  while (n <= MAX_COLLISION_ATTEMPTS + 1) {
     const candidate = `${base}_${n}${ext}`;
     if (!existing.has(candidate)) return candidate;
     n++;
   }
+  throw new Error(`resolveCollision: exceeded ${MAX_COLLISION_ATTEMPTS} attempts for "${filename}"`);
 }

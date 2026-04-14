@@ -1,5 +1,5 @@
 // REQ-SYNC-001, REQ-SYNC-002, REQ-SEC-007
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmdirSync, renameSync as fsRenameSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmdirSync, renameSync as fsRenameSync, copyFileSync, lstatSync } from "node:fs";
 import { join, relative, sep, dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { renameSync } from "node:fs";
@@ -49,6 +49,24 @@ export interface State {
 
 export type PartialState = { courses: Record<string, Partial<CourseState>>; generatedFiles?: string[] };
 
+/** Runtime validation: verify that parsed JSON has the required State structure. */
+function isValidState(parsed: unknown): parsed is State {
+  if (!parsed || typeof parsed !== "object") return false;
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj.version !== "number") return false;
+  if (typeof obj.courses !== "object" || obj.courses === null) return false;
+  return true;
+}
+
+/** Check if a path is a symlink. Returns false if the path doesn't exist. */
+function isSymlink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
 export class StateManager {
   readonly statePath: string;
   readonly backupPath: string;
@@ -60,17 +78,27 @@ export class StateManager {
 
   async load(): Promise<State | null> {
     if (!existsSync(this.statePath)) return null;
+    // Symlink defense: refuse to read if state file is a symlink
+    if (isSymlink(this.statePath)) {
+      process.stderr.write(`Warning: state file at ${this.statePath} is a symlink — refusing to read.\n`);
+      return null;
+    }
     try {
       const raw = readFileSync(this.statePath, "utf8");
-      return JSON.parse(raw) as State;
+      const parsed: unknown = JSON.parse(raw);
+      if (!isValidState(parsed)) {
+        throw new Error("invalid state structure");
+      }
+      return parsed;
     } catch {
       // Primary state corrupt — try backup
-      if (existsSync(this.backupPath)) {
+      if (existsSync(this.backupPath) && !isSymlink(this.backupPath)) {
         try {
           const backupRaw = readFileSync(this.backupPath, "utf8");
-          const backupState = JSON.parse(backupRaw) as State;
+          const parsed: unknown = JSON.parse(backupRaw);
+          if (!isValidState(parsed)) throw new Error("invalid backup state structure");
           process.stderr.write("Warning: state file corrupt — restored from backup.\n");
-          return backupState;
+          return parsed;
         } catch {
           // Backup also corrupt
         }
@@ -88,12 +116,17 @@ export class StateManager {
       ...(data.generatedFiles ? { generatedFiles: data.generatedFiles } : {}),
     };
     mkdirSync(join(this.statePath, ".."), { recursive: true });
+    // Symlink defense: refuse to write if state file is a symlink
+    if (isSymlink(this.statePath)) {
+      process.stderr.write(`Warning: state file at ${this.statePath} is a symlink — refusing to write.\n`);
+      return;
+    }
     // Back up current state before overwriting (single rolling backup)
     if (existsSync(this.statePath)) {
       try { copyFileSync(this.statePath, this.backupPath); } catch { /* best-effort */ }
     }
     const tmpPath = this.statePath + "." + randomBytes(4).toString("hex") + ".tmp";
-    writeFileSync(tmpPath, JSON.stringify(state, null, 2));
+    writeFileSync(tmpPath, JSON.stringify(state, null, 2), { mode: 0o600 });
     renameSync(tmpPath, this.statePath);
   }
 }

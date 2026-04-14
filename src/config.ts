@@ -19,6 +19,14 @@ const DEFAULTS = {
 export type ConfigKey = keyof typeof DEFAULTS;
 export type ConfigValue = string | number | boolean | null;
 
+const VALIDATION: Partial<Record<ConfigKey, { min: number; max: number }>> = {
+  requestDelayMs:         { min: 100,  max: 30_000 },
+  requestJitterMs:        { min: 0,    max: 10_000 },
+  maxConcurrentDownloads: { min: 1,    max: 20 },
+  minFreeDiskMb:          { min: 50,   max: 100_000 },
+  retryBaseDelayMs:       { min: 500,  max: 60_000 },
+};
+
 export class ConfigManager {
   private readonly configDir: string;
   private readonly configFile: string;
@@ -57,6 +65,12 @@ export class ConfigManager {
   }
 
   async set(key: ConfigKey, value: ConfigValue): Promise<void> {
+    const range = VALIDATION[key];
+    if (range && typeof value === "number") {
+      if (value < range.min || value > range.max) {
+        throw new RangeError(`Config '${key}' must be between ${range.min} and ${range.max}, got ${value}`);
+      }
+    }
     const data = this.read();
     data[key] = value;
     this.write(data);

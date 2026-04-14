@@ -213,20 +213,28 @@ export function buildDownloadPlan(
  */
 export function extractIconHeadingText(html: string): string | null {
   if (!html) return null;
+  // Input length guard — prevents polynomial backtracking on pathological input
+  if (html.length > 10_000) return null;
 
   // Must contain an <img> tag
   if (!/<img\s/i.test(html)) return null;
 
-  // Pattern A: <img> inside a heading tag — extract text after the img
-  // e.g. <h3><img src="...">Literatur zum Teil I</h3>
-  const insideHeading = /<h([3-5])[^>]*>(?:<[^>]*>)*<img\s[^>]*>(?:<\/[^>]+>)*\s*(&nbsp;|[\s\u00a0])*([\s\S]*?)<\/h\1>/i.exec(html);
-  if (insideHeading) {
-    const raw = insideHeading[3]!
-      .replace(/<[^>]+>/g, "")  // strip remaining HTML tags
-      .replace(/&nbsp;/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (raw.length >= 2) return raw;
+  // Pattern A (two-pass): <img> inside a heading tag — extract text after the img
+  // First pass: find heading tags; second pass: check for <img> inside
+  const headingRe = /<h([3-5])[^>]*>([\s\S]*?)<\/h\1>/gi;
+  let hm: RegExpExecArray | null;
+  while ((hm = headingRe.exec(html)) !== null) {
+    const innerHtml = hm[2]!;
+    if (/<img\s/i.test(innerHtml)) {
+      // Extract text after the <img> tag
+      const afterImg = innerHtml.replace(/^[\s\S]*?<img\s[^>]*>/, "");
+      const raw = afterImg
+        .replace(/<[^>]+>/g, "")  // strip remaining HTML tags
+        .replace(/&nbsp;/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (raw.length >= 2) return raw;
+    }
   }
 
   // Pattern B: <img> in a preceding element, then a heading follows

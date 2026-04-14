@@ -452,3 +452,33 @@ describe("BUG-C: downloadFile appends extension even when destPath looks like it
     expect(extname(result.finalPath)).toBe(".pdf");
   });
 });
+
+describe("Security: download size limiting", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "msc-size-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("rejects download when Content-Length exceeds MAX_DOWNLOAD_SIZE_BYTES", async () => {
+    // Claim 600 MB content-length but send small body
+    mockAgent.get(BASE)
+      .intercept({ path: "/huge.bin", method: "GET" })
+      .reply(200, "tiny", {
+        headers: { "content-length": String(600 * 1024 * 1024) },
+      });
+
+    await expect(
+      downloadFile({
+        url: `${BASE}/huge.bin`,
+        destPath: join(tmpDir, "huge.bin"),
+        sessionCookies: "",
+        retryBaseDelayMs: 0,
+      })
+    ).rejects.toThrow(/too large/i);
+  });
+});

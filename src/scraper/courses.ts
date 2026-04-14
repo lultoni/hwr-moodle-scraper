@@ -75,11 +75,17 @@ function stripAccessHide(html: string): string {
     .trim();
 }
 
+/** Safe Unicode code point decode — drops invalid/out-of-range values. */
+function safeFromCodePoint(n: number): string {
+  if (n < 1 || n > 0x10FFFF) return "";
+  try { return String.fromCodePoint(n); } catch { return ""; }
+}
+
 /** Decode HTML entities in a plain-text string. */
 function decodeHtmlEntities(s: string): string {
   return s
-    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCharCode(parseInt(h, 16)))
-    .replace(/&#(\d+);/gi, (_, d: string) => String.fromCharCode(parseInt(d, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => safeFromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/gi, (_, d: string) => safeFromCodePoint(parseInt(d, 10)))
     .replace(/&amp;/gi, "&")
     .replace(/&nbsp;/gi, " ")
     .replace(/&lt;/gi, "<")
@@ -272,6 +278,8 @@ async function fetchWithRedirects(
     const { statusCode, headers: resHeaders, body } = await request(currentUrl, {
       method: "GET",
       headers,
+      headersTimeout: 30_000,
+      bodyTimeout: 120_000,
     });
 
     if (statusCode >= 300 && statusCode < 400) {

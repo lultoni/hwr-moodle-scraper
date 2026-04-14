@@ -47,6 +47,26 @@ describe("STEP-004: HTTP client — HTTPS enforcement", () => {
     const client = createHttpClient();
     await expect(client.get("https://moodle.example.com/course")).resolves.toBeDefined();
   });
+
+  it("rejects javascript: URLs", async () => {
+    const client = createHttpClient();
+    await expect(client.get("javascript:alert(1)")).rejects.toThrow(InsecureURLError);
+  });
+
+  it("rejects data: URLs", async () => {
+    const client = createHttpClient();
+    await expect(client.get("data:text/html,<h1>hi</h1>")).rejects.toThrow(InsecureURLError);
+  });
+
+  it("rejects file: URLs", async () => {
+    const client = createHttpClient();
+    await expect(client.get("file:///etc/passwd")).rejects.toThrow(InsecureURLError);
+  });
+
+  it("rejects ftp: URLs", async () => {
+    const client = createHttpClient();
+    await expect(client.get("ftp://example.com/file")).rejects.toThrow(InsecureURLError);
+  });
 });
 
 describe("STEP-004: HTTP client — User-Agent header", () => {

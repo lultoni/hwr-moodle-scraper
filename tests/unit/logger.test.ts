@@ -134,6 +134,50 @@ describe("STEP-007: Logger — timestamp option", () => {
   });
 });
 
+describe("Security: dynamic secret registration via addSecret()", () => {
+  it("addSecret() causes subsequent log output to redact the new secret", () => {
+    const logger = createLogger({ level: LogLevel.INFO, redact: [] });
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    logger.addSecret("dynamic-password-123");
+    logger.info("Login with dynamic-password-123 succeeded");
+    const output = (spy.mock.calls[0]?.[0] as string) ?? "";
+    expect(output).not.toContain("dynamic-password-123");
+    expect(output).toContain("[REDACTED]");
+
+    spy.mockRestore();
+  });
+
+  it("addSecret() does not retroactively redact already-emitted messages", () => {
+    const logger = createLogger({ level: LogLevel.INFO, redact: [] });
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    logger.info("Before: leaked-secret-456");
+    logger.addSecret("leaked-secret-456");
+    logger.info("After: leaked-secret-456");
+
+    const firstOutput = (spy.mock.calls[0]?.[0] as string) ?? "";
+    const secondOutput = (spy.mock.calls[1]?.[0] as string) ?? "";
+    expect(firstOutput).toContain("leaked-secret-456"); // already emitted
+    expect(secondOutput).not.toContain("leaked-secret-456"); // redacted
+
+    spy.mockRestore();
+  });
+
+  it("addSecret() ignores empty strings", () => {
+    const logger = createLogger({ level: LogLevel.INFO, redact: [] });
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    logger.addSecret("");
+    logger.info("Normal message");
+    const output = (spy.mock.calls[0]?.[0] as string) ?? "";
+    expect(output).toContain("Normal message");
+    expect(output).not.toContain("[REDACTED]");
+
+    spy.mockRestore();
+  });
+});
+
 describe("STEP-007: Logger — state file redaction guard", () => {
   // REQ-SEC-007
   it("assertNoSecrets() throws if a state object contains a known secret value", async () => {

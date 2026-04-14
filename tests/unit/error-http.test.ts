@@ -99,7 +99,7 @@ describe("STEP-018: HTTP 403 handling", () => {
   it("logs 'Access denied' and does not throw", async () => {
     mockAgent.get(BASE).intercept({ path: "/restricted", method: "GET" }).reply(403, "Forbidden");
     const warnings: string[] = [];
-    const logger = { debug: vi.fn(), info: vi.fn(), warn: (msg: string) => warnings.push(msg), error: vi.fn() };
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: (msg: string) => warnings.push(msg), error: vi.fn(), addSecret: vi.fn() };
 
     const client = createHttpClient();
     const result = await client.get(`${BASE}/restricted`, { handleErrors: true, logger });
@@ -132,6 +132,83 @@ describe("STEP-018: HTTP 429 handling", () => {
   });
 });
 
+describe("Security: 429 retry limiting", () => {
+  it("stops retrying after MAX_429_RETRIES (3) attempts", async () => {
+    vi.useFakeTimers();
+    // Server always returns 429
+    mockAgent.get(BASE)
+      .intercept({ path: "/always-429", method: "GET" })
+      .reply(429, "Too Many Requests", { headers: { "retry-after": "1" } })
+      .times(4);
+
+    const client = createHttpClient();
+    const p = client.get(`${BASE}/always-429`);
+    await vi.runAllTimersAsync();
+    const result = await p;
+
+    // After 3 retries, returns the 429 response instead of infinite loop
+    expect(result.status).toBe(429);
+  });
+
+  it("caps Retry-After header at 300 seconds", async () => {
+    vi.useFakeTimers();
+    mockAgent.get(BASE)
+      .intercept({ path: "/long-retry", method: "GET" })
+      .reply(429, "Slow Down", { headers: { "retry-after": "999999" } })
+      .times(1);
+    mockAgent.get(BASE)
+      .intercept({ path: "/long-retry", method: "GET" })
+      .reply(200, "ok")
+      .times(1);
+
+    const client = createHttpClient();
+    const p = client.get(`${BASE}/long-retry`);
+    // Advance past the capped 300s but not past 999999s
+    await vi.advanceTimersByTimeAsync(301_000);
+    const result = await p;
+
+    expect(result.status).toBe(200);
+  });
+
+  it("defaults to 1 second when Retry-After is missing", async () => {
+    vi.useFakeTimers();
+    mockAgent.get(BASE)
+      .intercept({ path: "/no-header", method: "GET" })
+      .reply(429, "Rate Limited")
+      .times(1);
+    mockAgent.get(BASE)
+      .intercept({ path: "/no-header", method: "GET" })
+      .reply(200, "ok")
+      .times(1);
+
+    const client = createHttpClient();
+    const p = client.get(`${BASE}/no-header`);
+    await vi.advanceTimersByTimeAsync(1100);
+    const result = await p;
+
+    expect(result.status).toBe(200);
+  });
+
+  it("defaults to 1 second when Retry-After is non-numeric", async () => {
+    vi.useFakeTimers();
+    mockAgent.get(BASE)
+      .intercept({ path: "/bad-header", method: "GET" })
+      .reply(429, "Rate Limited", { headers: { "retry-after": "invalid" } })
+      .times(1);
+    mockAgent.get(BASE)
+      .intercept({ path: "/bad-header", method: "GET" })
+      .reply(200, "ok")
+      .times(1);
+
+    const client = createHttpClient();
+    const p = client.get(`${BASE}/bad-header`);
+    await vi.advanceTimersByTimeAsync(1100);
+    const result = await p;
+
+    expect(result.status).toBe(200);
+  });
+});
+
 describe("STEP-018: HTTP 5xx handling", () => {
   // REQ-ERR-006
   it("retries 3x on 503 then logs error and resolves with the error response", async () => {
@@ -140,7 +217,7 @@ describe("STEP-018: HTTP 5xx handling", () => {
 
     const client = createHttpClient();
     const warnings: string[] = [];
-    const logger = { debug: vi.fn(), info: vi.fn(), warn: (msg: string) => warnings.push(msg), error: vi.fn() };
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: (msg: string) => warnings.push(msg), error: vi.fn(), addSecret: vi.fn() };
 
     const p = client.get(`${BASE}/unstable`, { retry: true, maxRetries: 3, logger });
     await vi.runAllTimersAsync();

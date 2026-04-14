@@ -1,5 +1,5 @@
 // REQ-SEC-002, REQ-SEC-007
-import { appendFileSync, openSync, closeSync, chmodSync } from "node:fs";
+import { appendFileSync, openSync, closeSync, chmodSync, statSync, renameSync } from "node:fs";
 
 export enum LogLevel {
   DEBUG = 0,
@@ -19,6 +19,8 @@ export interface LoggerOptions {
    * `false` otherwise (cleaner terminal output).
    */
   timestamps?: boolean;
+  /** Maximum log file size in MB before rotation. Default 50. */
+  maxLogFileSizeMb?: number;
 }
 
 export interface Logger {
@@ -26,6 +28,8 @@ export interface Logger {
   info(msg: string): void;
   warn(msg: string): void;
   error(msg: string): void;
+  /** Register a secret discovered after logger creation (e.g. password from keychain). */
+  addSecret(secret: string): void;
 }
 
 function redactSecrets(msg: string, secrets: string[]): string {
@@ -46,21 +50,37 @@ function ensureLogFile(path: string): void {
 }
 
 export function createLogger(opts: LoggerOptions): Logger {
-  const { level, redact, logFile } = opts;
+  const { level, logFile } = opts;
+  const secrets = [...opts.redact]; // mutable copy for addSecret()
+  const maxLogFileBytes = (opts.maxLogFileSizeMb ?? 50) * 1024 * 1024;
   // Default: show timestamps when logFile is active (useful for diagnosis),
   // suppress in plain terminal output.
   const showTimestamps = opts.timestamps ?? (logFile != null);
 
   if (logFile) ensureLogFile(logFile);
 
+  function rotateIfNeeded(): void {
+    if (!logFile) return;
+    try {
+      const stats = statSync(logFile);
+      if (stats.size > maxLogFileBytes) {
+        renameSync(logFile, logFile + ".1");
+        ensureLogFile(logFile);
+      }
+    } catch {
+      // File may not exist yet — that's fine
+    }
+  }
+
   function emit(msgLevel: LogLevel, msg: string): void {
     if (msgLevel < level) return;
-    const safe = redactSecrets(msg, redact);
+    const safe = redactSecrets(msg, secrets);
     const prefix = LogLevel[msgLevel] ?? "LOG";
     const ts = new Date().toISOString();
     const line = showTimestamps ? `[${ts}] [${prefix}] ${safe}\n` : `[${prefix}] ${safe}\n`;
     process.stderr.write(line);
     if (logFile) {
+      rotateIfNeeded();
       // Log file always gets timestamps for diagnostic value
       const fileLine = showTimestamps ? line : `[${ts}] [${prefix}] ${safe}\n`;
       appendFileSync(logFile, fileLine);
@@ -72,6 +92,7 @@ export function createLogger(opts: LoggerOptions): Logger {
     info:  (msg) => emit(LogLevel.INFO, msg),
     warn:  (msg) => emit(LogLevel.WARN, msg),
     error: (msg) => emit(LogLevel.ERROR, msg),
+    addSecret: (s) => { if (s) secrets.push(s); },
   };
 }
 

@@ -3,8 +3,7 @@ import {
   mkdirSync, existsSync, renameSync, writeFileSync, readFileSync,
   readdirSync, statSync, unlinkSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
-import { tmpdir } from "node:os";
+import { join, dirname, sep } from "node:path";
 import { randomBytes, createHash } from "node:crypto";
 import { sanitiseFilename } from "./sanitise.js";
 import { EXIT_CODES } from "../exit-codes.js";
@@ -23,8 +22,9 @@ export async function buildOutputPath(opts: OutputPathOptions): Promise<string> 
   // Sanitise names and also replace spaces with _ for directory names
   const safeCourse = sanitiseFilename(courseName).replace(/\s+/g, "_");
   const safeSection = sanitiseFilename(sectionName).replace(/\s+/g, "_");
-  const dir = semesterDir
-    ? join(outputDir, semesterDir, safeCourse, safeSection)
+  const safeSemester = semesterDir ? sanitiseFilename(semesterDir).replace(/\s+/g, "_") : undefined;
+  const dir = safeSemester
+    ? join(outputDir, safeSemester, safeCourse, safeSection)
     : join(outputDir, safeCourse, safeSection);
   try {
     mkdirSync(dir, { recursive: true });
@@ -34,7 +34,15 @@ export async function buildOutputPath(opts: OutputPathOptions): Promise<string> 
       { exitCode: EXIT_CODES.FILESYSTEM_ERROR }
     );
   }
-  return join(dir, filename);
+  const fullPath = join(dir, filename);
+  // Defense-in-depth: verify the resolved path is still inside the output directory
+  if (!fullPath.startsWith(dir + sep) && fullPath !== dir) {
+    throw Object.assign(
+      new Error(`Path traversal detected in filename: ${filename}`),
+      { exitCode: EXIT_CODES.FILESYSTEM_ERROR }
+    );
+  }
+  return fullPath;
 }
 
 /** Atomically write content to destPath and return its SHA-256 hex digest. */
@@ -42,7 +50,7 @@ export async function atomicWrite(destPath: string, content: Buffer): Promise<{ 
   const hash = createHash("sha256").update(content).digest("hex");
   // Use a short fixed-name tmp file in the same dir to avoid ENAMETOOLONG when destPath is near 255 bytes
   const tmpPath = join(dirname(destPath), "." + randomBytes(4).toString("hex") + ".tmp");
-  writeFileSync(tmpPath, content);
+  writeFileSync(tmpPath, content, { mode: 0o600 });
   renameSync(tmpPath, destPath);
   return { hash };
 }
@@ -76,15 +84,11 @@ export interface DiskSpaceOptions {
 }
 
 export async function checkDiskSpace(dir: string, opts: DiskSpaceOptions): Promise<void> {
-  // Use statvfs via child_process df on macOS
-  const { execSync } = await import("node:child_process");
+  // Use Node.js native statfs — no shell execution, no injection surface
+  const { statfs } = await import("node:fs/promises");
   try {
-    const out = execSync(`df -k "${dir}"`, { encoding: "utf8", stdio: "pipe" });
-    const lines = out.trim().split("\n");
-    const parts = (lines[1] ?? "").split(/\s+/);
-    // df -k: columns are Filesystem, 1K-blocks, Used, Available, Capacity, Mounted
-    const availableKb = parseInt(parts[3] ?? "0", 10);
-    const availableMb = availableKb / 1024;
+    const stats = await statfs(dir);
+    const availableMb = (Number(stats.bavail) * Number(stats.bsize)) / (1024 * 1024);
     if (availableMb < opts.minFreeMb) {
       throw Object.assign(
         new Error(
@@ -95,6 +99,19 @@ export async function checkDiskSpace(dir: string, opts: DiskSpaceOptions): Promi
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException & { exitCode?: number }).exitCode === EXIT_CODES.FILESYSTEM_ERROR) throw err;
-    // If df fails for some other reason, skip the check
+    // If statfs fails for some other reason (e.g. dir doesn't exist yet), skip the check
+  }
+}
+
+/**
+ * Non-throwing variant of checkDiskSpace for periodic use during long scrapes.
+ * Returns false if disk space is insufficient, true otherwise (including on check failure).
+ */
+export async function checkDiskSpaceSafe(dir: string, opts: DiskSpaceOptions): Promise<boolean> {
+  try {
+    await checkDiskSpace(dir, opts);
+    return true;
+  } catch {
+    return false;
   }
 }

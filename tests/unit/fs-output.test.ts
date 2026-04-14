@@ -213,3 +213,79 @@ describe("STEP-011: Disk space pre-check", () => {
     await expect(checkDiskSpace("/tmp", { minFreeMb: 1 })).resolves.toBeUndefined();
   });
 });
+
+describe("Security: checkDiskSpace — no command injection", () => {
+  it("handles directory names containing shell metacharacters safely", async () => {
+    // If command injection existed, this would execute the subshell
+    // With statfs, it simply gets ENOENT for a non-existent path
+    await expect(
+      checkDiskSpace('/tmp/$(echo pwned)', { minFreeMb: 1 })
+    ).resolves.toBeUndefined(); // silently skips if path doesn't exist
+  });
+
+  it("handles directory names with backtick injection safely", async () => {
+    await expect(
+      checkDiskSpace('/tmp/`whoami`', { minFreeMb: 1 })
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("Security: buildOutputPath — semesterDir sanitisation", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "msc-semester-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("sanitises semesterDir to prevent path traversal via '..'", async () => {
+    const outPath = await buildOutputPath({
+      outputDir: tmpDir,
+      semesterDir: "../../etc",
+      courseName: "Course",
+      sectionName: "Section",
+      filename: "file.txt",
+    });
+    // The result must stay within tmpDir — sanitiseFilename strips leading dots
+    // and replaces path separators, so traversal is impossible
+    expect(outPath.startsWith(tmpDir)).toBe(true);
+    // No actual path separator followed by ".." should appear
+    expect(outPath).not.toMatch(/[/\\]\.\.[/\\]/);
+  });
+
+  it("strips illegal characters from semesterDir", async () => {
+    const outPath = await buildOutputPath({
+      outputDir: tmpDir,
+      semesterDir: 'Semester:3/"test"',
+      courseName: "Course",
+      sectionName: "Section",
+      filename: "file.txt",
+    });
+    expect(outPath).not.toContain(":");
+    expect(outPath).not.toContain('"');
+  });
+});
+
+describe("Security: atomicWrite — file permissions", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "msc-perm-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("written files have permissions 0o600 (owner read/write only)", async () => {
+    const { statSync } = await import("node:fs");
+    const target = join(tmpDir, "private.pdf");
+    await atomicWrite(target, Buffer.from("sensitive content"));
+
+    const mode = statSync(target).mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
+});

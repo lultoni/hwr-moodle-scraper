@@ -110,3 +110,52 @@ describe("STEP-002: Config management", () => {
     expect(await cfg.get("retryBaseDelayMs")).toBe(2000);
   });
 });
+
+describe("Security: config value validation", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "msc-config-val-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("rejects requestDelayMs set to 0", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    await expect(cfg.set("requestDelayMs", 0)).rejects.toThrow(RangeError);
+  });
+
+  it("rejects requestDelayMs set to negative value", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    await expect(cfg.set("requestDelayMs", -100)).rejects.toThrow(RangeError);
+  });
+
+  it("rejects maxConcurrentDownloads set to 1000", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    await expect(cfg.set("maxConcurrentDownloads", 1000)).rejects.toThrow(RangeError);
+  });
+
+  it("rejects minFreeDiskMb set to 0", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    await expect(cfg.set("minFreeDiskMb", 0)).rejects.toThrow(RangeError);
+  });
+
+  it("rejects retryBaseDelayMs set to 0", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    await expect(cfg.set("retryBaseDelayMs", 0)).rejects.toThrow(RangeError);
+  });
+
+  it("accepts requestDelayMs at boundary (100)", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    await cfg.set("requestDelayMs", 100);
+    expect(await cfg.get("requestDelayMs")).toBe(100);
+  });
+
+  it("accepts maxConcurrentDownloads within range (5)", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    await cfg.set("maxConcurrentDownloads", 5);
+    expect(await cfg.get("maxConcurrentDownloads")).toBe(5);
+  });
+});

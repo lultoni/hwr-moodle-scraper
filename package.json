@@ -8,7 +8,7 @@
     "msc": "./dist/index.js"
   },
   "scripts": {
-    "prebuild": "vitest run",
+    "prebuild": "npm audit --audit-level=high && vitest run",
     "build": "tsup src/index.ts --format esm --dts --external keytar",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

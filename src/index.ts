@@ -18,6 +18,16 @@ import { runReset } from "./commands/reset.js";
 import { runWizard, shouldRunWizard } from "./commands/wizard.js";
 import { runTui } from "./commands/tui.js";
 
+// Global error handlers — prevent unredacted stack traces from leaking sensitive data
+process.on("uncaughtException", (err) => {
+  process.stderr.write(`Fatal error: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.exit(EXIT_CODES.ERROR);
+});
+process.on("unhandledRejection", (reason) => {
+  process.stderr.write(`Fatal error: ${reason instanceof Error ? reason.message : String(reason)}\n`);
+  process.exit(EXIT_CODES.ERROR);
+});
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
   readFileSync(resolve(__dirname, "../package.json"), "utf8")
@@ -92,12 +102,18 @@ program
     const config = new ConfigManager();
     const keychain = tryCreateKeychain();
     const httpClient = createHttpClient();
-    // Password will be added to redact list once collected — logger created first without it
+    // Password will be added to redact list once collected
     const logger = makeLogger(globalOpts.debug);
 
     // First-run wizard
     if (await shouldRunWizard({ keychain, config })) {
       await runWizard({ keychain, config, promptFn: makePromptFn(), httpClient, nonInteractive: opts.nonInteractive, ...withLogger(logger) });
+    }
+
+    // Register stored password in logger so it's always redacted
+    if (logger && keychain) {
+      const creds = await keychain.readCredentials();
+      if (creds?.password) logger.addSecret(creds.password);
     }
 
     const outputDir = opts.outputDir ?? (await config.get("outputDir")) as string;

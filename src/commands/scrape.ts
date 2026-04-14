@@ -11,7 +11,7 @@ import { tryCreateKeychain } from "../auth/keychain.js";
 import { createHttpClient } from "../http/client.js";
 import { createLogger, LogLevel, type Logger } from "../logger.js";
 import { ConfigManager } from "../config.js";
-import { buildOutputPath, checkDiskSpace, atomicWrite } from "../fs/output.js";
+import { buildOutputPath, checkDiskSpace, checkDiskSpaceSafe, atomicWrite } from "../fs/output.js";
 import { sanitiseFilename } from "../fs/sanitise.js";
 import { extractForumThreadUrls, extractPageContent, extractEmbeddedVideoUrls } from "../scraper/forum.js";
 import { extractAssignmentFeedback } from "../scraper/assign.js";
@@ -21,9 +21,15 @@ import { filterSidecars, type SidecarItem } from "../scraper/sidecar-filter.js";
 import { createTurndown } from "../scraper/turndown.js";
 import { EXIT_CODES } from "../exit-codes.js";
 import { registerShutdownHandlers } from "../process/shutdown.js";
+import { isSameOrigin } from "../http/url-guard.js";
 import { mkdirSync } from "node:fs";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { writeFile } from "node:fs/promises";
+
+/** Escape markdown link special characters to prevent injection. */
+function escapeMarkdownLink(text: string): string {
+  return text.replace(/[[\]()]/g, "\\$&");
+}
 
 export interface ScrapeOptions {
   outputDir: string;
@@ -91,6 +97,15 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     } : {}),
     ...(opts.logger ? { logger: opts.logger } : {}),
   });
+
+  // Register session cookies as secrets immediately to prevent leakage in subsequent log calls
+  logger.addSecret(sessionCookies);
+
+  // Register stored password in logger redact list so it cannot leak into logs
+  if (keychain) {
+    const creds = await keychain.readCredentials();
+    if (creds?.password) logger.addSecret(creds.password);
+  }
 
   // Disk space pre-check
   if (!opts.skipDiskCheck) {
@@ -170,12 +185,16 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   logger.debug("Fetching content trees…");
 
-  // Content trees — fetch in parallel
+  // Content trees — fetch with bounded concurrency to limit memory spikes
+  const pLimitMod = await import("p-limit");
+  const treeLimit = pLimitMod.default(5);
   const trees: ContentTree[] = await Promise.all(
-    courses.map(async (c) => {
-      const tree = await fetchContentTree({ baseUrl, courseId: c.courseId, sessionCookies });
-      return tree;
-    })
+    courses.map((c) =>
+      treeLimit(async () => {
+        const tree = await fetchContentTree({ baseUrl, courseId: c.courseId, sessionCookies });
+        return tree;
+      })
+    )
   );
 
   // ── README.md + _Abschnittsbeschreibung.md ────────────────────────────────
@@ -235,7 +254,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         mkdirSync(dirname(summaryPath), { recursive: true });
         // Download embedded Moodle images and rewrite URLs to relative paths
         const { downloadEmbeddedImages } = await import("../scraper/images.js");
-        const imgResult = await downloadEmbeddedImages(summaryMd, summaryPath, sessionCookies, retryBaseDelayMs);
+        const imgResult = await downloadEmbeddedImages(summaryMd, summaryPath, sessionCookies, retryBaseDelayMs, baseUrl);
         await atomicWrite(summaryPath, Buffer.from(imgResult.content + "\n", "utf8"));
         generatedFiles.push(summaryPath);
         for (const imgPath of imgResult.imagePaths) generatedFiles.push(imgPath);
@@ -643,6 +662,15 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     for (const { item: failedItem, error } of result.failed) {
       logger.info(`  Warning: failed to download ${failedItem.url}: ${error.message}`);
     }
+
+    // Periodic disk space check after binary downloads
+    if (!opts.skipDiskCheck) {
+      const minFreeMb = (await config.get("minFreeDiskMb")) as number | undefined ?? 1000;
+      const diskOk = await checkDiskSpaceSafe(outputDir, { minFreeMb });
+      if (!diskOk) {
+        logger.warn("Warning: disk space is critically low after binary downloads.");
+      }
+    }
   }
 
   // ── Special-items execution ────────────────────────────────────────────────
@@ -689,6 +717,11 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         // url-txt: content is not buffered through atomicWrite, so specialItemHashes[si] stays "".
         // The file is still tracked via allDownloadedItems → FileState.localPath (no hash comparison).
       } else if (strategy === "page-md") {
+        // SSRF defense: validate URL is on the Moodle domain before fetching with session cookies
+        if (!isSameOrigin(item.url!, baseUrl)) {
+          logger.warn(`Skipping external URL: ${item.url}`);
+          continue;
+        }
         const { request } = await import("undici");
         const { body } = await request(item.url!, { headers: { cookie: sessionCookies } });
         const html = await body.text();
@@ -704,12 +737,17 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
             const delayMs = ((await config.get("requestDelayMs")) as number | undefined) ?? 500;
             for (const thread of threads) {
               try {
+                // SSRF defense: skip forum threads pointing to external domains
+                if (!isSameOrigin(thread.url, baseUrl)) {
+                  sections.push(`## [${escapeMarkdownLink(thread.title)}](${thread.url})`, ``, `*(Externer Link — übersprungen)*`, ``);
+                  continue;
+                }
                 const { body: threadBody } = await request(thread.url, { headers: { cookie: sessionCookies } });
                 const threadHtml = await threadBody.text();
-                sections.push(`## [${thread.title}](${thread.url})`, ``, td.turndown(extractPageContent(threadHtml)) + extractEmbeddedVideoUrls(threadHtml), ``);
+                sections.push(`## [${escapeMarkdownLink(thread.title)}](${thread.url})`, ``, td.turndown(extractPageContent(threadHtml)) + extractEmbeddedVideoUrls(threadHtml), ``);
                 if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
               } catch {
-                sections.push(`## [${thread.title}](${thread.url})`, ``, `*(Konnte nicht geladen werden)*`, ``);
+                sections.push(`## [${escapeMarkdownLink(thread.title)}](${thread.url})`, ``, `*(Konnte nicht geladen werden)*`, ``);
               }
             }
           }
@@ -740,7 +778,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         }
 
         // For assignments: fetch the page to extract grade, feedback, and own submission files
-        if (activityType === "assign" && item.url) {
+        if (activityType === "assign" && item.url && isSameOrigin(item.url, baseUrl)) {
           try {
             const { request } = await import("undici");
             const { body: assignBody } = await request(item.url, { headers: { cookie: sessionCookies } });
@@ -757,6 +795,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
               if (feedback.submissionUrls.length > 0) {
                 lines.push(``, `## Eigene Einreichung`);
                 for (const subUrl of feedback.submissionUrls) {
+                  // SSRF defense: skip submission URLs on external domains
+                  if (!isSameOrigin(subUrl, baseUrl)) continue;
                   const fname = decodeURIComponent(subUrl.split("/").pop()?.split("?")[0] ?? "file");
                   // Download the submission file next to the .md file
                   const subDest = destPath.replace(/\.md$/, `.submission.${fname.includes(".") ? fname.split(".").pop() : "bin"}`);
@@ -802,7 +842,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         // Download embedded Moodle images and rewrite URLs to relative paths
         if (strategy !== "url-txt") {
           const { downloadEmbeddedImages } = await import("../scraper/images.js");
-          const imgResult = await downloadEmbeddedImages(content, destPath, sessionCookies, retryBaseDelayMs);
+          const imgResult = await downloadEmbeddedImages(content, destPath, sessionCookies, retryBaseDelayMs, baseUrl);
           content = imgResult.content;
           specialItemImagePaths[si] = imgResult.imagePaths;
         }
