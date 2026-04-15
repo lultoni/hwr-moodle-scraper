@@ -36,7 +36,7 @@ Each improvement is one "pass" (e.g. Pass 36). The workflow within a pass:
 - **Never commit credentials or secrets**
 - **Always read source before modifying** — never modify a file you have not fully read
 - **Tests before features** — write or update the test first; the test must fail before the implementation exists
-- **After changes**: run `npx vitest run` — all 702 tests must pass; commit with a contextual message
+- **After changes**: run `npx vitest run` — all 713 tests must pass; commit with a contextual message
 - **Run file-checker before ending any session**: `node scripts/file-checker.js` must exit 0
 
 ## Critical Parsing Patterns — Do Not Regress
@@ -123,9 +123,9 @@ When a user reports broken files or before ending a session:
 
 ## Current Phase
 **Phase 5 — Iterative Improvements (ongoing)**
-- All 22 timeline steps fully implemented; 702/702 tests passing (46 test files)
+- All 22 timeline steps fully implemented; 713/713 tests passing (46 test files)
 - Full CLI: auth, scrape, status, wizard, reset, tui + first-run wizard + clean
-- 39 cleanup/improvement passes completed; current version: `0.4.0`
+- 40 cleanup/improvement passes completed; current version: `0.4.0`
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.
