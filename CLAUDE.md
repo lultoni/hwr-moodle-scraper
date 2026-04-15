@@ -36,7 +36,7 @@ Each improvement is one "pass" (e.g. Pass 36). The workflow within a pass:
 - **Never commit credentials or secrets**
 - **Always read source before modifying** — never modify a file you have not fully read
 - **Tests before features** — write or update the test first; the test must fail before the implementation exists
-- **After changes**: run `npx vitest run` — all 734 tests must pass; commit with a contextual message
+- **After changes**: run `npx vitest run` — all 784 tests must pass; commit with a contextual message
 - **Run file-checker before ending any session**: `node scripts/file-checker.js` must exit 0
 
 ## Critical Parsing Patterns — Do Not Regress
