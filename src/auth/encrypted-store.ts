@@ -1,4 +1,4 @@
-// T-6: Encrypted file credential store for non-macOS platforms (Linux, WSL, Windows).
+// Encrypted file credential store for non-macOS platforms (Linux, WSL, Windows).
 //
 // Uses AES-256-GCM with PBKDF2 key derivation from a machine-specific ID.
 // File format: JSON { iv: hex, salt: hex, ct: hex } with 0o600 permissions.
@@ -6,7 +6,7 @@
 // portable without external dependencies.
 
 import { createCipheriv, createDecipheriv, pbkdf2Sync, randomBytes, createHash } from "node:crypto";
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { hostname, userInfo } from "node:os";
 
@@ -18,20 +18,22 @@ const SALT_LEN = 32;
 const IV_LEN = 12;
 const AUTH_TAG_LEN = 16;
 
-/** Derive the machine-specific key material (non-secret — used as PBKDF2 input). */
+let _cachedMachineId: string | undefined;
+
+/** Derive the machine-specific key material (non-secret — used as PBKDF2 input). Cached after first call. */
 export async function getMachineId(): Promise<string> {
+  if (_cachedMachineId) return _cachedMachineId;
   // Linux: /etc/machine-id or /var/lib/dbus/machine-id
   for (const path of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
-    if (existsSync(path)) {
-      try {
-        const id = readFileSync(path, "utf8").trim();
-        if (id) return id;
-      } catch { /* fall through */ }
-    }
+    try {
+      const id = readFileSync(path, "utf8").trim();
+      if (id) { _cachedMachineId = id; return id; }
+    } catch { /* not found on this platform, try next */ }
   }
   // Fallback: deterministic hash of hostname + username
   const fallback = `${hostname()}:${userInfo().username}`;
-  return createHash("sha256").update(fallback).digest("hex");
+  _cachedMachineId = createHash("sha256").update(fallback).digest("hex");
+  return _cachedMachineId;
 }
 
 interface EncFile {
@@ -66,7 +68,6 @@ export class EncryptedFileAdapter {
   }
 
   async readCredentials(): Promise<{ username: string; password: string } | null> {
-    if (!existsSync(this.credPath)) return null;
     try {
       const raw = readFileSync(this.credPath, "utf8");
       const data = JSON.parse(raw) as EncFile;
@@ -91,8 +92,8 @@ export class EncryptedFileAdapter {
   }
 
   async deleteCredentials(): Promise<void> {
-    if (existsSync(this.credPath)) {
+    try {
       unlinkSync(this.credPath);
-    }
+    } catch { /* file does not exist — nothing to do */ }
   }
 }

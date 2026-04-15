@@ -37,6 +37,10 @@ const CR = {
   reset:  CR_COLOR ? "\u001b[0m"  : "",
 };
 
+// --fast mode overrides
+const FAST_REQUEST_DELAY_MS = 200;
+const FAST_MAX_CONCURRENT = 8;
+
 /** Escape markdown link special characters to prevent injection. */
 function escapeMarkdownLink(text: string): string {
   return text.replace(/[[\]()]/g, "\\$&");
@@ -104,7 +108,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     if (dryRun) {
       logger.warn("Note: --fast has no effect in dry-run mode.");
     } else if (!effectiveQuiet) {
-      logger.info("[fast mode] requestDelayMs=200, maxConcurrentDownloads=8");
+      logger.info(`[fast mode] requestDelayMs=${FAST_REQUEST_DELAY_MS}, maxConcurrentDownloads=${FAST_MAX_CONCURRENT}`);
     }
   }
 
@@ -113,7 +117,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const stateManager = new StateManager(outputDir);
 
   // On non-macOS, inform the user that credentials won't be stored
-  if (!keychain && !quiet) {
+  if (!keychain && !effectiveQuiet) {
     logger.info("Note: macOS Keychain not available — you'll be asked for credentials each run.");
   }
 
@@ -619,10 +623,10 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     }
   }
 
-  const maxConcurrent = fast ? 8 : (((await config.get("maxConcurrentDownloads")) as number | undefined) ?? 3);
+  const maxConcurrent = fast ? FAST_MAX_CONCURRENT : (((await config.get("maxConcurrentDownloads")) as number | undefined) ?? 3);
 
   // Progress display: bar in normal mode, counter already embedded in log lines in verbose/debug mode
-  const useProgressBar = !quiet && !verbose;
+  const useProgressBar = !effectiveQuiet && !verbose;
   // Use a container so onComplete callbacks can reference bar after it's created
   const progress: { bar?: import("cli-progress").SingleBar } = {};
 
@@ -916,7 +920,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           if (threads.length === 0) {
             sections.push(td.turndown(extractPageContent(html)) + extractEmbeddedVideoUrls(html));
           } else {
-            const delayMs = fast ? 200 : (((await config.get("requestDelayMs")) as number | undefined) ?? 500);
+            const delayMs = fast ? FAST_REQUEST_DELAY_MS : (((await config.get("requestDelayMs")) as number | undefined) ?? 500);
             for (const thread of threads) {
               try {
                 // SSRF defense: skip forum threads pointing to external domains
@@ -1134,7 +1138,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   // Unknown activity types summary
-  if (!quiet && allUnknownTypes.size > 0) {
+  if (!effectiveQuiet && allUnknownTypes.size > 0) {
     const totalUnknown = [...allUnknownTypes.values()].reduce((a, b) => a + b, 0);
     logger.info(`Note: ${totalUnknown} activit${totalUnknown === 1 ? "y" : "ies"} with unrecognised type${allUnknownTypes.size === 1 ? "" : "s"} (${[...allUnknownTypes.keys()].join(", ")}) downloaded as binary. Use --verbose for details.`);
   }
