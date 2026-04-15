@@ -347,10 +347,10 @@ program
 // --- reset ---
 program
   .command("reset")
-  .description("Delete all scraped files and reset sync state")
-  .option("--full", "Also clear config and stored credentials", false)
+  .description("Clear sync state (default) or delete all scraped files (--full)")
+  .option("--full", "Also permanently delete downloaded files (requires typing DELETE to confirm)", false)
   .option("--force", "Skip confirmation prompt", false)
-  .option("--dry-run", "Print what would be deleted without deleting", false)
+  .option("--dry-run", "Print what would be changed without making any changes", false)
   .option("--move-user-files", "Interactively move user-owned files before reset", false)
   .action(async (opts: { full: boolean; force: boolean; dryRun: boolean; moveUserFiles: boolean }) => {
     const mgr = new ConfigManager();

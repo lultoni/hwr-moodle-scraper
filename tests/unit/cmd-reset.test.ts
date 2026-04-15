@@ -9,6 +9,7 @@ const mockReaddirSync = vi.fn().mockReturnValue([]);
 const mockExistsSync = vi.fn().mockReturnValue(true);
 const mockMkdirSync = vi.fn();
 const mockRenameSync = vi.fn();
+const mockStatSync = vi.fn().mockReturnValue({ size: 1000 });
 
 vi.mock("node:fs", () => ({
   existsSync: (...args: unknown[]) => mockExistsSync(...args),
@@ -17,6 +18,7 @@ vi.mock("node:fs", () => ({
   readdirSync: (...args: unknown[]) => mockReaddirSync(...args),
   mkdirSync: (...args: unknown[]) => mockMkdirSync(...args),
   renameSync: (...args: unknown[]) => mockRenameSync(...args),
+  statSync: (...args: unknown[]) => mockStatSync(...args),
 }));
 
 // --- collect mock ---
@@ -91,7 +93,7 @@ function makeState(localPath = "/out/Course/Section/file.pdf") {
   };
 }
 
-describe("msc reset", () => {
+describe("msc reset — state-only (default)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(true);
@@ -107,11 +109,13 @@ describe("msc reset", () => {
     spy.mockRestore();
   });
 
-  it("default reset deletes known file and state file", async () => {
+  it("default reset deletes ONLY state file, not tracked files", async () => {
     mockLoad.mockResolvedValue(makeState());
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     await runReset({ outputDir: "/out", force: true });
-    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/file.pdf");
+    // Should NOT delete the tracked pdf
+    expect(mockUnlinkSync).not.toHaveBeenCalledWith("/out/Course/Section/file.pdf");
+    // Should delete state file
     expect(mockUnlinkSync).toHaveBeenCalledWith("/out/.moodle-scraper-state.json");
     spy.mockRestore();
   });
@@ -126,7 +130,7 @@ describe("msc reset", () => {
     spy.mockRestore();
   });
 
-  it("confirmation prompt: 'n' aborts without deleting", async () => {
+  it("confirmation prompt: 'n' aborts without deleting state", async () => {
     mockLoad.mockResolvedValue(makeState());
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const promptFn = vi.fn().mockResolvedValue("n");
@@ -135,12 +139,12 @@ describe("msc reset", () => {
     spy.mockRestore();
   });
 
-  it("confirmation prompt: 'y' proceeds with deletion", async () => {
+  it("confirmation prompt: 'y' clears state", async () => {
     mockLoad.mockResolvedValue(makeState());
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const promptFn = vi.fn().mockResolvedValue("y");
     await runReset({ outputDir: "/out", promptFn });
-    expect(mockUnlinkSync).toHaveBeenCalled();
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/.moodle-scraper-state.json");
     spy.mockRestore();
   });
 
@@ -150,6 +154,55 @@ describe("msc reset", () => {
     const promptFn = vi.fn();
     await runReset({ outputDir: "/out", force: true, promptFn });
     expect(promptFn).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("output message says 'Sync state cleared. Files untouched.'", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", force: true });
+    const output = spy.mock.calls.flat().join("");
+    expect(output).toContain("Sync state cleared");
+    expect(output).toContain("Files untouched");
+    spy.mockRestore();
+  });
+
+  it("--dry-run prints what would be cleared without deleting", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", dryRun: true });
+    expect(mockUnlinkSync).not.toHaveBeenCalled();
+    const output = spy.mock.calls.flat().join("");
+    expect(output).toContain("[dry-run]");
+    expect(output).toContain("state file only");
+    spy.mockRestore();
+  });
+});
+
+describe("msc reset --full", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExistsSync.mockReturnValue(true);
+    mockReaddirSync.mockReturnValue([]);
+    mockStatSync.mockReturnValue({ size: 1000 });
+  });
+
+  it("--full with DELETE confirmation deletes tracked files and state", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const promptFn = vi.fn().mockResolvedValue("DELETE");
+    await runReset({ outputDir: "/out", full: true, promptFn });
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/file.pdf");
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/.moodle-scraper-state.json");
+    spy.mockRestore();
+  });
+
+  it("--full with wrong confirmation aborts without deleting", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const promptFn = vi.fn().mockResolvedValue("yes");
+    await runReset({ outputDir: "/out", full: true, promptFn });
+    expect(mockUnlinkSync).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 
@@ -163,38 +216,20 @@ describe("msc reset", () => {
     spy.mockRestore();
   });
 
-  it("--dry-run prints what would be deleted but does not call unlinkSync", async () => {
+  it("--full --force skips DELETE prompt", async () => {
     mockLoad.mockResolvedValue(makeState());
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", dryRun: true });
-    expect(mockUnlinkSync).not.toHaveBeenCalled();
-    const output = spy.mock.calls.flat().join("");
-    expect(output).toContain("[dry-run]");
-    spy.mockRestore();
-  });
-
-  it("orphaned files (status=orphan) are also deleted", async () => {
-    const state = makeState();
-    state.courses["1"]!.sections["s1"]!.files["r1"]!.status = "orphan";
-    mockLoad.mockResolvedValue(state);
-    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", force: true });
+    const promptFn = vi.fn();
+    await runReset({ outputDir: "/out", force: true, full: true, promptFn });
+    expect(promptFn).not.toHaveBeenCalled();
     expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/file.pdf");
     spy.mockRestore();
   });
 
-  it("skips non-existent localPath without crashing", async () => {
-    mockLoad.mockResolvedValue(makeState("/out/Course/Section/missing.pdf"));
-    mockExistsSync.mockImplementation((p: string) => p !== "/out/Course/Section/missing.pdf");
-    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await expect(runReset({ outputDir: "/out", force: true })).resolves.not.toThrow();
-    spy.mockRestore();
-  });
-
-  it("output message contains deleted file count and course count", async () => {
+  it("--full output message contains deleted file count and course count", async () => {
     mockLoad.mockResolvedValue(makeState());
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", force: true });
+    await runReset({ outputDir: "/out", force: true, full: true });
     const output = spy.mock.calls.flat().join("");
     expect(output).toMatch(/Deleted 1 files? across 1 course/);
     spy.mockRestore();
@@ -208,6 +243,35 @@ describe("msc reset", () => {
     expect(output).toContain("credentials cleared");
     spy.mockRestore();
   });
+
+  it("--full --dry-run prints file count/size without deleting", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", dryRun: true, full: true });
+    expect(mockUnlinkSync).not.toHaveBeenCalled();
+    const output = spy.mock.calls.flat().join("");
+    expect(output).toContain("[dry-run]");
+    expect(output).toContain("Would delete");
+    spy.mockRestore();
+  });
+
+  it("orphaned files (status=orphan) are also deleted with --full", async () => {
+    const state = makeState();
+    state.courses["1"]!.sections["s1"]!.files["r1"]!.status = "orphan";
+    mockLoad.mockResolvedValue(state);
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", force: true, full: true });
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/file.pdf");
+    spy.mockRestore();
+  });
+
+  it("skips non-existent localPath without crashing", async () => {
+    mockLoad.mockResolvedValue(makeState("/out/Course/Section/missing.pdf"));
+    mockExistsSync.mockImplementation((p: string) => p !== "/out/Course/Section/missing.pdf");
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await expect(runReset({ outputDir: "/out", force: true, full: true })).resolves.not.toThrow();
+    spy.mockRestore();
+  });
 });
 
 describe("msc reset — sidecarPath support", () => {
@@ -215,6 +279,7 @@ describe("msc reset — sidecarPath support", () => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(true);
     mockReaddirSync.mockReturnValue([]);
+    mockStatSync.mockReturnValue({ size: 1000 });
   });
 
   function makeStateWithSidecar(
@@ -246,10 +311,10 @@ describe("msc reset — sidecarPath support", () => {
     };
   }
 
-  it("deletes sidecarPath alongside the main file", async () => {
+  it("--full deletes sidecarPath alongside the main file", async () => {
     mockLoad.mockResolvedValue(makeStateWithSidecar());
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", force: true });
+    await runReset({ outputDir: "/out", force: true, full: true });
     expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/file.pdf");
     expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/file.description.md");
     spy.mockRestore();
@@ -260,16 +325,16 @@ describe("msc reset — sidecarPath support", () => {
     // Main file exists, sidecar does not
     mockExistsSync.mockImplementation((p: string) => p !== "/out/Course/Section/file.description.md");
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await expect(runReset({ outputDir: "/out", force: true })).resolves.not.toThrow();
+    await expect(runReset({ outputDir: "/out", force: true, full: true })).resolves.not.toThrow();
     expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/file.pdf");
     expect(mockUnlinkSync).not.toHaveBeenCalledWith("/out/Course/Section/file.description.md");
     spy.mockRestore();
   });
 
-  it("--dry-run counts sidecar in existing paths and shows tree output", async () => {
+  it("--full --dry-run counts sidecar in existing paths and shows tree output", async () => {
     mockLoad.mockResolvedValue(makeStateWithSidecar());
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", dryRun: true });
+    await runReset({ outputDir: "/out", dryRun: true, full: true });
     const output = spy.mock.calls.flat().join("");
     expect(output).toContain("[dry-run]");
     // Should show both files in tree
@@ -283,23 +348,23 @@ describe("msc reset — sidecarPath support", () => {
   it("uses removeEmptyDirs from state.ts (not inline logic)", async () => {
     mockLoad.mockResolvedValue(makeStateWithSidecar());
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", force: true });
+    await runReset({ outputDir: "/out", force: true, full: true });
     expect(mockRemoveEmptyDirs).toHaveBeenCalled();
     spy.mockRestore();
   });
 
-  it("--dry-run shows tree with correct file count", async () => {
+  it("--full --dry-run shows tree with correct file count", async () => {
     mockLoad.mockResolvedValue(makeStateWithSidecar());
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", dryRun: true });
+    await runReset({ outputDir: "/out", dryRun: true, full: true });
     const output = spy.mock.calls.flat().join("");
     // 2 existing files (localPath + sidecarPath both exist by default)
-    expect(output).toMatch(/\[dry-run\] Would delete 2 files across 1 courses? \(1 activit/);
+    expect(output).toMatch(/\[dry-run\] Would delete 2 files.*across 1 courses? \(1 activit/);
     spy.mockRestore();
   });
 });
 
-describe("msc reset — --move-user-files", () => {
+describe("msc reset — --move-user-files (only with --full)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(true);
@@ -307,6 +372,7 @@ describe("msc reset — --move-user-files", () => {
     mockSelectItem.mockResolvedValue("skip");
     mockCollectFiles.mockReturnValue([]);
     mockGroupUserFiles.mockReturnValue([]);
+    mockStatSync.mockReturnValue({ size: 1000 });
   });
 
   it("when no user files are detected, skips move flow", async () => {
@@ -314,7 +380,7 @@ describe("msc reset — --move-user-files", () => {
     mockCollectFiles.mockReturnValue([]);
     mockGroupUserFiles.mockReturnValue([]);
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", force: true, moveUserFiles: true });
+    await runReset({ outputDir: "/out", force: true, full: true, moveUserFiles: true });
     expect(mockSelectItem).not.toHaveBeenCalled();
     spy.mockRestore();
   });
@@ -328,7 +394,7 @@ describe("msc reset — --move-user-files", () => {
     ]);
     mockSelectItem.mockResolvedValue("skip");
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", force: true, moveUserFiles: true });
+    await runReset({ outputDir: "/out", force: true, full: true, moveUserFiles: true });
     expect(mockSelectItem).toHaveBeenCalledTimes(2);
     spy.mockRestore();
   });
@@ -341,7 +407,7 @@ describe("msc reset — --move-user-files", () => {
     ]);
     mockSelectItem.mockResolvedValue("output-root");
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", force: true, moveUserFiles: true });
+    await runReset({ outputDir: "/out", force: true, full: true, moveUserFiles: true });
     // mkdirSync should be called for the target, renameSync should move the group
     expect(mockMkdirSync).toHaveBeenCalled();
     expect(mockRenameSync).toHaveBeenCalledWith("/out/MyGuide", "/out/MyGuide");
@@ -356,7 +422,7 @@ describe("msc reset — --move-user-files", () => {
     ]);
     mockSelectItem.mockResolvedValue("skip");
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", force: true, moveUserFiles: true });
+    await runReset({ outputDir: "/out", force: true, full: true, moveUserFiles: true });
     expect(mockRenameSync).not.toHaveBeenCalled();
     spy.mockRestore();
   });
@@ -372,23 +438,23 @@ describe("msc reset — --move-user-files", () => {
       .mockResolvedValueOnce("output-root")
       .mockResolvedValueOnce("skip");
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", force: true, moveUserFiles: true });
+    await runReset({ outputDir: "/out", force: true, full: true, moveUserFiles: true });
     const output = spy.mock.calls.flat().join("");
     expect(output).toMatch(/Moved 1.*skip/i);
     spy.mockRestore();
   });
 
-  it("--dry-run with --move-user-files shows user groups without moving", async () => {
+  it("--dry-run with --move-user-files shows dry-run output (move flow skipped in dry-run)", async () => {
     mockLoad.mockResolvedValue(makeState());
     mockCollectFiles.mockReturnValue(["/out/MyGuide/a.md"]);
     mockGroupUserFiles.mockReturnValue([
       { displayPath: "MyGuide", absPath: "/out/MyGuide", files: ["/out/MyGuide/a.md"], isDirectory: true },
     ]);
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", dryRun: true, moveUserFiles: true });
+    await runReset({ outputDir: "/out", dryRun: true, full: true, moveUserFiles: true });
     const output = spy.mock.calls.flat().join("");
+    // dry-run exits before the move flow
     expect(output).toContain("[dry-run]");
-    expect(output).toContain("MyGuide");
     expect(mockRenameSync).not.toHaveBeenCalled();
     expect(mockSelectItem).not.toHaveBeenCalled();
     spy.mockRestore();
@@ -400,6 +466,7 @@ describe("msc reset — submissionPaths support", () => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(true);
     mockReaddirSync.mockReturnValue([]);
+    mockStatSync.mockReturnValue({ size: 1000 });
   });
 
   function makeStateWithSubmissions(
@@ -434,10 +501,10 @@ describe("msc reset — submissionPaths support", () => {
     };
   }
 
-  it("deletes all submissionPaths alongside the main file", async () => {
+  it("--full deletes all submissionPaths alongside the main file", async () => {
     mockLoad.mockResolvedValue(makeStateWithSubmissions());
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", force: true });
+    await runReset({ outputDir: "/out", force: true, full: true });
     expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/Hausarbeit.md");
     expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/Hausarbeit.submission.pdf");
     expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/Hausarbeit.submission.zip");
@@ -454,7 +521,7 @@ describe("msc reset — submissionPaths support", () => {
       (p: string) => p !== "/out/Course/Section/Hausarbeit.submission.pdf",
     );
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await expect(runReset({ outputDir: "/out", force: true })).resolves.not.toThrow();
+    await expect(runReset({ outputDir: "/out", force: true, full: true })).resolves.not.toThrow();
     expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/Hausarbeit.md");
     expect(mockUnlinkSync).not.toHaveBeenCalledWith(
       "/out/Course/Section/Hausarbeit.submission.pdf",
@@ -462,16 +529,16 @@ describe("msc reset — submissionPaths support", () => {
     spy.mockRestore();
   });
 
-  it("--dry-run counts submission files and shows them in tree output", async () => {
+  it("--full --dry-run counts submission files and shows them in tree output", async () => {
     mockLoad.mockResolvedValue(makeStateWithSubmissions());
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", dryRun: true });
+    await runReset({ outputDir: "/out", dryRun: true, full: true });
     const output = spy.mock.calls.flat().join("");
     expect(output).toContain("[dry-run]");
     expect(output).toContain("Hausarbeit.submission.pdf");
     expect(output).toContain("Hausarbeit.submission.zip");
     // 3 files: main + 2 submissions
-    expect(output).toMatch(/\[dry-run\] Would delete 3 files across 1 courses? \(1 activit/);
+    expect(output).toMatch(/\[dry-run\] Would delete 3 files.*across 1 courses? \(1 activit/);
     expect(mockUnlinkSync).not.toHaveBeenCalled();
     spy.mockRestore();
   });
@@ -482,7 +549,7 @@ describe("msc reset — submissionPaths support", () => {
     delete (state.courses["1"]!.sections["s1"]!.files["r1"] as Record<string, unknown>)["submissionPaths"];
     mockLoad.mockResolvedValue(state);
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await expect(runReset({ outputDir: "/out", force: true })).resolves.not.toThrow();
+    await expect(runReset({ outputDir: "/out", force: true, full: true })).resolves.not.toThrow();
     expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/Hausarbeit.md");
     spy.mockRestore();
   });
@@ -493,9 +560,10 @@ describe("msc reset — duplicate localPath deduplication", () => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(true);
     mockReaddirSync.mockReturnValue([]);
+    mockStatSync.mockReturnValue({ size: 1000 });
   });
 
-  it("does not call unlinkSync twice for the same path when state has duplicates", async () => {
+  it("--full does not call unlinkSync twice for the same path when state has duplicates", async () => {
     // Two file entries with the same localPath (duplicate state bug)
     const state = {
       version: 1,
@@ -516,7 +584,7 @@ describe("msc reset — duplicate localPath deduplication", () => {
     };
     mockLoad.mockResolvedValue(state);
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await runReset({ outputDir: "/out", force: true });
+    await runReset({ outputDir: "/out", force: true, full: true });
     // unlinkSync should only be called once for the deduplicated path (+ once for state file)
     const unlinkCalls = mockUnlinkSync.mock.calls.filter(
       (args) => args[0] === "/out/Course/file.java",

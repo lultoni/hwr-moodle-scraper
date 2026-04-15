@@ -1,5 +1,5 @@
 // REQ-CLI-017
-import { existsSync, unlinkSync, readdirSync, mkdirSync, renameSync } from "node:fs";
+import { existsSync, unlinkSync, readdirSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { relative, dirname, sep, join, basename } from "node:path";
 import { StateManager, removeEmptyDirs } from "../sync/state.js";
 import { ConfigManager } from "../config.js";
@@ -153,7 +153,36 @@ export async function runReset(opts: ResetOptions): Promise<void> {
     return;
   }
 
-  // Collect all scraper-owned file paths from state (including sidecars and generated files)
+  const courseCount = Object.keys(state.courses).length;
+  let totalFiles = 0;
+  for (const course of Object.values(state.courses)) {
+    for (const section of Object.values(course.sections ?? {})) {
+      totalFiles += Object.keys(section.files ?? {}).length;
+    }
+  }
+
+  if (!full) {
+    // State-only reset — never touches files on disk
+    if (dryRun) {
+      process.stdout.write(`[dry-run] Would clear state file only. ${totalFiles} tracked files across ${courseCount} courses would remain on disk.\n`);
+      return;
+    }
+    if (!force && promptFn) {
+      process.stdout.write(`This will clear sync state for ${courseCount} course${courseCount === 1 ? "" : "s"} (${totalFiles} files tracked). Your files on disk will NOT be deleted.\n`);
+      const answer = await promptFn("Continue? [y/N] ");
+      if (answer.trim().toLowerCase() !== "y") {
+        process.stdout.write("Cancelled.\n");
+        return;
+      }
+    }
+    // Delete state files only
+    if (existsSync(sm.statePath)) unlinkSync(sm.statePath);
+    if (existsSync(sm.backupPath)) unlinkSync(sm.backupPath);
+    process.stdout.write(`Sync state cleared. Files untouched. Run \`msc scrape\` to rebuild.\n`);
+    return;
+  }
+
+  // --full: collect all scraper-owned paths and delete everything
   const knownPaths: string[] = [];
   let generatedCount = 0;
   let sidecarCount = 0;
@@ -171,17 +200,30 @@ export async function runReset(opts: ResetOptions): Promise<void> {
       }
     }
   }
-  const courseCount = Object.keys(state.courses).length;
 
-  // Confirmation prompt (unless --force or --dry-run)
-  if (!force && !dryRun && promptFn) {
-    const scope = full
-      ? "all scraped files, sync state, config, and stored credentials"
-      : "all scraped files and sync state";
-    process.stdout.write(`This will delete ${scope}.\n`);
-    process.stdout.write(`Your personal files in ${outputDir} will be kept.\n`);
-    const answer = await promptFn("Continue? [y/N] ");
-    if (answer.trim().toLowerCase() !== "y") return;
+  const existingPaths = [...new Set(knownPaths)].filter((p) => existsSync(p));
+  let totalSize = 0;
+  for (const p of existingPaths) {
+    try {
+      totalSize += statSync(p).size;
+    } catch { /* ignore */ }
+  }
+  const sizeMb = (totalSize / 1_000_000).toFixed(0);
+  const sizeGb = (totalSize / 1_000_000_000).toFixed(1);
+  const sizeStr = totalSize >= 1_000_000_000 ? `${sizeGb} GB` : `${sizeMb} MB`;
+
+  if (dryRun) {
+    const treeOutput = renderTree(existingPaths.sort(), outputDir);
+    const parts: string[] = [`${activityCount} activit${activityCount === 1 ? "y" : "ies"}`];
+    if (sidecarCount > 0) parts.push(`${sidecarCount} sidecar${sidecarCount === 1 ? "" : "s"}`);
+    if (submissionCount > 0) parts.push(`${submissionCount} submission${submissionCount === 1 ? "" : "s"}`);
+    if (imageCount > 0) parts.push(`${imageCount} image${imageCount === 1 ? "" : "s"}`);
+    if (generatedCount > 0) parts.push(`${generatedCount} generated`);
+    process.stdout.write(`[dry-run] Would delete ${existingPaths.length} files (${sizeStr}) across ${courseCount} courses (${parts.join(", ")}):\n`);
+    if (treeOutput) process.stdout.write("\n" + treeOutput + "\n");
+    process.stdout.write(`\n+ state file: ${relative(outputDir, sm.statePath)}\n`);
+    process.stdout.write("+ config reset\n+ credentials and session cleared\n");
+    return;
   }
 
   // --move-user-files: interactively move user-owned files before deletion
@@ -189,36 +231,25 @@ export async function runReset(opts: ResetOptions): Promise<void> {
     await handleMoveUserFiles(outputDir, knownPaths, dryRun, promptFn);
   }
 
-  // Delete scraper-owned files (deduplicate first to avoid ENOENT on duplicate state entries)
-  let deletedCount = 0;
-  const existingPaths = [...new Set(knownPaths)].filter((p) => existsSync(p));
-
-  if (dryRun) {
-    const treeOutput = renderTree(existingPaths.sort(), outputDir);
-    // Build a categorised summary so the count is reconcilable with msc scrape output
-    const parts: string[] = [`${activityCount} activit${activityCount === 1 ? "y" : "ies"}`];
-    if (sidecarCount > 0) parts.push(`${sidecarCount} sidecar${sidecarCount === 1 ? "" : "s"}`);
-    if (submissionCount > 0) parts.push(`${submissionCount} submission${submissionCount === 1 ? "" : "s"}`);
-    if (imageCount > 0) parts.push(`${imageCount} image${imageCount === 1 ? "" : "s"}`);
-    if (generatedCount > 0) parts.push(`${generatedCount} generated`);
-    process.stdout.write(`[dry-run] Would delete ${existingPaths.length} files across ${courseCount} courses (${parts.join(", ")}):\n`);
-    if (treeOutput) {
-      process.stdout.write("\n" + treeOutput + "\n");
+  if (!force && promptFn) {
+    process.stdout.write(`WARNING: This will permanently delete ${existingPaths.length} files (${sizeStr}) across ${courseCount} courses.\n`);
+    process.stdout.write("Note: Files from ended courses may not be re-downloadable.\n");
+    process.stdout.write("Type DELETE to confirm, or press Enter to cancel: ");
+    const answer = await promptFn("");
+    if (answer.trim() !== "DELETE") {
+      process.stdout.write("Cancelled.\n");
+      return;
     }
-    process.stdout.write(`\n+ state file: ${relative(outputDir, sm.statePath)}\n`);
-    if (full) {
-      process.stdout.write("+ config reset\n");
-      process.stdout.write("+ credentials and session cleared\n");
-    }
-    return;
   }
 
+  // Delete scraper-owned files
+  let deletedCount = 0;
   for (const p of existingPaths) {
     unlinkSync(p);
     deletedCount++;
   }
 
-  // Remove empty directories left behind (deepest-first, recursive)
+  // Remove empty directories left behind
   const dirs = new Set<string>();
   for (const p of knownPaths) dirs.add(dirname(p));
   const sorted = [...dirs].sort((a, b) => b.length - a.length);
@@ -227,30 +258,21 @@ export async function runReset(opts: ResetOptions): Promise<void> {
   }
 
   // Delete state file and backup
-  if (existsSync(sm.statePath)) {
-    unlinkSync(sm.statePath);
-  }
-  if (existsSync(sm.backupPath)) {
-    unlinkSync(sm.backupPath);
-  }
+  if (existsSync(sm.statePath)) unlinkSync(sm.statePath);
+  if (existsSync(sm.backupPath)) unlinkSync(sm.backupPath);
 
   // --full: also clear config and credentials
-  if (full) {
-    const config = new ConfigManager();
-    const keychain = tryCreateKeychain();
-    await config.reset();
-    if (keychain) await keychain.deleteCredentials();
-    await deleteSessionFile();
-  }
+  const config = new ConfigManager();
+  const keychain = tryCreateKeychain();
+  await config.reset();
+  if (keychain) await keychain.deleteCredentials();
+  await deleteSessionFile();
 
-  const suffix = full
-    ? " Config and credentials cleared."
-    : " Run `msc scrape` to start fresh.";
   const extras: string[] = [];
   if (sidecarCount > 0) extras.push(`${sidecarCount} sidecar${sidecarCount === 1 ? "" : "s"}`);
   if (submissionCount > 0) extras.push(`${submissionCount} submission${submissionCount === 1 ? "" : "s"}`);
   if (imageCount > 0) extras.push(`${imageCount} image${imageCount === 1 ? "" : "s"}`);
   if (generatedCount > 0) extras.push(`${generatedCount} generated`);
   const breakdown = extras.length > 0 ? ` (incl. ${extras.join(", ")})` : "";
-  process.stdout.write(`Deleted ${deletedCount} files${breakdown} across ${courseCount} courses. State reset.${suffix}\n`);
+  process.stdout.write(`Deleted ${deletedCount} files${breakdown} across ${courseCount} courses. State reset. Config and credentials cleared.\n`);
 }
