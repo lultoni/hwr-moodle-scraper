@@ -221,8 +221,8 @@ export async function showConfirm(
   const SHOW_CURSOR = "\u001b[?25h";
   process.stdout.write(HIDE_CURSOR);
 
-  let selected = 0; // 0 = Confirm, 1 = Back
-  const items = ["Confirm", "Back"];
+  let selected = 0; // 0 = Confirm, 1 = ← Back
+  const items = ["Confirm", "← Back"];
 
   function draw(): void {
     const renderItems: RenderItem[] = [
