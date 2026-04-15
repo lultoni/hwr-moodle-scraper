@@ -4,6 +4,7 @@ import type { KeychainAdapter } from "./keychain.js";
 import type { HttpClient } from "../http/client.js";
 import type { Logger } from "../logger.js";
 import { extractCookies } from "../http/cookies.js";
+import { translateMoodleError } from "../scraper/error-map.js";
 
 export class AuthError extends Error {
   readonly exitCode: number;
@@ -133,7 +134,10 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
   }
 
   if (!isLoggedIn) {
-    const msg = "Login failed: incorrect username or password.";
+    // Check response body for a Moodle error message and translate it if it's German
+    const rawError = (response.body ?? "").match(/class="loginerrors"[^>]*>([\s\S]*?)<\/div>/i)?.[1]?.replace(/<[^>]+>/g, "").trim() ?? "";
+    const errorDetail = rawError ? ` — ${translateMoodleError(rawError)}` : "";
+    const msg = `Login failed: incorrect username or password${errorDetail}.`;
     process.stderr.write(msg + "\n");
     throw new AuthError(msg, EXIT_CODES.ERROR);
   }

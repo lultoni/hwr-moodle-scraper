@@ -94,7 +94,7 @@ describe("STEP-021: status command — richer output", () => {
     const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
     expect(output).toContain("Courses:");
     expect(output).toContain("Files:");
-    expect(output).toContain("Orphaned:");
+    expect(output).toContain("Old entries:");
 
     stdoutSpy.mockRestore();
   });
@@ -168,7 +168,7 @@ describe("STEP-021: status command — richer output", () => {
 
     const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
     expect(output).toContain("file.pdf");
-    expect(output).toContain("Orphaned");
+    expect(output).toContain("Old entries");
 
     stdoutSpy.mockRestore();
   });
@@ -209,6 +209,76 @@ describe("STEP-021: status command — richer output", () => {
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     await runStatus({ outputDir: "/tmp/test", showIssues: true });
     // Even with 0 user files, the output should not crash
+    stdoutSpy.mockRestore();
+  });
+
+  // UC-02: Orphaned renamed to "Old entries"
+  it("summary line uses 'Old entries' not 'Orphaned'", async () => {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        version: 1,
+        lastSyncAt: "2026-03-26T10:00:00.000Z",
+        courses: {
+          "1": { name: "Macro", sections: { "s1": { files: {
+            "r1": { status: "orphan", localPath: "/out/file.pdf", url: "https://moodle.example.com" },
+          } } } },
+        },
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test" });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output).toContain("Old entries: 1");
+    expect(output).not.toContain("Orphaned:");
+    stdoutSpy.mockRestore();
+  });
+
+  // UC-02: --issues header uses "from ended courses"
+  it("--issues orphan header says 'from ended courses'", async () => {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        version: 1,
+        lastSyncAt: "2026-03-26T10:00:00.000Z",
+        courses: {
+          "1": { name: "Macro", sections: { "s1": { files: {
+            "r1": { status: "orphan", localPath: "/out/file.pdf", url: "https://moodle.example.com" },
+          } } } },
+        },
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output).toContain("from ended courses");
+    expect(output).toContain("dismiss-orphans");
+    stdoutSpy.mockRestore();
+  });
+
+  // UC-27: --issues tip logic — dismiss-orphans shown when only orphans, no user files
+  it("--issues shows dismiss-orphans tip when only orphans and no user files", async () => {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        version: 1,
+        lastSyncAt: "2026-03-26T10:00:00.000Z",
+        courses: {
+          "1": { name: "Macro", sections: { "s1": { files: {
+            "r1": { status: "orphan", localPath: "/out/file.pdf", url: "https://moodle.example.com" },
+          } } } },
+        },
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+    mockCollectFiles.mockReturnValue([]); // no user files
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output).toContain("dismiss-orphans");
+    expect(output).not.toContain("msc clean\`");
     stdoutSpy.mockRestore();
   });
 });

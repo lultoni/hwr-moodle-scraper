@@ -250,7 +250,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         const readmeMd = readmeContentByDir.get(courseDir);
         if (readmeMd && summaryMd.trim() === readmeMd.trim()) continue;
         const sectionDirName = sanitiseFilename(section.sectionName);
-        const summaryPath = join(courseDir, sectionDirName, "_Abschnittsbeschreibung.md");
+        const summaryPath = join(courseDir, sectionDirName, "_SectionDescription.md");
         mkdirSync(dirname(summaryPath), { recursive: true });
         // Download embedded Moodle images and rewrite URLs to relative paths
         const { downloadEmbeddedImages } = await import("../scraper/images.js");
@@ -322,7 +322,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
               if (descHtml) {
                 expandedActivities.push({
                   activityType: "label",
-                  activityName: folderSubDir ? "_Ordnerbeschreibung" : activity.activityName + nameSuffix,
+                  activityName: folderSubDir ? "_FolderDescription" : activity.activityName + nameSuffix,
                   url: "",
                   isAccessible: true,
                   resourceId: `folder-${folderId}-description`,
@@ -903,7 +903,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const skipMsg = skipped.length > 0 ? `${skipped.length} skipped` : "0 skipped";
   logger.info(`Done: ${totalFiles} files across ${courses.length} courses (${skipMsg}${failedMsg})`);
   const breakdownParts: string[] = [`${downloadedCount} activities`];
-  if (sidecarCount > 0) breakdownParts.push(`${sidecarCount} sidecar${sidecarCount === 1 ? "" : "s"}`);
+  if (sidecarCount > 0) breakdownParts.push(`${sidecarCount} description file${sidecarCount === 1 ? "" : "s"}`);
   if (submissionTotal > 0) breakdownParts.push(`${submissionTotal} submission${submissionTotal === 1 ? "" : "s"}`);
   if (imageTotal > 0) breakdownParts.push(`${imageTotal} image${imageTotal === 1 ? "" : "s"}`);
   if (mergedGeneratedCount > 0) breakdownParts.push(`${mergedGeneratedCount} generated`);
@@ -912,10 +912,10 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Filter summary — shown whenever duplicates were suppressed or short descs consolidated
   const filterParts: string[] = [];
   if (suppressedSidecarCount > 0)
-    filterParts.push(`${suppressedSidecarCount} duplicate sidecar${suppressedSidecarCount === 1 ? "" : "s"} suppressed`);
+    filterParts.push(`${suppressedSidecarCount} duplicate description file${suppressedSidecarCount === 1 ? "" : "s"} suppressed`);
   if (consolidatedShortCount > 0) {
     const nFiles = beschreibungenToWrite.length;
-    filterParts.push(`${consolidatedShortCount} short description${consolidatedShortCount === 1 ? "" : "s"} consolidated into ${nFiles} _Beschreibungen.md file${nFiles === 1 ? "" : "s"}`);
+    filterParts.push(`${consolidatedShortCount} short description${consolidatedShortCount === 1 ? "" : "s"} consolidated into ${nFiles} _Descriptions.md file${nFiles === 1 ? "" : "s"}`);
   }
   if (filterParts.length > 0) logger.info(`  ${filterParts.join(", ")}.`);
 
@@ -927,6 +927,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     if (newCount > 0) parts.push(`${newCount} new`);
     if (updatedCount > 0) parts.push(`${updatedCount} updated`);
     logger.info("");
+    logger.info("Legend: + new  ~ updated");
     logger.info(`Changes this run: ${parts.join(", ")}`);
     // Sort by path for consistent output, cap at 30 lines to avoid flooding terminal
     const sorted = changeEntries.sort((a, b) => a.relativePath.localeCompare(b.relativePath));

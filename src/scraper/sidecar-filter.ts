@@ -314,14 +314,14 @@ export function filterSidecars(
       // Only one unique short desc in this dir — keep as normal sidecar
       filteredSidecars.push(unique[0]!.candidate);
     } else {
-      // Two or more unique — consolidate into _Beschreibungen.md
-      const lines = ["# Beschreibungen", ""];
+      // Two or more unique — consolidate into _Descriptions.md
+      const lines = ["# Descriptions", ""];
       for (const { candidate, descMd } of unique) {
-        logger?.debug(`[SIDECAR-COLLECT] ${join(dir, "_Beschreibungen.md")} <- ${candidate.label} (${descMd})`);
+        logger?.debug(`[SIDECAR-COLLECT] ${join(dir, "_Descriptions.md")} <- ${candidate.label} (${descMd})`);
         lines.push(`**${candidate.label}:** ${descMd}`);
       }
       beschreibungenFiles.push({
-        path: join(dir, "_Beschreibungen.md"),
+        path: join(dir, "_Descriptions.md"),
         content: lines.join("\n"),
       });
       consolidatedCount += unique.length;

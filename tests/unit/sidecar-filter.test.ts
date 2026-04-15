@@ -102,8 +102,8 @@ describe("filterSidecars()", () => {
     expect(result.beschreibungenFiles).toHaveLength(1);
 
     const bf = result.beschreibungenFiles[0]!;
-    expect(bf.path).toBe(join(dir, "_Beschreibungen.md"));
-    expect(bf.content).toContain("# Beschreibungen");
+    expect(bf.path).toBe(join(dir, "_Descriptions.md"));
+    expect(bf.content).toContain("# Descriptions");
     expect(bf.content).toContain("**FiMa Skript:** Zinssatz");
     expect(bf.content).toContain("**FimaAufgaben:** Aufgabe 4/10 korrigiert");
   });

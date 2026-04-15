@@ -165,7 +165,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
 
   // Summary line
   const sizeStr = totalSize > 0 ? ` (${formatSize(totalSize)})` : "";
-  write(`Courses: ${Object.keys(state.courses).length} | Files: ${totalFiles}${sizeStr} | Orphaned: ${orphanedFiles}`);
+  write(`Courses: ${Object.keys(state.courses).length} | Files: ${totalFiles}${sizeStr} | Old entries: ${orphanedFiles}`);
   write("");
 
   // Per-course table
@@ -198,17 +198,18 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
 
   if (!showIssues) {
     write("");
-    write("Tip: Run `msc status --issues` to check for missing or orphaned files.");
+    write("Tip: Run `msc status --issues` to check for missing files or old entries.");
     return;
   }
 
   // --issues: tree views
   if (orphans.length > 0) {
     write("");
-    write(`Orphaned files (${orphans.length}):`);
+    write(`Old entries — from ended courses (${orphans.length}):`);
     for (const line of buildTreeLines(orphans.map((o) => o.localPath), outputDir)) {
       write(line);
     }
+    write("  (Files on disk are untouched. To clean up, run `msc status --dismiss-orphans`.)");
   }
 
   if (missingFiles.length > 0) {
@@ -234,5 +235,16 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
 
   if (orphans.length === 0 && missingFiles.length === 0 && userFiles.length === 0) {
     write("No issues found.");
+  } else {
+    // Contextual tips based on what was found
+    write("");
+    if (userFiles.length > 0) {
+      write("Tip: Run `msc clean` to remove personal files, or `msc clean --move` to relocate them.");
+    }
+    if (orphans.length > 0 && userFiles.length === 0) {
+      write("Tip: Run `msc status --dismiss-orphans` to clean up old state entries.");
+    } else if (orphans.length > 0) {
+      write("Tip: Run `msc status --dismiss-orphans` to clean up old state entries.");
+    }
   }
 }
