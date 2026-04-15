@@ -165,7 +165,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   let totalFiles = 0;
   let totalSize = 0;
   let orphanedFiles = 0;
-  const orphans: Array<{ localPath: string; url: string }> = [];
+  const orphans: Array<{ localPath: string; url: string; courseName: string }> = [];
   const missingFiles: Array<{ localPath: string; url: string }> = [];
   const knownPaths = new Set<string>();
 
@@ -203,7 +203,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
 
         if (file.status === "orphan") {
           orphanedFiles++;
-          orphans.push({ localPath: file.localPath, url: file.url });
+          orphans.push({ localPath: file.localPath, url: file.url, courseName: course.name ?? courseId });
         } else if (showIssues && file.localPath && !existsSync(file.localPath)) {
           missingFiles.push({ localPath: file.localPath, url: file.url });
         }
@@ -265,9 +265,20 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
 
   if (orphans.length > 0) {
     write("");
-    write(`Old entries — from ended courses (${orphans.length}):`);
-    for (const line of buildTreeLines(orphans.map((o) => o.localPath), outputDir)) {
-      write(line);
+    const orphanCourseCount = new Set(orphans.map((o) => o.courseName)).size;
+    write(`Old entries — from ended courses (${orphans.length} entr${orphans.length === 1 ? "y" : "ies"} across ${orphanCourseCount} course${orphanCourseCount === 1 ? "" : "s"}):`);
+    // Group by course name for a clearer tree
+    const byCourse = new Map<string, string[]>();
+    for (const o of orphans) {
+      const list = byCourse.get(o.courseName) ?? [];
+      list.push(o.localPath);
+      byCourse.set(o.courseName, list);
+    }
+    for (const [courseName, paths] of byCourse) {
+      write(`  ${courseName}:`);
+      for (const line of buildTreeLines(paths, outputDir)) {
+        write("  " + line);
+      }
     }
     write("  (Files on disk are untouched. To clean up, run `msc status --dismiss-orphans`.)");
   }

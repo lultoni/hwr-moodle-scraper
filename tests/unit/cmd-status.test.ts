@@ -425,3 +425,119 @@ describe("STEP-021: Log file output", () => {
     expect(content).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   });
 });
+
+// ── T-22 + T-24: grouped orphan tree + summary-first --issues ─────────────────
+
+describe("T-22 + T-24: grouped orphan tree and summary-first --issues output", () => {
+  beforeEach(() => {
+    mockCollectFiles.mockReturnValue([]);
+  });
+
+  function mockWithOrphans(orphansByCourse: Array<{ courseId: string; courseName: string; resourceId: string; localPath: string }>) {
+    const courses: Record<string, { name: string; sections: Record<string, { files: Record<string, unknown> }> }> = {};
+    for (const { courseId, courseName, resourceId, localPath } of orphansByCourse) {
+      if (!courses[courseId]) {
+        courses[courseId] = { name: courseName, sections: { s1: { files: {} } } };
+      }
+      courses[courseId]!.sections["s1"]!.files[resourceId] = {
+        status: "orphan",
+        localPath,
+        url: `https://moodle.example.com/r/${resourceId}`,
+      };
+    }
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue({
+        version: 1, lastSyncAt: "2026-04-01T00:00:00.000Z", courses,
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+  }
+
+  it("--issues shows summary line before tree when orphans exist", async () => {
+    mockWithOrphans([
+      { courseId: "1", courseName: "Macro", resourceId: "r1", localPath: "/out/Macro/file1.pdf" },
+      { courseId: "1", courseName: "Macro", resourceId: "r2", localPath: "/out/Macro/file2.pdf" },
+      { courseId: "2", courseName: "FiMa", resourceId: "r3", localPath: "/out/FiMa/file3.pdf" },
+    ]);
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/out", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    // Summary line must appear and mention count + course count
+    expect(output).toContain("3 entries");
+    expect(output).toContain("2 courses");
+    // Summary must appear before any tree lines (file paths)
+    const summaryIdx = output.indexOf("3 entries");
+    const treeIdx = output.indexOf("file1.pdf");
+    expect(summaryIdx).toBeLessThan(treeIdx);
+  });
+
+  it("--issues groups orphan tree by course name — each course appears as its own section", async () => {
+    mockWithOrphans([
+      { courseId: "1", courseName: "Macro", resourceId: "r1", localPath: "/out/Macro/fileA.pdf" },
+      { courseId: "2", courseName: "FiMa", resourceId: "r2", localPath: "/out/FiMa/fileB.pdf" },
+    ]);
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/out", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    // Both course names appear as section labels
+    expect(output).toContain("Macro:");
+    expect(output).toContain("FiMa:");
+    // Files appear under their respective courses
+    const macroIdx = output.indexOf("Macro:");
+    const fileAIdx = output.indexOf("fileA.pdf");
+    const fimaIdx = output.indexOf("FiMa:");
+    const fileBIdx = output.indexOf("fileB.pdf");
+    expect(macroIdx).toBeLessThan(fileAIdx);
+    expect(fimaIdx).toBeLessThan(fileBIdx);
+  });
+
+  it("--issues uses singular 'entry' for a single orphan", async () => {
+    mockWithOrphans([
+      { courseId: "1", courseName: "Macro", resourceId: "r1", localPath: "/out/Macro/only.pdf" },
+    ]);
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/out", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    expect(output).toContain("1 entry");
+    expect(output).not.toContain("1 entries");
+  });
+
+  it("--issues uses singular 'course' when all orphans are in one course", async () => {
+    mockWithOrphans([
+      { courseId: "1", courseName: "Macro", resourceId: "r1", localPath: "/out/Macro/a.pdf" },
+      { courseId: "1", courseName: "Macro", resourceId: "r2", localPath: "/out/Macro/b.pdf" },
+    ]);
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/out", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    expect(output).toContain("1 course");
+    expect(output).not.toContain("1 courses");
+  });
+
+  it("--issues with zero orphans shows no 'Old entries' section", async () => {
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue({
+        version: 1, lastSyncAt: "2026-04-01T00:00:00.000Z",
+        courses: { "1": { name: "Macro", sections: { s1: { files: { r1: { status: "ok", localPath: "/out/f.pdf", url: "" } } } } } },
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/out", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    expect(output).not.toContain("Old entries —");
+  });
+});
