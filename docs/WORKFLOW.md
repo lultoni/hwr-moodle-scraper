@@ -65,11 +65,11 @@
 
 **Checklist**:
 - [x] All 22 steps implemented
-- [x] All 646 tests passing (43 test files)
-- [x] Full CLI with auth, scrape, status, wizard, reset, tui commands
-- [x] Security: keychain integration, credential handling, HTTPS + retry logic
-- [x] Sync: rate limiting, incremental updates, state management
-- [x] Phase 5 improvements: 36 cleanup/enhancement passes completed
+- [x] All 702 tests passing (46 test files)
+- [x] Full CLI with auth, scrape, status, wizard, reset, tui, clean, help, archive commands
+- [x] Security: keychain integration, credential handling, HTTPS + retry logic, password env vars on non-macOS
+- [x] Sync: rate limiting, incremental updates, state management, orphan dismissal, last-sync tracking
+- [x] Phase 5 improvements: 37 cleanup/enhancement passes completed
 
 ---
 
@@ -80,7 +80,7 @@
 3. For new features: use `EnterPlanMode`, surface design decisions via `AskUserQuestion`, then: write tests → implement → `npx vitest run` → `node scripts/file-checker.js` → commit per feature
 4. At end of pass: bump version if user-facing features were added (see versioning below), update CLAUDE.md, rebuild: `npm run build && npm install -g .`
 
-**Current status**: 36 cleanup passes completed. 646/646 tests passing (43 test files). Version: `0.2.0`.
+**Current status**: 38 cleanup passes completed. 702/702 tests passing (46 test files). Version: `0.4.0`.
 
 ---
 

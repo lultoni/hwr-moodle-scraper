@@ -15,6 +15,7 @@ const SHOW_CURSOR = "\u001b[?25h";
 
 export interface MenuItem {
   label: string;
+  hasSubmenu?: boolean;
   action: () => Promise<void>;
 }
 
@@ -40,7 +41,7 @@ export async function runMenu(opts: {
     const { rows } = { rows: process.stdout.rows ?? 24 };
     const renderItems: RenderItem[] = items.map((item, i) => ({
       type: "selector" as const,
-      label: item.label,
+      label: item.hasSubmenu ? `${item.label}...` : item.label,
       focused: i === selected,
     }));
     const { pageItems, totalPages } = paginate(renderItems, page, rows);

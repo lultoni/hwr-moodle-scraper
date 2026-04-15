@@ -11,6 +11,20 @@
 // \u001b[3J erases scrollback so old screen content doesn't scroll into view
 const CLEAR = "\u001b[3J\u001b[2J\u001b[H";
 
+/** ANSI color/style escape codes. */
+export const C = {
+  reset:   "\u001b[0m",
+  red:     "\u001b[38;5;196m",  // HWR red — header title only
+  blue:    "\u001b[38;5;27m",   // blue — focused cursor + focused label
+  dim:     "\u001b[2m",         // dim — footer hints
+  dimItal: "\u001b[2;3m",       // dim + italic — Back / Quit navigation items
+};
+
+/** Strip ANSI escape sequences to measure visible character length. */
+function stripAnsi(s: string): string {
+  return s.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
 export type RenderItem =
   | { type: "selector"; label: string; focused: boolean }
   | { type: "toggle";   label: string; checked: boolean; focused: boolean }
@@ -49,10 +63,15 @@ export function boxWidth(cols: number): number {
   return Math.max(40, Math.min(cols - 4, 72));
 }
 
-/** Truncate or pad a string to exactly `width` characters (visible chars, no ANSI). */
+/**
+ * Truncate or pad a string to exactly `width` VISIBLE characters.
+ * Uses stripAnsi so ANSI codes don't count toward visible width.
+ * Always operates on plain text — apply color AFTER calling fitLine.
+ */
 function fitLine(s: string, width: number): string {
-  if (s.length > width) return s.slice(0, width - 1) + "…";
-  return s.padEnd(width);
+  const vis = stripAnsi(s);
+  if (vis.length > width) return s.slice(0, width - 1) + "…";
+  return s + " ".repeat(width - vis.length);
 }
 
 /** Render one box line: ║ <content padded to content width> ║
@@ -62,21 +81,40 @@ function boxLine(content: string, contentWidth: number): string {
   return `║ ${fitLine(content, contentWidth)} ║\n`;
 }
 
+/** Returns true for navigation items (Back / Quit). */
+function isNavLabel(label: string): boolean {
+  return label.startsWith("← ") || label === "Quit";
+}
+
 function renderItem(item: RenderItem, contentWidth: number): string {
   switch (item.type) {
     case "selector": {
       const cursor = item.focused ? ">" : " ";
-      return boxLine(`  ${cursor} ${item.label}`, contentWidth);
+      const plain = `  ${cursor} ${item.label}`;
+      const fitted = fitLine(plain, contentWidth);
+      if (item.focused) {
+        return `║ ${C.blue}${fitted}${C.reset} ║\n`;
+      }
+      if (isNavLabel(item.label)) {
+        return `║ ${C.dimItal}${fitted}${C.reset} ║\n`;
+      }
+      return `║ ${fitted} ║\n`;
     }
     case "toggle": {
       const cursor = item.focused ? ">" : " ";
       const box = item.checked ? "[x]" : "[ ]";
-      return boxLine(`  ${cursor} ${box} ${item.label}`, contentWidth);
+      const plain = `  ${cursor} ${box} ${item.label}`;
+      const fitted = fitLine(plain, contentWidth);
+      if (item.focused) return `║ ${C.blue}${fitted}${C.reset} ║\n`;
+      return `║ ${fitted} ║\n`;
     }
     case "radio": {
       const cursor = item.focused ? ">" : " ";
       const dot = item.selected ? "(•)" : "( )";
-      return boxLine(`  ${cursor} ${dot} ${item.label}`, contentWidth);
+      const plain = `  ${cursor} ${dot} ${item.label}`;
+      const fitted = fitLine(plain, contentWidth);
+      if (item.focused) return `║ ${C.blue}${fitted}${C.reset} ║\n`;
+      return `║ ${fitted} ║\n`;
     }
     case "text":
       return boxLine(`  ${item.content}`, contentWidth);
@@ -108,8 +146,11 @@ export function render(state: ScreenState): void {
   // Top border
   out += `╔${hr}╗\n`;
 
-  // Header: app title + version
-  out += boxLine(`${state.appTitle}  ${state.version}`, contentW);
+  // Header: app title (HWR red) + version — inline to avoid ANSI-in-fitLine width issues
+  const headerPlain = `${state.appTitle}  ${state.version}`;
+  const headerFitted = fitLine(headerPlain, contentW);
+  const headerColored = headerFitted.replace(state.appTitle, `${C.red}${state.appTitle}${C.reset}`);
+  out += `║ ${headerColored} ║\n`;
 
   // Subtitle: screen name
   out += boxLine(state.title, contentW);
@@ -131,12 +172,12 @@ export function render(state: ScreenState): void {
   // Bottom separator
   out += `╠${hr}╣\n`;
 
-  // Footer
+  // Footer — inline with dim color, fitting plain text first
   let footerText = state.footer ?? "↑↓ navigate  Enter select  q back";
   if (state.totalPages && state.totalPages > 1) {
     footerText += `  [${state.page ?? 1}/${state.totalPages}] PgUp/PgDn`;
   }
-  out += boxLine(footerText, contentW);
+  out += `║ ${C.dim}${fitLine(footerText, contentW)}${C.reset} ║\n`;
 
   // Bottom border
   out += `╚${hr}╝\n`;

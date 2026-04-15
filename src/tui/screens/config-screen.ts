@@ -53,7 +53,7 @@ export async function configScreen(promptFn: PromptFn, version: string): Promise
   while (true) {
     const all = await mgr.list();
 
-    // Build grouped list
+    // Build grouped list (stable across the outer loop)
     const grouped: Map<string, ConfigKey[]> = new Map();
     for (const key of USER_EDITABLE_KEYS) {
       const cat = CATEGORIES[key] ?? "Other";
@@ -61,35 +61,40 @@ export async function configScreen(promptFn: PromptFn, version: string): Promise
       grouped.get(cat)!.push(key);
     }
 
-    // Flatten into render items, tracking focusable indices
-    const renderItems: RenderItem[] = [];
-    const focusableKeys: ConfigKey[] = []; // parallel array: focusableKeys[i] = key for focusedIdx i
-
-    for (const [cat, keys] of grouped) {
-      renderItems.push({ type: "text", content: `── ${cat} ────────────────────────` });
-      for (const key of keys) {
-        const val = formatValue(all[key] ?? null);
-        renderItems.push({
-          type: "selector",
-          label: `${key.padEnd(26)} ${val}`,
-          focused: focusedIdx === focusableKeys.length,
-        });
-        focusableKeys.push(key);
+    /** Build render items fresh from current focusedIdx — fixes stale-cursor bug. */
+    function buildItems(fIdx: number): { renderItems: RenderItem[]; focusableKeys: ConfigKey[] } {
+      const renderItems: RenderItem[] = [];
+      const focusableKeys: ConfigKey[] = [];
+      for (const [cat, keys] of grouped) {
+        renderItems.push({ type: "text", content: `── ${cat} ────────────────────────` });
+        for (const key of keys) {
+          const val = formatValue(all[key] ?? null);
+          renderItems.push({
+            type: "selector",
+            label: `${key.padEnd(26)} ${val}`,
+            focused: fIdx === focusableKeys.length,
+          });
+          focusableKeys.push(key);
+        }
+        renderItems.push({ type: "blank" });
       }
-      renderItems.push({ type: "blank" });
+      // "Back" entry
+      renderItems.push({
+        type: "selector",
+        label: "← Back to menu",
+        focused: fIdx === focusableKeys.length,
+      });
+      return { renderItems, focusableKeys };
     }
 
-    // Add "Back" entry
-    renderItems.push({
-      type: "selector",
-      label: "← Back to menu",
-      focused: focusedIdx === focusableKeys.length,
-    });
-    const backIdx = focusableKeys.length; // index of "Back" in focusable items
+    // Derive total focusable count from a one-off build
+    const { focusableKeys: allKeys } = buildItems(0);
+    const totalFocusable = allKeys.length + 1; // +1 for Back
 
     process.stdout.write(HIDE_CURSOR);
 
     function draw(): void {
+      const { renderItems } = buildItems(focusedIdx);
       const rows = process.stdout.rows ?? 24;
       const { pageItems, totalPages } = paginate(renderItems, page, rows);
       render({
@@ -111,25 +116,25 @@ export async function configScreen(promptFn: PromptFn, version: string): Promise
     while (action === null) {
       const key = await readKey();
       if (key.name === "up") {
-        focusedIdx = (focusedIdx - 1 + focusableKeys.length + 1) % (focusableKeys.length + 1);
+        focusedIdx = (focusedIdx - 1 + totalFocusable) % totalFocusable;
       } else if (key.name === "down") {
-        focusedIdx = (focusedIdx + 1) % (focusableKeys.length + 1);
+        focusedIdx = (focusedIdx + 1) % totalFocusable;
       } else if (key.name === "pageup") {
         focusedIdx = Math.max(0, focusedIdx - Math.max(1, (process.stdout.rows ?? 24) - 9));
       } else if (key.name === "pagedown") {
-        focusedIdx = Math.min(focusableKeys.length, focusedIdx + Math.max(1, (process.stdout.rows ?? 24) - 9));
+        focusedIdx = Math.min(totalFocusable - 1, focusedIdx + Math.max(1, (process.stdout.rows ?? 24) - 9));
       } else if (key.name === "enter") {
-        action = focusedIdx === backIdx ? "back" : "edit";
+        action = focusedIdx === totalFocusable - 1 ? "back" : "edit";
       } else if (key.name === "escape" || (key.name === "char" && key.char === "q")) {
         action = "back";
       }
 
-      // Update page to keep focused item visible
+      // Update page to keep focused item visible — use fresh items with updated focusedIdx
       const rows = process.stdout.rows ?? 24;
       const pageSize = Math.max(1, rows - 9);
-      // Count which visible item index corresponds to focusedIdx
+      const { renderItems: freshItems } = buildItems(focusedIdx);
       let visIdx = 0;
-      for (const item of renderItems) {
+      for (const item of freshItems) {
         if (item.type === "selector" || item.type === "toggle" || item.type === "radio") {
           if (item.focused) { page = Math.floor(visIdx / pageSize) + 1; break; }
           visIdx++;
@@ -146,6 +151,7 @@ export async function configScreen(promptFn: PromptFn, version: string): Promise
     if (action === "back") return;
 
     // Edit the focused key
+    const { focusableKeys } = buildItems(focusedIdx);
     const selectedKey = focusableKeys[focusedIdx];
     if (!selectedKey) return;
 

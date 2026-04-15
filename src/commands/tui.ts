@@ -21,26 +21,32 @@ export async function runTui(opts: { promptFn: PromptFn; version: string }): Pro
     items: [
       {
         label: "Scrape",
+        hasSubmenu: true,
         action: () => scrapeScreen(outputDir, promptFn, version),
       },
       {
         label: "Status",
+        hasSubmenu: true,
         action: () => statusScreen(outputDir, promptFn, version),
       },
       {
         label: "Reset",
+        hasSubmenu: true,
         action: () => resetScreen(outputDir, promptFn, version),
       },
       {
         label: "Clean",
+        hasSubmenu: true,
         action: () => cleanScreen(outputDir, promptFn, version),
       },
       {
         label: "Auth",
+        hasSubmenu: true,
         action: () => authScreen(promptFn, version),
       },
       {
         label: "Config",
+        hasSubmenu: true,
         action: () => configScreen(promptFn, version),
       },
       {
