@@ -6,7 +6,7 @@
 
 import { runReset } from "../../commands/reset.js";
 import { readKey } from "../keys.js";
-import { render, paginate, type RenderItem } from "../renderer.js";
+import { render, paginate, C, type RenderItem } from "../renderer.js";
 import { showConfirm } from "./scrape-screen.js";
 import type { PromptFn } from "../../auth/prompt.js";
 
@@ -130,7 +130,7 @@ export async function resetScreen(outputDir: string, promptFn: PromptFn, version
           });
 
           if (process.stdin.isTTY) {
-            process.stdout.write("\nPress any key to return to menu...\n");
+            process.stdout.write(`${C.dimItal}\nPress any key to return to menu...${C.reset}\n`);
             await readKey();
           }
           return;

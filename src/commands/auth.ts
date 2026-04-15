@@ -5,6 +5,8 @@ import { deleteSessionFile, validateOrRefreshSession } from "../auth/session.js"
 import { promptAndAuthenticate, AuthError, type PromptFn } from "../auth/prompt.js";
 import type { HttpClient } from "../http/client.js";
 import type { Logger } from "../logger.js";
+import { ui } from "../ui.js";
+import { withSpinner } from "../tui/spinner.js";
 
 export interface AuthClearOptions {
   keychain: KeychainAdapter | null;
@@ -15,12 +17,12 @@ export interface AuthClearOptions {
 export async function runAuthClear(opts: AuthClearOptions): Promise<void> {
   const { keychain, force = false, promptFn } = opts;
   if (!keychain) {
-    process.stdout.write("No credential storage available on this platform.\n");
+    ui.info("No credential storage available on this platform.");
     return;
   }
   const creds = await keychain.readCredentials();
   if (!creds) {
-    process.stdout.write("No credentials stored.\n");
+    ui.info("No credentials stored.");
     return;
   }
   if (!force && promptFn) {
@@ -29,7 +31,7 @@ export async function runAuthClear(opts: AuthClearOptions): Promise<void> {
   }
   await keychain.deleteCredentials();
   await deleteSessionFile();
-  process.stdout.write("Credentials and session cleared.\n");
+  ui.success("Credentials and session cleared.");
 }
 
 export interface AuthStatusOptions {
@@ -43,24 +45,26 @@ export async function runAuthStatus(opts: AuthStatusOptions): Promise<void> {
   if (!keychain) {
     const envUser = process.env["MSC_USERNAME"];
     if (envUser) {
-      process.stdout.write(`Credential storage: env vars (MSC_USERNAME=${envUser})\n`);
+      ui.info(`Credential storage: env vars (MSC_USERNAME=${envUser})`);
     } else {
-      process.stdout.write("Credential storage: not available. Set MSC_USERNAME and MSC_PASSWORD environment variables.\n");
+      ui.warn("Credential storage: not available. Set MSC_USERNAME and MSC_PASSWORD environment variables.");
     }
     return;
   }
   const creds = await keychain.readCredentials();
   if (!creds) {
-    process.stdout.write("Credentials: not stored\n");
+    ui.info("Credentials: not stored");
     return;
   }
-  process.stdout.write(`Credentials: stored (username: ${creds.username})\n`);
+  ui.success(`Credentials: stored (username: ${creds.username})`);
   if (httpClient) {
     try {
-      await validateOrRefreshSession({ httpClient, keychain, ...(baseUrl ? { baseUrl } : {}) });
-      process.stdout.write("Session: valid\n");
+      await withSpinner("Checking session...", () =>
+        validateOrRefreshSession({ httpClient, keychain, ...(baseUrl ? { baseUrl } : {}) })
+      );
+      ui.success("Session: valid");
     } catch {
-      process.stdout.write("Session: expired or invalid\n");
+      ui.warn("Session: expired or invalid");
     }
   }
 }
@@ -77,12 +81,12 @@ export interface AuthSetOptions {
 export async function runAuthSet(opts: AuthSetOptions): Promise<void> {
   const { keychain, promptFn, nonInteractive = false, httpClient, baseUrl, logger } = opts;
   if (!keychain) {
-    process.stdout.write("Credential storage is not available on this platform.\n");
-    process.stdout.write("Set MSC_USERNAME and MSC_PASSWORD environment variables instead.\n");
-    process.stdout.write("Example (bash/zsh):\n");
+    ui.warn("Credential storage is not available on this platform.");
+    ui.info("Set MSC_USERNAME and MSC_PASSWORD environment variables instead.");
+    ui.info("Example (bash/zsh):");
     process.stdout.write("  export MSC_USERNAME=s12345\n");
     process.stdout.write("  export MSC_PASSWORD=yourpass\n");
-    process.stdout.write("Note: Configuring env vars is optional — msc scrape will prompt you each run otherwise.\n");
+    ui.hint("Note: Configuring env vars is optional — msc scrape will prompt you each run otherwise.");
     return;
   }
   const existing = await keychain.readCredentials();

@@ -4,6 +4,7 @@ import { relative, dirname, join, sep } from "node:path";
 import { StateManager, removeEmptyDirs } from "../sync/state.js";
 import { collectFiles, buildKnownPaths, renderTree, USER_FILES_PROTECTED_DIR } from "../fs/collect.js";
 import type { PromptFn } from "../auth/prompt.js";
+import { ui } from "../ui.js";
 
 export interface CleanOptions {
   outputDir: string;
@@ -22,7 +23,7 @@ export async function runClean(opts: CleanOptions): Promise<void> {
   const state = await sm.load();
 
   if (!state) {
-    process.stdout.write("No sync history. Run `msc scrape` first.\n");
+    ui.info("No sync history. Run `msc scrape` first.");
     return;
   }
 
@@ -37,7 +38,7 @@ export async function runClean(opts: CleanOptions): Promise<void> {
   );
 
   if (userFiles.length === 0) {
-    process.stdout.write("No user-added files found. Your output folder only contains scraper-managed files.\n");
+    ui.success("No user-added files found. Your output folder only contains scraper-managed files.");
     return;
   }
 
@@ -52,10 +53,10 @@ export async function runClean(opts: CleanOptions): Promise<void> {
 
   if (dryRun) {
     if (move) {
-      process.stdout.write(`[dry-run] Would move ${userFiles.length} file${userFiles.length === 1 ? "" : "s"} to "${USER_FILES_DIR}/".\n`);
+      ui.info(`[dry-run] Would move ${userFiles.length} file${userFiles.length === 1 ? "" : "s"} to "${USER_FILES_DIR}/".`);
     } else {
-      process.stdout.write(`[dry-run] Would delete ${userFiles.length} file${userFiles.length === 1 ? "" : "s"}.\n`);
-      process.stdout.write(`  Safer alternative: \`msc clean --move\` relocates files to "${USER_FILES_DIR}/" instead of deleting.\n`);
+      ui.info(`[dry-run] Would delete ${userFiles.length} file${userFiles.length === 1 ? "" : "s"}.`);
+      ui.hint(`  Safer alternative: \`msc clean --move\` relocates files to "${USER_FILES_DIR}/" instead of deleting.`);
     }
     return;
   }
@@ -67,7 +68,7 @@ export async function runClean(opts: CleanOptions): Promise<void> {
       : `Delete ${userFiles.length} file${userFiles.length === 1 ? "" : "s"}? [y/N] `;
     const answer = await promptFn(prompt);
     if (answer.trim().toLowerCase() !== "y") {
-      process.stdout.write("Cancelled.\n");
+      ui.info("Cancelled.");
       return;
     }
   }
@@ -112,8 +113,8 @@ export async function runClean(opts: CleanOptions): Promise<void> {
   }
 
   if (move) {
-    process.stdout.write(`${actionPast} ${count} file${count === 1 ? "" : "s"} to "${USER_FILES_DIR}/".\n`);
+    ui.success(`${actionPast} ${count} file${count === 1 ? "" : "s"} to "${USER_FILES_DIR}/".`);
   } else {
-    process.stdout.write(`${actionPast} ${count} file${count === 1 ? "" : "s"}.\n`);
+    ui.success(`${actionPast} ${count} file${count === 1 ? "" : "s"}.`);
   }
 }

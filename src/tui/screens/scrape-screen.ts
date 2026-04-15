@@ -7,7 +7,7 @@
 
 import { runScrape } from "../../commands/scrape.js";
 import { readKey } from "../keys.js";
-import { render, paginate, type RenderItem } from "../renderer.js";
+import { render, paginate, C, type RenderItem } from "../renderer.js";
 import { SCRAPE_BOOL_OPTIONS } from "../options-registry.js";
 import { StateManager } from "../../sync/state.js";
 import { matchCourses } from "../../scraper/course-filter.js";
@@ -51,7 +51,7 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
   // then "courses" row, then "Run" row
   const modCount = MODES.length;
   const optCount = SCRAPE_BOOL_OPTIONS.length;
-  const totalRows = modCount + optCount + 2; // +2 for courses + run
+  const totalRows = modCount + optCount + 3; // +2 for courses + run, +1 for back
   let focused = 0;
   let page = 1;
 
@@ -72,6 +72,8 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
     items.push({ type: "selector", label: `Courses: ${coursesTxt}`, focused: focused === modCount + optCount });
     items.push({ type: "blank" });
     items.push({ type: "selector", label: "→  Run Scrape", focused: focused === modCount + optCount + 1 });
+    items.push({ type: "blank" });
+    items.push({ type: "selector", label: "← Back to menu", focused: focused === modCount + optCount + 2 });
     return items;
   }
 
@@ -134,7 +136,7 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
           }
           process.stdout.write(HIDE_CURSOR);
           process.stdout.on("resize", onResize);
-        } else {
+        } else if (focused === modCount + optCount + 1) {
           // Run — show confirmation
           const mode = MODES[modeIdx]!;
           const cliCmd = buildCliCommand(mode, boolState, coursesKeywords);
@@ -172,9 +174,12 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
           }
 
           if (process.stdin.isTTY) {
-            process.stdout.write("\nPress any key to return to menu...\n");
+            process.stdout.write(`${C.dimItal}\nPress any key to return to menu...${C.reset}\n`);
             await readKey();
           }
+          return;
+        } else if (focused === modCount + optCount + 2) {
+          // Back to menu
           return;
         }
       }

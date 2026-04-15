@@ -2,6 +2,7 @@
 import { StateManager } from "../sync/state.js";
 import { matchCourses } from "../scraper/course-filter.js";
 import type { PromptFn } from "../auth/prompt.js";
+import { ui } from "../ui.js";
 
 export interface ArchiveOptions {
   outputDir: string;
@@ -18,7 +19,7 @@ export async function runArchive(opts: ArchiveOptions): Promise<void> {
   const state = await sm.load();
 
   if (!state) {
-    process.stdout.write("No sync history. Run `msc scrape` first.\n");
+    ui.info("No sync history. Run `msc scrape` first.");
     return;
   }
 
@@ -39,7 +40,7 @@ export async function runArchive(opts: ArchiveOptions): Promise<void> {
   }
 
   if (courseIds.length === 0) {
-    process.stdout.write("No courses to archive.\n");
+    ui.info("No courses to archive.");
     return;
   }
 
@@ -56,14 +57,14 @@ export async function runArchive(opts: ArchiveOptions): Promise<void> {
   }
 
   if (dryRun) {
-    process.stdout.write(`\n[dry-run] Would archive ${matchedCourses.length} course${matchedCourses.length === 1 ? "" : "s"}. Files on disk untouched.\n`);
+    ui.info(`\n[dry-run] Would archive ${matchedCourses.length} course${matchedCourses.length === 1 ? "" : "s"}. Files on disk untouched.`);
     return;
   }
 
   if (!force && promptFn) {
     const answer = await promptFn(`\nArchive ${matchedCourses.length} course${matchedCourses.length === 1 ? "" : "s"} from state? Files on disk are untouched. [y/N] `);
     if (answer.trim().toLowerCase() !== "y") {
-      process.stdout.write("Cancelled.\n");
+      ui.info("Cancelled.");
       return;
     }
   }
@@ -73,5 +74,5 @@ export async function runArchive(opts: ArchiveOptions): Promise<void> {
   }
 
   await sm.save({ courses: state.courses, generatedFiles: state.generatedFiles ?? [] });
-  process.stdout.write(`Archived ${matchedCourses.length} course${matchedCourses.length === 1 ? "" : "s"}. Files on disk untouched.\n`);
+  ui.success(`Archived ${matchedCourses.length} course${matchedCourses.length === 1 ? "" : "s"}. Files on disk untouched.`);
 }

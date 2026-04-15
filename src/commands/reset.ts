@@ -8,6 +8,7 @@ import { deleteSessionFile } from "../auth/session.js";
 import { collectFiles, groupUserFiles, renderTree, type UserFileGroup } from "../fs/collect.js";
 import { selectItem } from "../tui/select.js";
 import type { PromptFn } from "../auth/prompt.js";
+import { ui } from "../ui.js";
 
 export interface ResetOptions {
   outputDir: string;
@@ -149,7 +150,7 @@ export async function runReset(opts: ResetOptions): Promise<void> {
   const state = await sm.load();
 
   if (!state) {
-    process.stdout.write("Nothing to reset.\n");
+    ui.info("Nothing to reset.");
     return;
   }
 
@@ -171,14 +172,14 @@ export async function runReset(opts: ResetOptions): Promise<void> {
       process.stdout.write(`This will clear sync state for ${courseCount} course${courseCount === 1 ? "" : "s"} (${totalFiles} files tracked). Your files on disk will NOT be deleted.\n`);
       const answer = await promptFn("Continue? [y/N] ");
       if (answer.trim().toLowerCase() !== "y") {
-        process.stdout.write("Cancelled.\n");
+        ui.info("Cancelled.");
         return;
       }
     }
     // Delete state files only
     if (existsSync(sm.statePath)) unlinkSync(sm.statePath);
     if (existsSync(sm.backupPath)) unlinkSync(sm.backupPath);
-    process.stdout.write(`Sync state cleared. Files untouched. Run \`msc scrape\` to rebuild.\n`);
+    ui.success(`Sync state cleared. Files untouched. Run \`msc scrape\` to rebuild.`);
     return;
   }
 
@@ -232,12 +233,12 @@ export async function runReset(opts: ResetOptions): Promise<void> {
   }
 
   if (!force && promptFn) {
-    process.stdout.write(`WARNING: This will permanently delete ${existingPaths.length} files (${sizeStr}) across ${courseCount} courses.\n`);
-    process.stdout.write("Note: Files from ended courses may not be re-downloadable.\n");
+    ui.warn(`WARNING: This will permanently delete ${existingPaths.length} files (${sizeStr}) across ${courseCount} courses.`);
+    ui.info("Note: Files from ended courses may not be re-downloadable.");
     process.stdout.write("Type DELETE to confirm, or press Enter to cancel: ");
     const answer = await promptFn("");
     if (answer.trim() !== "DELETE") {
-      process.stdout.write("Cancelled.\n");
+      ui.info("Cancelled.");
       return;
     }
   }
@@ -274,5 +275,5 @@ export async function runReset(opts: ResetOptions): Promise<void> {
   if (imageCount > 0) extras.push(`${imageCount} image${imageCount === 1 ? "" : "s"}`);
   if (generatedCount > 0) extras.push(`${generatedCount} generated`);
   const breakdown = extras.length > 0 ? ` (incl. ${extras.join(", ")})` : "";
-  process.stdout.write(`Deleted ${deletedCount} files${breakdown} across ${courseCount} courses. State reset. Config and credentials cleared.\n`);
+  ui.success(`Deleted ${deletedCount} files${breakdown} across ${courseCount} courses. State reset. Config and credentials cleared.`);
 }

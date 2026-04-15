@@ -3,6 +3,7 @@ import { existsSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { StateManager } from "../sync/state.js";
 import { collectFiles } from "../fs/collect.js";
+import { ui } from "../ui.js";
 
 export interface StatusOptions {
   outputDir: string;
@@ -97,11 +98,11 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   const state = await sm.load();
 
   if (!state) {
-    process.stdout.write("No sync history. Run 'msc scrape' to start.\n");
+    ui.info("No sync history. Run 'msc scrape' to start.");
     return;
   }
 
-  const write = (s: string) => process.stdout.write(s + "\n");
+  const write = (s: string) => ui.plain(s);
 
   // ── --dismiss-orphans: remove orphan state entries ─────────────────────────
   if (dismissOrphans) {
@@ -245,7 +246,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   write("");
   if (userFiles.length > 0) {
     write(`User-added files: ${userFiles.length}  (not managed by scraper — safe to keep)`);
-    write(`  Tip: Run \`msc clean\` to remove them, or \`msc clean --move\` to relocate to "User Files/".`);
+    ui.hint(`  Tip: Run \`msc clean\` to remove them, or \`msc clean --move\` to relocate to "User Files/".`);
   }
   if (managedUserFiles.length > 0) {
     write(`User Files/: ${managedUserFiles.length} file${managedUserFiles.length === 1 ? "" : "s"} (relocated by \`msc clean --move\`)`);
@@ -253,13 +254,13 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
 
   if (!showIssues) {
     write("");
-    write("Tip: Run `msc status --issues` to check for missing files or old entries.");
+    ui.hint("Tip: Run `msc status --issues` to check for missing files or old entries.");
     return;
   }
 
   // --issues: tree views
   if (orphans.length > 0 || missingFiles.length > 0 || userFiles.length > 0) {
-    write(`Issues summary: ${orphans.length} old entr${orphans.length === 1 ? "y" : "ies"}, ${missingFiles.length} missing file${missingFiles.length === 1 ? "" : "s"}, ${userFiles.length} unprotected personal file${userFiles.length === 1 ? "" : "s"}`);
+    ui.warn(`Issues summary: ${orphans.length} old entr${orphans.length === 1 ? "y" : "ies"}, ${missingFiles.length} missing file${missingFiles.length === 1 ? "" : "s"}, ${userFiles.length} unprotected personal file${userFiles.length === 1 ? "" : "s"}`);
   }
 
   if (orphans.length > 0) {

@@ -10,6 +10,8 @@ import { createHttpClient } from "../../http/client.js";
 import { selectItem } from "../select.js";
 import { showConfirm } from "./scrape-screen.js";
 import { readKey } from "../keys.js";
+import { withSpinner } from "../spinner.js";
+import { C } from "../renderer.js";
 import type { PromptFn } from "../../auth/prompt.js";
 
 const APP_TITLE = "HWR Moodle Scraper";
@@ -45,7 +47,9 @@ export async function authScreen(promptFn: PromptFn, version: string): Promise<v
 
     if (choice === "show") {
       process.stdout.write("\u001b[?25h\u001b[2J\u001b[H");
-      await runAuthStatus({ keychain, httpClient });
+      await withSpinner("Checking credentials & session...", () =>
+        runAuthStatus({ keychain, httpClient })
+      );
       process.stdout.write("\n");
       // 3-dot countdown animation: "..." → ".." → "." then return to auth menu
       for (const dots of ["...", "..", "."]) {
@@ -70,7 +74,7 @@ export async function authScreen(promptFn: PromptFn, version: string): Promise<v
     }
 
     if (process.stdin.isTTY) {
-      process.stdout.write("\nPress any key to return to menu...\n");
+      process.stdout.write(`${C.dimItal}\nPress any key to return to menu...${C.reset}\n`);
       await readKey();
     }
     return;
