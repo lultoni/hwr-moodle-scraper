@@ -25,6 +25,7 @@ import { isSameOrigin } from "../http/url-guard.js";
 import { mkdirSync } from "node:fs";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { platform } from "node:os";
 
 /** Escape markdown link special characters to prevent injection. */
@@ -1176,6 +1177,22 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     generatedFiles: mergedGeneratedFiles,
     lastSync: { timestamp: new Date().toISOString(), newFiles, updatedFiles },
   });
+
+  // Run postScrapeHook if configured and there were changes (UC-35)
+  const hookCmd = (await config.get("postScrapeHook")) as string | null | undefined ?? null;
+  if (hookCmd && changeEntries.length > 0) {
+    const hookEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      MSC_NEW_COUNT: String(newFiles.length),
+      MSC_UPDATED_COUNT: String(updatedFiles.length),
+      MSC_CHANGED_FILES: [...newFiles, ...updatedFiles].join("\n"),
+    };
+    execFile("/bin/sh", ["-c", hookCmd], { env: hookEnv }, (err) => {
+      if (err) {
+        process.stderr.write(`[msc] postScrapeHook error: ${err.message}\n`);
+      }
+    });
+  }
 
   // Deregister shutdown handlers — scrape completed normally
   shutdown.unregister();

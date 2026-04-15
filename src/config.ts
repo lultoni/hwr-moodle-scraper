@@ -22,6 +22,8 @@ const DEFAULTS = {
   lastUpdateCheckMs: 0 as number,
   /** Path display format. "auto" = detect OS, "posix" = forward slashes, "windows" = backslashes. */
   displayPathFormat: "auto" as "auto" | "posix" | "windows",
+  /** Shell command to run after a scrape that produces changes. null = disabled. */
+  postScrapeHook: null as string | null,
 } as const;
 
 export type ConfigKey = keyof typeof DEFAULTS;
@@ -43,6 +45,7 @@ export const USER_EDITABLE_KEYS: ConfigKey[] = [
   "checkUpdates",
   "updateCheckIntervalHours",
   "displayPathFormat",
+  "postScrapeHook",
 ];
 
 /** Human-readable descriptions for each user-editable config key. */
@@ -58,6 +61,7 @@ export const CONFIG_DESCRIPTIONS: Partial<Record<ConfigKey, string>> = {
   checkUpdates: "Check for new msc versions on GitHub (true/false)",
   updateCheckIntervalHours: "Hours between automatic update checks (0 = every run)",
   displayPathFormat: "Path separator style: auto | posix | windows",
+  postScrapeHook: "Shell command to run after a scrape that produces changes (null = disabled)",
 };
 
 const VALIDATION: Partial<Record<ConfigKey, { min: number; max: number }>> = {

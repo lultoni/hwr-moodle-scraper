@@ -20,6 +20,7 @@ const CATEGORIES: Record<ConfigKey, string> = {
   minFreeDiskMb:                "Filesystem",
   logFile:                      "Filesystem",
   displayPathFormat:            "Filesystem",
+  postScrapeHook:               "Automation",
   maxConcurrentDownloads:       "Network",
   requestDelayMs:               "Network",
   requestJitterMs:              "Network",
