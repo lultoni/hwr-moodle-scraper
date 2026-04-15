@@ -1,8 +1,8 @@
 // msc clean — delete or move user-added files from output folder
 import { existsSync, unlinkSync, mkdirSync, renameSync } from "node:fs";
-import { relative, dirname, join } from "node:path";
+import { relative, dirname, join, sep } from "node:path";
 import { StateManager, removeEmptyDirs } from "../sync/state.js";
-import { collectFiles, buildKnownPaths, renderTree } from "../fs/collect.js";
+import { collectFiles, buildKnownPaths, renderTree, USER_FILES_PROTECTED_DIR } from "../fs/collect.js";
 import type { PromptFn } from "../auth/prompt.js";
 
 export interface CleanOptions {
@@ -30,7 +30,11 @@ export async function runClean(opts: CleanOptions): Promise<void> {
   const knownPaths = buildKnownPaths(state);
   const knownSet = new Set(knownPaths.map((p) => p.normalize("NFC")));
   const allOnDisk = collectFiles(outputDir);
-  const userFiles = allOnDisk.filter((f) => !knownSet.has(f));
+  // Belt-and-suspenders: also exclude _User-Files/ by path check (collectFiles already skips
+  // the directory itself, but guard here too in case of edge cases)
+  const userFiles = allOnDisk.filter(
+    (f) => !knownSet.has(f) && !f.split(sep).includes(USER_FILES_PROTECTED_DIR)
+  );
 
   if (userFiles.length === 0) {
     process.stdout.write("No user-added files found. Your output folder only contains scraper-managed files.\n");

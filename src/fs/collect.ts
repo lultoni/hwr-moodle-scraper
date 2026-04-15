@@ -17,7 +17,13 @@ export interface UserFileGroup {
 // OS-generated noise files that should never appear as "user-added" files.
 const SYSTEM_FILES = new Set([".DS_Store", "Thumbs.db", "desktop.ini", ".localized"]);
 
-/** Recursively collect all file paths under a directory. Skips state, meta, and OS noise files. */
+/** Directory name reserved for user-owned files that msc should never touch. */
+export const USER_FILES_PROTECTED_DIR = "_User-Files";
+
+/** Recursively collect all file paths under a directory. Skips state, meta, and OS noise files.
+ *  Files inside any directory named `_User-Files` are excluded — these are user-owned and
+ *  must never appear as "user-added" in msc status or be targeted by msc clean.
+ */
 export function collectFiles(dir: string): string[] {
   const results: string[] = [];
   if (!existsSync(dir)) return results;
@@ -26,6 +32,8 @@ export function collectFiles(dir: string): string[] {
     if (entry.name === ".moodle-scraper-state.json.bak") continue;
     if (entry.name.endsWith(".meta.json")) continue;
     if (SYSTEM_FILES.has(entry.name)) continue;
+    // Skip _User-Files directories entirely — contents are protected user data
+    if (entry.isDirectory() && entry.name === USER_FILES_PROTECTED_DIR) continue;
     // Normalise to NFC — macOS HFS+/APFS returns NFD filenames from readdir,
     // but the state always stores NFC (paths originate from Moodle HTML).
     // Without this, Set.has() misses umlaut files even when the path is correct.
@@ -81,7 +89,7 @@ export function groupUserFiles(userFiles: string[], outputDir: string): UserFile
 /**
  * Build a flat list of all scraper-owned file paths from a State object.
  * Includes: activity localPaths, sidecarPaths, submissionPaths, imagePaths,
- * and generatedFiles (README.md, _Abschnittsbeschreibung.md, etc.).
+ * and generatedFiles (README.md, _SectionDescription.md, etc.).
  *
  * Used by status, clean, and reset to distinguish scraper files from user files.
  */

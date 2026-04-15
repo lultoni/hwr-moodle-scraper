@@ -289,11 +289,13 @@ program
   .description("Show last sync summary")
   .option("--issues", "List orphaned files", false)
   .option("--changed", "Show files changed in the last scrape run", false)
-  .action(async (opts: { issues: boolean; changed: boolean }) => {
+  .option("--dismiss-orphans", "Remove old state entries from ended courses", false)
+  .option("--dry-run", "Preview changes without writing", false)
+  .action(async (opts: { issues: boolean; changed: boolean; dismissOrphans: boolean; dryRun: boolean }) => {
     const mgr = new ConfigManager();
     const outputDir = (await mgr.get("outputDir")) as string;
     try {
-      await runStatus({ outputDir, showIssues: opts.issues, showChanged: opts.changed });
+      await runStatus({ outputDir, showIssues: opts.issues, showChanged: opts.changed, dismissOrphans: opts.dismissOrphans, dryRun: opts.dryRun });
     } catch (err) {
       const code = (err as { exitCode?: number }).exitCode ?? EXIT_CODES.ERROR;
       process.stderr.write(`Error: ${(err as Error).message}\n`);

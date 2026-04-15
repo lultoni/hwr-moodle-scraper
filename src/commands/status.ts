@@ -8,6 +8,8 @@ export interface StatusOptions {
   outputDir: string;
   showIssues?: boolean;
   showChanged?: boolean;
+  dismissOrphans?: boolean;
+  dryRun?: boolean;
 }
 
 /** Format bytes as human-readable size (MB or GB). */
@@ -90,7 +92,7 @@ function buildTreeLines(paths: string[], baseDir: string): string[] {
 }
 
 export async function runStatus(opts: StatusOptions): Promise<void> {
-  const { outputDir, showIssues = false, showChanged = false } = opts;
+  const { outputDir, showIssues = false, showChanged = false, dismissOrphans = false, dryRun = false } = opts;
   const sm = new StateManager(outputDir);
   const state = await sm.load();
 
@@ -100,6 +102,30 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   }
 
   const write = (s: string) => process.stdout.write(s + "\n");
+
+  // ── --dismiss-orphans: remove orphan state entries ─────────────────────────
+  if (dismissOrphans) {
+    let count = 0;
+    for (const course of Object.values(state.courses)) {
+      for (const section of Object.values(course.sections ?? {})) {
+        const toDelete: string[] = [];
+        for (const [fileId, file] of Object.entries(section.files ?? {})) {
+          if (file.status === "orphan") toDelete.push(fileId);
+        }
+        for (const fileId of toDelete) {
+          delete (section.files as Record<string, unknown>)[fileId];
+          count++;
+        }
+      }
+    }
+    if (dryRun) {
+      write(`[dry-run] Would remove ${count} old state entr${count === 1 ? "y" : "ies"}. Files on disk would be unchanged.`);
+    } else {
+      await sm.save({ courses: state.courses, generatedFiles: state.generatedFiles, lastSync: state.lastSync });
+      write(`Removed ${count} old state entr${count === 1 ? "y" : "ies"}. Files on disk are unchanged.`);
+    }
+    return;
+  }
 
   // ── --changed: replay last-scrape change report from state ────────────────
   if (showChanged) {

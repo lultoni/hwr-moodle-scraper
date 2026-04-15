@@ -54,11 +54,24 @@ describe("collectFiles", () => {
     expect(collectFiles("/out")).toEqual(["/out/file.pdf"]);
   });
 
-  it("does not include directory entries themselves", () => {
+  it("skips OS noise files (.DS_Store, Thumbs.db)", () => {
+    mockReaddirSync.mockReturnValue([file(".DS_Store"), file("Thumbs.db"), file("a.pdf")]);
+    expect(collectFiles("/out")).toEqual(["/out/a.pdf"]);
+  });
+
+  it("skips _User-Files directory entirely", () => {
     mockReaddirSync
-      .mockReturnValueOnce([dir("Sub")])
-      .mockReturnValueOnce([]);
-    expect(collectFiles("/out")).toEqual([]);
+      .mockReturnValueOnce([dir("_User-Files"), file("a.pdf")]);
+    // Should NOT recurse into _User-Files and should return only a.pdf
+    expect(collectFiles("/out")).toEqual(["/out/a.pdf"]);
+  });
+
+  it("still collects files from other directories alongside _User-Files", () => {
+    mockReaddirSync
+      .mockReturnValueOnce([dir("Course"), dir("_User-Files")])
+      .mockReturnValueOnce([file("lecture.pdf")]);
+    // _User-Files skipped; Course recursed
+    expect(collectFiles("/out")).toEqual(["/out/Course/lecture.pdf"]);
   });
 });
 

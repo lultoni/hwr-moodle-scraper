@@ -25,6 +25,7 @@ vi.mock("../../src/fs/collect.js", () => ({
     const { relative } = require("node:path");
     return paths.map((p: string) => relative(rootDir, p)).join("\n");
   },
+  USER_FILES_PROTECTED_DIR: "_User-Files",
 }));
 
 // --- StateManager mock ---

@@ -327,6 +327,59 @@ describe("STEP-021: status command — richer output", () => {
   });
 });
 
+// UC-12: --dismiss-orphans
+describe("STEP-021: dismiss-orphans", () => {
+  it("--dismiss-orphans removes orphan entries and prints count", async () => {
+    const mockSave = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        version: 1,
+        lastSyncAt: "2026-04-15T10:00:00.000Z",
+        courses: {
+          "1": { name: "Macro", sections: { "s1": { files: {
+            "r1": { status: "orphan", localPath: "/out/file.pdf", url: "https://moodle.example.com" },
+            "r2": { status: "ok", localPath: "/out/file2.pdf", url: "https://moodle.example.com/2" },
+          } } } },
+        },
+      }),
+      save: mockSave,
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", dismissOrphans: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output).toContain("Removed 1 old state entry");
+    expect(output).toContain("Files on disk are unchanged");
+    expect(mockSave).toHaveBeenCalledOnce();
+    stdoutSpy.mockRestore();
+  });
+
+  it("--dismiss-orphans --dry-run prints count without saving", async () => {
+    const mockSave = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        version: 1,
+        lastSyncAt: "2026-04-15T10:00:00.000Z",
+        courses: {
+          "1": { name: "Macro", sections: { "s1": { files: {
+            "r1": { status: "orphan", localPath: "/out/file.pdf", url: "https://moodle.example.com" },
+            "r2": { status: "orphan", localPath: "/out/file2.pdf", url: "https://moodle.example.com/2" },
+          } } } },
+        },
+      }),
+      save: mockSave,
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", dismissOrphans: true, dryRun: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output).toContain("[dry-run]");
+    expect(output).toContain("Would remove 2 old state entries");
+    expect(mockSave).not.toHaveBeenCalled();
+    stdoutSpy.mockRestore();
+  });
+});
+
 describe("STEP-021: Log file output", () => {
   let tmpDir: string;
 
