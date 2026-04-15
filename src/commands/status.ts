@@ -246,7 +246,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   write("");
   if (userFiles.length > 0) {
     write(`User-added files: ${userFiles.length}  (not managed by scraper — safe to keep)`);
-    ui.hint(`  Tip: Run \`msc clean\` to remove them, or \`msc clean --move\` to relocate to "User Files/".`);
+    ui.hint(`Tip: Run \`msc clean\` to remove them, or \`msc clean --move\` to relocate to "User Files/".`);
   }
   if (managedUserFiles.length > 0) {
     write(`User Files/: ${managedUserFiles.length} file${managedUserFiles.length === 1 ? "" : "s"} (relocated by \`msc clean --move\`)`);
@@ -299,12 +299,10 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
     // Contextual tips based on what was found
     write("");
     if (userFiles.length > 0) {
-      write("Tip: Run `msc clean` to remove personal files, or `msc clean --move` to relocate them.");
+      ui.hint("Tip: Run `msc clean` to remove personal files, or `msc clean --move` to relocate them.");
     }
-    if (orphans.length > 0 && userFiles.length === 0) {
-      write("Tip: Run `msc status --dismiss-orphans` to clean up old state entries.");
-    } else if (orphans.length > 0) {
-      write("Tip: Run `msc status --dismiss-orphans` to clean up old state entries.");
+    if (orphans.length > 0) {
+      ui.hint("Tip: Run `msc status --dismiss-orphans` to clean up old state entries.");
     }
   }
 }

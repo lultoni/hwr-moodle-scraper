@@ -52,6 +52,8 @@ export interface ScrapeOptions {
   /** Prompt function for interactive credential entry (used as fallback when keychain unavailable). */
   promptFn?: PromptFn;
   logger?: Logger;
+  /** Called at the start/end of slow waiting phases so callers (e.g. TUI) can show a spinner. */
+  onPhase?: (event: "start" | "end", label: string) => void;
 }
 
 export async function runScrape(opts: ScrapeOptions): Promise<void> {
@@ -90,6 +92,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   // Auth — returns the session cookie for use in subsequent requests
+  opts.onPhase?.("start", "Authenticating...");
   const sessionCookies = await validateOrRefreshSession({
     httpClient,
     keychain,
@@ -104,6 +107,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   });
 
   // Register session cookies as secrets immediately to prevent leakage in subsequent log calls
+  opts.onPhase?.("end", "Authenticating...");
   logger.addSecret(sessionCookies);
 
   // Register stored password in logger redact list so it cannot leak into logs
@@ -128,11 +132,13 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const searchQuery = (await config.get("courseSearch")) as string | undefined;
 
   // Course list — prefer dashboard (all enrolled courses) over search query
+  opts.onPhase?.("start", "Fetching courses...");
   const courses: Course[] = opts.courses
     ? opts.courses.map((id) => ({ courseId: id, courseName: String(id), courseUrl: `${baseUrl}/course/view.php?id=${id}` }))
     : searchQuery
       ? await fetchCourseList({ baseUrl, sessionCookies, searchQuery })
       : await fetchEnrolledCourses({ baseUrl, sessionCookies });
+  opts.onPhase?.("end", "Fetching courses...");
 
   if (courses.length === 0) {
     if (searchQuery) {
@@ -193,6 +199,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Content trees — fetch with bounded concurrency to limit memory spikes
   const pLimitMod = await import("p-limit");
   const treeLimit = pLimitMod.default(5);
+  opts.onPhase?.("start", "Fetching course content...");
   const trees: ContentTree[] = await Promise.all(
     courses.map((c) =>
       treeLimit(async () => {
@@ -201,6 +208,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       })
     )
   );
+  opts.onPhase?.("end", "Fetching course content...");
 
   // ── README.md + _Abschnittsbeschreibung.md ────────────────────────────────
   // These files are written OUTSIDE the sync-state system (no FileState entry,

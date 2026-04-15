@@ -13,6 +13,33 @@ import { StateManager } from "../../sync/state.js";
 import { matchCourses } from "../../scraper/course-filter.js";
 import type { PromptFn } from "../../auth/prompt.js";
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/** Minimal event-driven spinner for use with onPhase callbacks. */
+function makePhaseSpinner() {
+  let iv: ReturnType<typeof setInterval> | undefined;
+  let frame = 0;
+  let currentLabel = "";
+  return {
+    start(label: string) {
+      currentLabel = label;
+      frame = 0;
+      process.stdout.write("\u001b[?25l");
+      iv = setInterval(() => {
+        process.stdout.write(`\r${SPINNER_FRAMES[frame++ % SPINNER_FRAMES.length]} ${currentLabel}  `);
+      }, 80);
+    },
+    end() {
+      if (!iv) return;
+      clearInterval(iv);
+      iv = undefined;
+      const pad = " ".repeat(currentLabel.length + 4);
+      process.stdout.write(`\r${pad}\r`);
+      process.stdout.write("\u001b[?25h");
+    },
+  };
+}
+
 const HIDE_CURSOR = "\u001b[?25l";
 const SHOW_CURSOR = "\u001b[?25h";
 
@@ -146,6 +173,8 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
 
           clearTimeout(resizeTimer);
           process.stdout.removeListener("resize", onResize);
+          // Clear the TUI box before scrape output starts
+          process.stdout.write("\u001b[2J\u001b[H");
           process.stdout.write(SHOW_CURSOR);
 
           // Resolve keyword filter → numeric course IDs via state
@@ -156,6 +185,8 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
             if (unmatched.length) process.stderr.write(`[msc] No courses matched: ${unmatched.join(", ")}\n`);
             if (ids.length > 0) resolvedCourses = ids;
           }
+
+          const spinner = makePhaseSpinner();
 
           try {
             await runScrape({
@@ -168,8 +199,13 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
               skipDiskCheck: boolState["skipDiskCheck"] ?? false,
               metadata: boolState["metadata"] ?? false,
               ...(resolvedCourses !== undefined && { courses: resolvedCourses }),
+              onPhase: (event, label) => {
+                if (event === "start") spinner.start(label);
+                else spinner.end();
+              },
             });
           } catch (err) {
+            spinner.end();
             process.stderr.write(`Error: ${(err as Error).message}\n`);
           }
 

@@ -14,40 +14,41 @@ export async function runTui(opts: { promptFn: PromptFn; version: string }): Pro
   const config = new ConfigManager();
   const outputDir = (await config.get("outputDir")) as string | undefined ?? "";
 
+  const versionTag = `v${version}`;
   await runMenu({
     title: "HWR Moodle Scraper",
-    version: `v${version}`,
+    version: versionTag,
     promptFn,
     items: [
       {
         label: "Scrape",
         hasSubmenu: true,
-        action: () => scrapeScreen(outputDir, promptFn, version),
+        action: () => scrapeScreen(outputDir, promptFn, versionTag),
       },
       {
         label: "Status",
         hasSubmenu: true,
-        action: () => statusScreen(outputDir, promptFn, version),
+        action: () => statusScreen(outputDir, promptFn, versionTag),
       },
       {
         label: "Reset",
         hasSubmenu: true,
-        action: () => resetScreen(outputDir, promptFn, version),
+        action: () => resetScreen(outputDir, promptFn, versionTag),
       },
       {
         label: "Clean",
         hasSubmenu: true,
-        action: () => cleanScreen(outputDir, promptFn, version),
+        action: () => cleanScreen(outputDir, promptFn, versionTag),
       },
       {
         label: "Auth",
         hasSubmenu: true,
-        action: () => authScreen(promptFn, version),
+        action: () => authScreen(promptFn, versionTag),
       },
       {
         label: "Config",
         hasSubmenu: true,
-        action: () => configScreen(promptFn, version),
+        action: () => configScreen(promptFn, versionTag),
       },
       {
         label: "Quit",
