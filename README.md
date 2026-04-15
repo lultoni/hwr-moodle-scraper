@@ -88,9 +88,11 @@ The first download takes roughly **10–20 minutes** and uses about **2–3 GB**
 | Re-download everything from scratch | `msc scrape --force` |
 | See what would be downloaded (without actually downloading) | `msc scrape --dry-run` |
 | See a summary of what you have | `msc status` |
+| Check for missing files or old entries | `msc status --issues` |
+| See what changed in the last scrape | `msc status --changed` |
 | Delete all downloaded files and start fresh | `msc reset` |
-| Delete leftover files from old folder structures | `msc clean` |
-| Move leftover files to a "User Files" folder instead | `msc clean --move` |
+| Remove personal files you added (with confirmation) | `msc clean` |
+| Move personal files to `User Files/` instead of deleting | `msc clean --move` |
 | Change the output folder | `msc config set outputDir ~/Documents/Moodle` |
 | Update your Moodle password | `msc auth set` |
 | See all available commands | `msc --help` |
@@ -99,9 +101,14 @@ The first download takes roughly **10–20 minutes** and uses about **2–3 GB**
 
 ## Your Files Are Safe
 
-Feel free to add your own notes, highlights, or files alongside the downloaded content. The scraper **only manages files it downloaded** and will never delete your personal additions.
+Feel free to add your own notes, highlights, or files anywhere inside the output folder. The scraper **only manages files it downloaded** — it will never touch anything you added yourself.
 
-`msc status` shows how many personal files you have. If you want to clean up old leftover files (e.g. after the scraper reorganized folders), use `msc clean` — it only touches files that aren't tracked by the scraper.
+`msc status` tells you how many personal files it sees. When you want to tidy up:
+
+- **`msc clean`** — deletes files in the output folder that aren't tracked by the scraper (after a confirmation prompt). Use this to remove leftovers from old folder structures after updates.
+- **`msc clean --move`** — instead of deleting, moves your personal files into a `User Files/` subfolder inside the output directory. Everything stays on disk, just neatly separated from the course content. Safe to run repeatedly — `User Files/` is never touched by the scraper.
+
+If you're unsure, always use `--move` first. You can delete from `User Files/` yourself once you've confirmed nothing important is there.
 
 ### GoodNotes / iPad Annotation Workflow
 
@@ -109,7 +116,7 @@ If you import PDFs into GoodNotes (or similar apps) for annotation:
 
 - When a lecturer **updates** a file on Moodle, msc re-downloads it and marks it as `~ updated` in the change report. Your annotated copy in GoodNotes is **not affected** — it's a separate import.
 - Re-import the updated file after each `msc scrape` if you want annotations aligned with the latest version.
-- To see what changed in the last scrape: `msc status --changed`
+- `msc status --changed` shows exactly what was new or updated in the last run.
 
 ---
 
