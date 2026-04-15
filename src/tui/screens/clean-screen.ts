@@ -6,13 +6,9 @@
 
 import { runClean } from "../../commands/clean.js";
 import { readKey } from "../keys.js";
-import { render, paginate, C, type RenderItem } from "../renderer.js";
+import { render, paginate, C, HIDE_CURSOR, SHOW_CURSOR, CLEAR, APP_TITLE, type RenderItem } from "../renderer.js";
 import { showConfirm } from "./scrape-screen.js";
 import type { PromptFn } from "../../auth/prompt.js";
-
-const HIDE_CURSOR = "\u001b[?25l";
-const SHOW_CURSOR = "\u001b[?25h";
-const APP_TITLE = "HWR Moodle Scraper";
 
 interface CleanMode { value: "delete" | "move"; label: string; flag?: string }
 
@@ -112,7 +108,7 @@ export async function cleanScreen(outputDir: string, promptFn: PromptFn, version
           clearTimeout(resizeTimer);
           process.stdout.removeListener("resize", onResize);
           process.stdout.write(SHOW_CURSOR);
-          process.stdout.write("\u001b[2J\u001b[H");
+          process.stdout.write(CLEAR);
 
           await runClean({
             outputDir,

@@ -6,12 +6,8 @@
 
 import { ConfigManager, USER_EDITABLE_KEYS, type ConfigKey, type ConfigValue } from "../../config.js";
 import { readKey } from "../keys.js";
-import { render, paginate, type RenderItem } from "../renderer.js";
+import { render, paginate, HIDE_CURSOR, SHOW_CURSOR, CLEAR, APP_TITLE, type RenderItem } from "../renderer.js";
 import type { PromptFn } from "../../auth/prompt.js";
-
-const APP_TITLE = "HWR Moodle Scraper";
-const HIDE_CURSOR = "\u001b[?25l";
-const SHOW_CURSOR = "\u001b[?25h";
 
 /** Category labels for config keys */
 const CATEGORIES: Record<ConfigKey, string> = {
@@ -156,7 +152,7 @@ export async function configScreen(promptFn: PromptFn, version: string): Promise
     if (!selectedKey) return;
 
     const current = formatValue(all[selectedKey] ?? null);
-    process.stdout.write(`\u001b[2J\u001b[H`);
+    process.stdout.write(CLEAR);
     process.stdout.write(`Editing: ${selectedKey}\nCurrent: ${current}\n\n`);
 
     if (BOOL_KEYS.includes(selectedKey)) {

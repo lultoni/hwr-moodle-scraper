@@ -10,10 +10,8 @@ import { createHttpClient } from "../../http/client.js";
 import { selectItem } from "../select.js";
 import { showConfirm } from "./scrape-screen.js";
 import { readKey } from "../keys.js";
-import { C } from "../renderer.js";
+import { C, SHOW_CURSOR, CLEAR, APP_TITLE } from "../renderer.js";
 import type { PromptFn } from "../../auth/prompt.js";
-
-const APP_TITLE = "HWR Moodle Scraper";
 
 export async function authScreen(promptFn: PromptFn, version: string): Promise<void> {
   const keychain = tryCreateKeychain();
@@ -45,7 +43,7 @@ export async function authScreen(promptFn: PromptFn, version: string): Promise<v
     if (choice === "back") return;
 
     if (choice === "show") {
-      process.stdout.write("\u001b[?25h\u001b[2J\u001b[H");
+      process.stdout.write(SHOW_CURSOR + CLEAR);
       await runAuthStatus({ keychain, httpClient });
       process.stdout.write("\n");
       // 3-dot countdown animation: "..." → ".." → "." then return to auth menu
@@ -62,7 +60,7 @@ export async function authScreen(promptFn: PromptFn, version: string): Promise<v
       if (!confirmed) continue;
     }
 
-    process.stdout.write("\u001b[?25h\u001b[2J\u001b[H");
+    process.stdout.write(SHOW_CURSOR + CLEAR);
 
     if (choice === "set") {
       await runAuthSet({ keychain, promptFn, httpClient });

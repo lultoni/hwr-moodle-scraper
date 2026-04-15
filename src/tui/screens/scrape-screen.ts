@@ -7,7 +7,7 @@
 
 import { runScrape } from "../../commands/scrape.js";
 import { readKey } from "../keys.js";
-import { render, paginate, C, type RenderItem } from "../renderer.js";
+import { render, paginate, C, HIDE_CURSOR, SHOW_CURSOR, CLEAR, APP_TITLE, type RenderItem } from "../renderer.js";
 import { SCRAPE_BOOL_OPTIONS } from "../options-registry.js";
 import { StateManager } from "../../sync/state.js";
 import { matchCourses } from "../../scraper/course-filter.js";
@@ -39,11 +39,6 @@ function makePhaseSpinner() {
     },
   };
 }
-
-const HIDE_CURSOR = "\u001b[?25l";
-const SHOW_CURSOR = "\u001b[?25h";
-
-const APP_TITLE = "HWR Moodle Scraper";
 
 interface Mode {
   value: "normal" | "force" | "check" | "dry";
@@ -174,7 +169,7 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
           clearTimeout(resizeTimer);
           process.stdout.removeListener("resize", onResize);
           // Clear the TUI box before scrape output starts
-          process.stdout.write("\u001b[2J\u001b[H");
+          process.stdout.write(CLEAR);
           process.stdout.write(SHOW_CURSOR);
 
           // Resolve keyword filter → numeric course IDs via state
@@ -258,8 +253,6 @@ export async function showConfirm(
     return answer.trim().toLowerCase() === "y";
   }
 
-  const HIDE_CURSOR = "\u001b[?25l";
-  const SHOW_CURSOR = "\u001b[?25h";
   process.stdout.write(HIDE_CURSOR);
 
   let selected = 0; // 0 = Confirm, 1 = ← Back

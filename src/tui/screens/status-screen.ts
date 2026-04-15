@@ -6,12 +6,8 @@
 
 import { runStatus } from "../../commands/status.js";
 import { readKey } from "../keys.js";
-import { render, paginate, C, type RenderItem } from "../renderer.js";
+import { render, paginate, C, HIDE_CURSOR, SHOW_CURSOR, CLEAR, APP_TITLE, type RenderItem } from "../renderer.js";
 import type { PromptFn } from "../../auth/prompt.js";
-
-const HIDE_CURSOR = "\u001b[?25l";
-const SHOW_CURSOR = "\u001b[?25h";
-const APP_TITLE = "HWR Moodle Scraper";
 
 interface ViewMode {
   value: "summary" | "issues" | "changed";
@@ -102,7 +98,7 @@ export async function statusScreen(outputDir: string, promptFn: PromptFn, versio
           clearTimeout(resizeTimer);
           process.stdout.removeListener("resize", onResize);
           process.stdout.write(SHOW_CURSOR);
-          process.stdout.write("\u001b[2J\u001b[H");
+          process.stdout.write(CLEAR);
           await runStatus({
             outputDir,
             showIssues: VIEWS[viewIdx]?.value === "issues",

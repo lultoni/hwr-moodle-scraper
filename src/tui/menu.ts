@@ -7,11 +7,8 @@
  */
 
 import { readKey } from "./keys.js";
-import { render, paginate, type RenderItem } from "./renderer.js";
+import { render, paginate, HIDE_CURSOR, SHOW_CURSOR, type RenderItem } from "./renderer.js";
 import type { PromptFn } from "../auth/prompt.js";
-
-const HIDE_CURSOR = "\u001b[?25l";
-const SHOW_CURSOR = "\u001b[?25h";
 
 export interface MenuItem {
   label: string;

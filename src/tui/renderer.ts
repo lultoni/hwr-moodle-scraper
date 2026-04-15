@@ -8,8 +8,14 @@
  * - Pagination is built-in: content that doesn't fit is split into pages
  */
 
-// \u001b[3J erases scrollback so old screen content doesn't scroll into view
-const CLEAR = "\u001b[3J\u001b[2J\u001b[H";
+/** Erase scrollback + screen + move cursor to origin. */
+export const CLEAR = "\u001b[3J\u001b[2J\u001b[H";
+/** Hide the terminal cursor. */
+export const HIDE_CURSOR = "\u001b[?25l";
+/** Restore the terminal cursor. */
+export const SHOW_CURSOR = "\u001b[?25h";
+/** App title shown in every TUI screen header. */
+export const APP_TITLE = "HWR Moodle Scraper";
 
 /** ANSI color/style escape codes. */
 export const C = {
