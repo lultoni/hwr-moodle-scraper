@@ -11,16 +11,20 @@ vi.mock("../../src/auth/session.js", () => ({
   deleteSessionFile: vi.fn(),
 }));
 
-vi.mock("../../src/scraper/courses.js", () => ({
-  fetchCourseList: vi.fn().mockResolvedValue([
-    { courseId: 1, courseName: "Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
-  ]),
-  fetchEnrolledCourses: vi.fn().mockResolvedValue([
-    { courseId: 1, courseName: "Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
-  ]),
-  fetchContentTree: vi.fn().mockResolvedValue({ courseId: 1, sections: [] }),
-  parseActivityFromElement: vi.fn().mockReturnValue(null),
-}));
+vi.mock("../../src/scraper/courses.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/scraper/courses.js")>();
+  return {
+    ...actual,
+    fetchCourseList: vi.fn().mockResolvedValue([
+      { courseId: 1, courseName: "Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]),
+    fetchEnrolledCourses: vi.fn().mockResolvedValue([
+      { courseId: 1, courseName: "Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]),
+    fetchContentTree: vi.fn().mockResolvedValue({ courseId: 1, sections: [] }),
+    parseActivityFromElement: vi.fn().mockReturnValue(null),
+  };
+});
 
 vi.mock("../../src/sync/incremental.js", () => ({
   computeSyncPlan: vi.fn().mockReturnValue([]),

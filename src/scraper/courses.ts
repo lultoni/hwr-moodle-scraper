@@ -82,7 +82,7 @@ function safeFromCodePoint(n: number): string {
 }
 
 /** Decode HTML entities in a plain-text string. */
-function decodeHtmlEntities(s: string): string {
+export function decodeHtmlEntities(s: string): string {
   return s
     .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => safeFromCodePoint(parseInt(h, 16)))
     .replace(/&#(\d+);/gi, (_, d: string) => safeFromCodePoint(parseInt(d, 10)))

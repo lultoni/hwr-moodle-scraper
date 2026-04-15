@@ -1,30 +1,18 @@
 // REQ-FS-003, REQ-FS-004
 // UK English spelling used throughout this file (sanitise, not sanitize).
+import { decodeHtmlEntities } from "../scraper/courses.js";
+
 const ILLEGAL = /[/\\:*?"<>|]/g;
 const NULL_BYTE = /\x00/g;
 const MAX_BYTES = 255;
 const MAX_COLLISION_ATTEMPTS = 10_000;
-
-/** Safe Unicode code point decode — drops invalid/out-of-range values. */
-function safeFromCodePoint(n: number): string {
-  if (n < 1 || n > 0x10FFFF) return "";
-  try { return String.fromCodePoint(n); } catch { return ""; }
-}
 
 export function sanitiseFilename(name: string): string {
   // Remove null bytes first (they must disappear, not become _)
   let s = name.replace(NULL_BYTE, "");
   // Decode common HTML entities to their character equivalents
   // (Moodle double-encodes some attributes, leaving residual entities after the main decode pass)
-  s = s
-    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => safeFromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/gi, (_, d: string) => safeFromCodePoint(parseInt(d, 10)))
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&apos;/gi, "'");
+  s = decodeHtmlEntities(s);
   // Replace remaining illegal characters with _
   s = s.replace(ILLEGAL, "_");
   // Trim leading/trailing whitespace and dots
