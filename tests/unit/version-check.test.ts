@@ -4,7 +4,7 @@
 // checkForUpdate uses global fetch which is mocked via vi.stubGlobal.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { parseSemver, isNewer, checkForUpdate, shouldCheck } from "../../src/version-check.js";
+import { parseSemver, isNewer, checkForUpdate, shouldCheck, runUpdateCheck } from "../../src/version-check.js";
 
 // ── parseSemver ───────────────────────────────────────────────────────────────
 
@@ -184,5 +184,104 @@ describe("Config: USER_EDITABLE_KEYS", () => {
   it("does not include lastUpdateCheckMs (internal, not user-editable)", async () => {
     const { USER_EDITABLE_KEYS } = await import("../../src/config.js");
     expect(USER_EDITABLE_KEYS).not.toContain("lastUpdateCheckMs");
+  });
+});
+
+// ── runUpdateCheck ─────────────────────────────────────────────────────────────
+
+describe("runUpdateCheck — T-7: quiet suppresses stderr", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function makeConfig(opts: {
+    checkUpdates?: boolean;
+    lastUpdateCheckMs?: number;
+    intervalHours?: number;
+  } = {}) {
+    return {
+      get: vi.fn().mockImplementation(async (key: string) => {
+        if (key === "checkUpdates") return opts.checkUpdates ?? true;
+        if (key === "lastUpdateCheckMs") return opts.lastUpdateCheckMs ?? 0;
+        if (key === "updateCheckIntervalHours") return opts.intervalHours ?? 0;
+        return undefined;
+      }),
+      set: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  it("when quiet=true and newer version available, nothing is written to stderr", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ tag_name: "v9.9.9" }),
+    }));
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    await runUpdateCheck(makeConfig(), "0.1.0", true);
+
+    expect(stderrSpy).not.toHaveBeenCalled();
+  });
+
+  it("when quiet=false and newer version available, message is written to stderr", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ tag_name: "v9.9.9" }),
+    }));
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    await runUpdateCheck(makeConfig(), "0.1.0", false);
+
+    const output = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(output).toContain("9.9.9");
+    expect(output).toContain("New version available");
+  });
+
+  it("when quiet=true and fetch throws, nothing is written to stderr", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network error")));
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    await runUpdateCheck(makeConfig(), "0.1.0", true);
+
+    expect(stderrSpy).not.toHaveBeenCalled();
+  });
+
+  it("when quiet=false and fetch throws, nothing is written to stderr (no crash)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network error")));
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    await expect(runUpdateCheck(makeConfig(), "0.1.0", false)).resolves.toBeUndefined();
+    expect(stderrSpy).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when checkUpdates=false", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await runUpdateCheck(makeConfig({ checkUpdates: false }), "0.1.0", false);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when still within cooldown interval", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    // lastUpdateCheckMs = now, intervalHours = 24 → still in cooldown
+    await runUpdateCheck(makeConfig({ lastUpdateCheckMs: Date.now(), intervalHours: 24 }), "0.1.0", false);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("updates lastUpdateCheckMs in config after a real network check", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ tag_name: "v0.1.0" }), // same version — no message
+    }));
+    const cfg = makeConfig();
+
+    await runUpdateCheck(cfg, "0.1.0", false);
+
+    expect(cfg.set).toHaveBeenCalledWith("lastUpdateCheckMs", expect.any(Number));
   });
 });

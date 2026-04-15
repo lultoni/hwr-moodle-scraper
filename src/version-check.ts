@@ -3,6 +3,12 @@
 // Uses Node.js built-in fetch (available since Node 18, required ≥ Node 20).
 // Never throws — all errors are swallowed and return null.
 
+/** Minimal config interface required by runUpdateCheck (avoids importing ConfigManager). */
+export interface UpdateCheckConfig {
+  get(key: string): Promise<unknown>;
+  set(key: string, value: unknown): Promise<void>;
+}
+
 const RELEASES_URL = "https://api.github.com/repos/lultoni/hwr-moodle-scraper/releases/latest";
 const TIMEOUT_MS = 5000;
 
@@ -62,5 +68,22 @@ export async function checkForUpdate(currentVersion: string): Promise<string | n
     return isNewer(current, latest) ? tag.replace(/^v/, "") : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Orchestrate a full update check cycle: honour config flags, cooldown interval,
+ * and the `quiet` flag before writing to stderr.
+ * No-ops silently if disabled, on cooldown, or on any error.
+ */
+export async function runUpdateCheck(config: UpdateCheckConfig, version: string, quiet: boolean): Promise<void> {
+  if ((await config.get("checkUpdates")) === false) return;
+  const lastMs = ((await config.get("lastUpdateCheckMs")) as number | undefined) ?? 0;
+  const intervalH = ((await config.get("updateCheckIntervalHours")) as number | undefined) ?? 24;
+  if (!shouldCheck(lastMs, intervalH)) return;
+  const newer = await checkForUpdate(version).catch(() => null);
+  await config.set("lastUpdateCheckMs", Date.now());
+  if (newer && !quiet) {
+    process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${version})\n      Update: npm install -g .\n`);
   }
 }

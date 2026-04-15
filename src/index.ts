@@ -19,7 +19,7 @@ import { runWizard, shouldRunWizard } from "./commands/wizard.js";
 import { runTui } from "./commands/tui.js";
 import { runHelp } from "./commands/help.js";
 import { runArchive } from "./commands/archive.js";
-import { checkForUpdate, shouldCheck } from "./version-check.js";
+import { runUpdateCheck } from "./version-check.js";
 import { StateManager } from "./sync/state.js";
 import { matchCourses } from "./scraper/course-filter.js";
 
@@ -77,22 +77,6 @@ function withLogger(logger: Logger | undefined): { logger: Logger } | Record<nev
   return logger ? { logger } : {};
 }
 
-/**
- * Check for a newer release on GitHub, respecting the configured cooldown.
- * Updates lastUpdateCheckMs in config after each real network check.
- * No-ops silently if disabled, on cooldown, or on any error.
- */
-async function runUpdateCheck(config: ConfigManager, version: string, quiet: boolean): Promise<void> {
-  if ((await config.get("checkUpdates")) === false) return;
-  const lastMs = ((await config.get("lastUpdateCheckMs")) as number | undefined) ?? 0;
-  const intervalH = ((await config.get("updateCheckIntervalHours")) as number | undefined) ?? 24;
-  if (!shouldCheck(lastMs, intervalH)) return;
-  const newer = await checkForUpdate(version).catch(() => null);
-  await config.set("lastUpdateCheckMs", Date.now());
-  if (newer && !quiet) {
-    process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${version})\n      Update: npm install -g .\n`);
-  }
-}
 
 // --- scrape ---
 program
