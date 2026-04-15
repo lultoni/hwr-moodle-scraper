@@ -2,7 +2,7 @@
 import { EXIT_CODES } from "../exit-codes.js";
 import type { KeychainAdapter } from "./keychain.js";
 import type { HttpClient } from "../http/client.js";
-import { AuthError } from "./prompt.js";
+import { AuthError, extractLoginToken } from "./prompt.js";
 import type { Logger } from "../logger.js";
 import { extractCookies } from "../http/cookies.js";
 
@@ -31,12 +31,6 @@ export interface SessionOptions {
   maxRetries?: number;
   interactivePromptFallback?: () => Promise<void>;
   logger?: Logger;
-}
-
-/** Extract the logintoken CSRF field from Moodle's login page HTML. */
-function extractLoginToken(html: string): string | undefined {
-  const match = html.match(/name="logintoken"\s+value="([^"]+)"/);
-  return match?.[1];
 }
 
 /** Attempt silent re-authentication using stored credentials. Returns session cookie on success, null on failure. */

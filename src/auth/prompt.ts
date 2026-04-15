@@ -28,7 +28,7 @@ export interface PromptAuthOptions {
 }
 
 /** Extract the logintoken CSRF field from Moodle's login page HTML. */
-function extractLoginToken(html: string): string | undefined {
+export function extractLoginToken(html: string): string | undefined {
   const match = html.match(/name="logintoken"\s+value="([^"]+)"/);
   return match?.[1];
 }
