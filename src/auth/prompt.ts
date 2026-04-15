@@ -49,27 +49,39 @@ function extractLoginToken(html: string): string | undefined {
 export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<void> {
   const { promptFn, httpClient, keychain, baseUrl = "https://moodle.hwr-berlin.de", logger } = opts;
 
-  // Collect username (re-prompt on empty)
+  // Collect username — prefer MSC_USERNAME env var, then prompt
+  const envUsername = process.env["MSC_USERNAME"]?.trim() ?? "";
   let username = "";
-  while (!username.trim()) {
-    username = await promptFn("Username: ");
-    if (!username.trim()) {
-      process.stderr.write("Username must not be empty.\n");
-      username = "";
+  if (envUsername) {
+    username = envUsername;
+    logger?.debug(`[auth] username from MSC_USERNAME env var`);
+  } else {
+    while (!username.trim()) {
+      username = await promptFn("Username: ");
+      if (!username.trim()) {
+        process.stderr.write("Username must not be empty.\n");
+        username = "";
+      }
     }
+    logger?.debug(`[auth] username entered: "${username}"`);
   }
-  logger?.debug(`[auth] username entered: "${username}"`);
 
-  // Collect password (re-prompt on empty)
+  // Collect password — prefer MSC_PASSWORD env var, then prompt
+  const envPassword = process.env["MSC_PASSWORD"] ?? "";
   let password = "";
-  while (!password) {
-    password = await promptFn("Password: ", true);
-    if (!password) {
-      process.stderr.write("Password must not be empty.\n");
+  if (envPassword) {
+    password = envPassword;
+    logger?.debug("[auth] password from MSC_PASSWORD env var");
+  } else {
+    while (!password) {
+      password = await promptFn("Password: ", true);
+      if (!password) {
+        process.stderr.write("Password must not be empty.\n");
+      }
     }
+    logger?.debug("[auth] password entered");
   }
   logger?.addSecret(password);
-  logger?.debug("[auth] password entered");
 
   // Fetch login page to obtain the CSRF logintoken AND the session cookie.
   // Moodle validates the logintoken against the session established by this GET,

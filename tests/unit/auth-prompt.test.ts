@@ -239,3 +239,46 @@ describe("STEP-008: Credential prompt — successful login", () => {
     stderrSpy.mockRestore();
   });
 });
+
+// UC-04: env-var credentials skip prompts
+describe("UC-04: env-var credentials in promptAndAuthenticate", () => {
+  const SUCCESS_URL_LOCAL = "https://moodle.hwr-berlin.de/my/";
+  const FAIL_URL_LOCAL = "https://moodle.hwr-berlin.de/login/index.php?loginredirect=1";
+  const LOGIN_PAGE_HTML_LOCAL = `<html><input name="logintoken" value="abc123"/></html>`;
+
+  it("skips username and password prompts when both env vars are set", async () => {
+    vi.stubEnv("MSC_USERNAME", "envuser");
+    vi.stubEnv("MSC_PASSWORD", "envpass");
+    const promptFn = vi.fn();
+
+    const { createHttpClient } = await import("../../src/http/client.js");
+    vi.mocked(createHttpClient).mockReturnValue({
+      get: vi.fn().mockResolvedValue({ status: 200, url: SUCCESS_URL_LOCAL, body: LOGIN_PAGE_HTML_LOCAL, headers: {} }),
+      post: vi.fn().mockResolvedValue({ status: 200, url: SUCCESS_URL_LOCAL }),
+    } as never);
+
+    await promptAndAuthenticate({ promptFn, httpClient: vi.mocked(createHttpClient)() });
+
+    expect(promptFn).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
+  it("still prompts when env vars are not set", async () => {
+    vi.stubEnv("MSC_USERNAME", "");
+    vi.stubEnv("MSC_PASSWORD", "");
+    const promptFn = vi.fn()
+      .mockResolvedValueOnce("promptuser")
+      .mockResolvedValueOnce("promptpass");
+
+    const { createHttpClient } = await import("../../src/http/client.js");
+    vi.mocked(createHttpClient).mockReturnValue({
+      get: vi.fn().mockResolvedValue({ status: 200, url: FAIL_URL_LOCAL, body: LOGIN_PAGE_HTML_LOCAL, headers: {} }),
+      post: vi.fn().mockResolvedValue({ status: 200, url: SUCCESS_URL_LOCAL }),
+    } as never);
+
+    await promptAndAuthenticate({ promptFn, httpClient: vi.mocked(createHttpClient)() });
+
+    expect(promptFn).toHaveBeenCalledTimes(2);
+    vi.unstubAllEnvs();
+  });
+});

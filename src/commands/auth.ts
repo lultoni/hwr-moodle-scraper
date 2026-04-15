@@ -41,7 +41,12 @@ export interface AuthStatusOptions {
 export async function runAuthStatus(opts: AuthStatusOptions): Promise<void> {
   const { keychain, httpClient, baseUrl } = opts;
   if (!keychain) {
-    process.stdout.write("Credential storage: not available (non-macOS platform)\n");
+    const envUser = process.env["MSC_USERNAME"];
+    if (envUser) {
+      process.stdout.write(`Credential storage: env vars (MSC_USERNAME=${envUser})\n`);
+    } else {
+      process.stdout.write("Credential storage: not available. Set MSC_USERNAME and MSC_PASSWORD environment variables.\n");
+    }
     return;
   }
   const creds = await keychain.readCredentials();
@@ -71,10 +76,16 @@ export interface AuthSetOptions {
 
 export async function runAuthSet(opts: AuthSetOptions): Promise<void> {
   const { keychain, promptFn, nonInteractive = false, httpClient, baseUrl, logger } = opts;
-  const existing = keychain ? await keychain.readCredentials() : null;
   if (!keychain) {
-    process.stdout.write("Note: credentials will not be saved (macOS Keychain not available).\n");
+    process.stdout.write("Credential storage is not available on this platform.\n");
+    process.stdout.write("Set MSC_USERNAME and MSC_PASSWORD environment variables instead.\n");
+    process.stdout.write("Example (bash/zsh):\n");
+    process.stdout.write("  export MSC_USERNAME=s12345\n");
+    process.stdout.write("  export MSC_PASSWORD=yourpass\n");
+    process.stdout.write("Note: Configuring env vars is optional — msc scrape will prompt you each run otherwise.\n");
+    return;
   }
+  const existing = await keychain.readCredentials();
   if (existing) {
     if (nonInteractive) {
       throw Object.assign(

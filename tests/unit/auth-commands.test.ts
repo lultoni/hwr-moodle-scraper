@@ -134,3 +134,43 @@ describe("STEP-010: auth set — non-interactive guard", () => {
     ).rejects.toMatchObject({ exitCode: 2 });
   });
 });
+
+// UC-03: msc auth set on non-macOS refuses immediately with env-var instructions
+describe("UC-03: auth set on non-macOS", () => {
+  it("prints refusal and env-var instructions when keychain is null", async () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const promptFn = vi.fn();
+    await runAuthSet({ keychain: null, promptFn });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output).toContain("not available on this platform");
+    expect(output).toContain("MSC_USERNAME");
+    expect(output).toContain("MSC_PASSWORD");
+    expect(output).toContain("optional");
+    expect(promptFn).not.toHaveBeenCalled();
+    stdoutSpy.mockRestore();
+  });
+});
+
+// UC-04: msc auth status shows env-var presence on non-macOS
+describe("UC-04: auth status non-macOS env-var reporting", () => {
+  it("reports MSC_USERNAME when set and keychain is null", async () => {
+    vi.stubEnv("MSC_USERNAME", "s12345");
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runAuthStatus({ keychain: null });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output).toContain("MSC_USERNAME=s12345");
+    stdoutSpy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  it("prints guidance when keychain null and MSC_USERNAME not set", async () => {
+    vi.stubEnv("MSC_USERNAME", "");
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runAuthStatus({ keychain: null });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output).toContain("MSC_USERNAME");
+    expect(output).toContain("MSC_PASSWORD");
+    stdoutSpy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+});
