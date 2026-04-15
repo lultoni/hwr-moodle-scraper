@@ -528,15 +528,16 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     if (shouldBeMd && existingPath && !existingPath.endsWith(".md") && !existingPath.endsWith(".url.txt")) {
       item.action = SyncAction.DOWNLOAD; continue;
     }
-    // (c) binary types with no recognised extension in localPath (legacy ENAMETOOLONG / BUG-C)
+    // (c) binary types that are legacy ENAMETOOLONG / BUG-C artifacts:
+    //   - truly extensionless paths (no dot at all — e.g. old "Dockerfile" with no ext)
+    //   - numeric-only extension (e.g. ".1" from extname("FiMa 4.1") — BUG-C false extension)
+    // NOT promoted: files with unusual-but-valid extensions like .base, .env, .conf, .lock, etc.
     if (!shouldBeMd && existingPath) {
       const ext = extname(existingPath).toLowerCase();
-      const hasDotInName = existingPath.includes(".");
-      // Only promote if truly extensionless (not a dotfile like .DS_Store)
-      if (ext === "" && hasDotInName === false) {
+      if (ext === "" && !existingPath.includes(".")) {
         item.action = SyncAction.DOWNLOAD; continue;
       }
-      if (ext !== "" && !KNOWN_FILE_EXTS.has(ext) && !existingPath.endsWith(".url.txt") && !existingPath.endsWith(".description.md")) {
+      if (/^\.\d+$/.test(ext)) {
         item.action = SyncAction.DOWNLOAD; continue;
       }
     }

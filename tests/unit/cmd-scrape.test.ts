@@ -240,3 +240,71 @@ describe("STEP-020: scrape --courses filter", () => {
     stderrSpy.mockRestore();
   });
 });
+
+describe("STEP-020: scrape — binary promotion Case (c) (Pass 42 fix)", () => {
+  // Case (c) in the promotion loop previously re-promoted any binary file with an unknown
+  // extension to DOWNLOAD every run. Files like Dockerfile.base were affected.
+  // Now only truly extensionless or numeric-ext paths (BUG-C artifacts) are promoted.
+
+  it("does not re-promote a binary SKIP item with .base extension to DOWNLOAD", async () => {
+    const { computeSyncPlan } = await import("../../src/sync/incremental.js");
+    const { StateManager } = await import("../../src/sync/state.js");
+    const { fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue({
+        courses: {
+          "1": {
+            name: "IT-Sec",
+            sections: {
+              "s1": {
+                files: {
+                  "r-dockerfile": {
+                    name: "Dockerfile.base",
+                    url: "https://moodle.example.com/r/docker",
+                    localPath: "/tmp/test/Semester_3/IT-Sicherheit/Dockerfile.base",
+                    hash: "a".repeat(64),
+                    lastModified: "2026-01-01T00:00:00Z",
+                    status: "ok" as const,
+                  },
+                },
+              },
+            },
+          },
+        },
+        generatedFiles: [],
+        lastSyncAt: new Date().toISOString(),
+      }),
+      save: vi.fn().mockResolvedValue(undefined),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+      backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
+    } as unknown as InstanceType<typeof StateManager>));
+
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [{ sectionId: "s1", sectionName: "Weitere Ressourcen", activities: [{
+        activityType: "resource",
+        activityName: "Dockerfile.base",
+        resourceId: "r-dockerfile",
+        url: "https://moodle.example.com/r/docker",
+        hash: "moodle-token-abc",
+        isAccessible: true,
+      }] }],
+    });
+
+    // computeSyncPlan returns SKIP (file up to date after Fix 1)
+    vi.mocked(computeSyncPlan).mockReturnValueOnce([
+      { action: "SKIP" as "SKIP", resourceId: "r-dockerfile", courseId: 1, url: "https://moodle.example.com/r/docker" },
+    ]);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, courses: [1] });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+
+    // Must stay skipped — not re-promoted to DOWNLOAD
+    // "0 new activities" means the SKIP item was not converted to a download
+    expect(output).not.toContain("1 new activity");
+    expect(output).toContain("0 new activities");
+  });
+});
