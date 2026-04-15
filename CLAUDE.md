@@ -123,9 +123,9 @@ When a user reports broken files or before ending a session:
 
 ## Current Phase
 **Phase 5 — Iterative Improvements (ongoing)**
-- All 22 timeline steps fully implemented; 734/734 tests passing (47 test files)
+- All 22 timeline steps fully implemented; 784/784 tests passing (48 test files)
 - Full CLI: auth, scrape, status, wizard, reset, tui + first-run wizard + clean
-- 42 cleanup/improvement passes completed; current version: `0.5.1`
+- 43 cleanup/improvement passes completed; current version: `0.6.0`
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.
