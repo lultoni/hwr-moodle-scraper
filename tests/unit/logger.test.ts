@@ -178,6 +178,126 @@ describe("Security: dynamic secret registration via addSecret()", () => {
   });
 });
 
+describe("STEP-007: Logger — TTY color prefixes", () => {
+  // Feature 1 (Pass 41): colored [INFO]/[WARN]/[ERROR] prefixes on TTY stderr
+
+  it("on TTY stderr, [INFO] prefix is wrapped in dim ANSI codes", () => {
+    const origIsTTY = process.stderr.isTTY;
+    Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+    delete process.env["NO_COLOR"];
+
+    const logger = createLogger({ level: LogLevel.INFO, redact: [] });
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    logger.info("hello");
+    const output = (spy.mock.calls[0]?.[0] as string) ?? "";
+
+    // dim = \u001b[2m, reset = \u001b[0m
+    expect(output).toContain("\u001b[2m[INFO]\u001b[0m");
+
+    spy.mockRestore();
+    Object.defineProperty(process.stderr, "isTTY", { value: origIsTTY, configurable: true });
+  });
+
+  it("on TTY stderr, [WARN] prefix is wrapped in yellow ANSI codes", () => {
+    const origIsTTY = process.stderr.isTTY;
+    Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+    delete process.env["NO_COLOR"];
+
+    const logger = createLogger({ level: LogLevel.WARN, redact: [] });
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    logger.warn("watch out");
+    const output = (spy.mock.calls[0]?.[0] as string) ?? "";
+
+    // yellow = \u001b[33m
+    expect(output).toContain("\u001b[33m[WARN]\u001b[0m");
+
+    spy.mockRestore();
+    Object.defineProperty(process.stderr, "isTTY", { value: origIsTTY, configurable: true });
+  });
+
+  it("on TTY stderr, [ERROR] prefix is wrapped in red ANSI codes", () => {
+    const origIsTTY = process.stderr.isTTY;
+    Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+    delete process.env["NO_COLOR"];
+
+    const logger = createLogger({ level: LogLevel.ERROR, redact: [] });
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    logger.error("something broke");
+    const output = (spy.mock.calls[0]?.[0] as string) ?? "";
+
+    // red = \u001b[31m
+    expect(output).toContain("\u001b[31m[ERROR]\u001b[0m");
+
+    spy.mockRestore();
+    Object.defineProperty(process.stderr, "isTTY", { value: origIsTTY, configurable: true });
+  });
+
+  it("with NO_COLOR set, output has plain [INFO] with no ANSI codes", () => {
+    const origIsTTY = process.stderr.isTTY;
+    Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+    process.env["NO_COLOR"] = "1";
+
+    const logger = createLogger({ level: LogLevel.INFO, redact: [] });
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    logger.info("plain");
+    const output = (spy.mock.calls[0]?.[0] as string) ?? "";
+
+    expect(output).toContain("[INFO]");
+    expect(output).not.toContain("\u001b[");
+
+    spy.mockRestore();
+    delete process.env["NO_COLOR"];
+    Object.defineProperty(process.stderr, "isTTY", { value: origIsTTY, configurable: true });
+  });
+
+  it("on non-TTY stderr, output has plain [INFO] with no ANSI codes", () => {
+    const origIsTTY = process.stderr.isTTY;
+    Object.defineProperty(process.stderr, "isTTY", { value: false, configurable: true });
+    delete process.env["NO_COLOR"];
+
+    const logger = createLogger({ level: LogLevel.INFO, redact: [] });
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    logger.info("non-tty");
+    const output = (spy.mock.calls[0]?.[0] as string) ?? "";
+
+    expect(output).toContain("[INFO]");
+    expect(output).not.toContain("\u001b[");
+
+    spy.mockRestore();
+    Object.defineProperty(process.stderr, "isTTY", { value: origIsTTY, configurable: true });
+  });
+
+  it("log file entry does NOT contain ANSI escape codes even when TTY is active", async () => {
+    const origIsTTY = process.stderr.isTTY;
+    Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+    delete process.env["NO_COLOR"];
+
+    // Write to a real temp file and check its contents
+    const { writeFileSync, readFileSync, unlinkSync } = await import("node:fs");
+    const tmpPath = `/tmp/logger-test-${Date.now()}.log`;
+    writeFileSync(tmpPath, ""); // create empty file
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    const logger = createLogger({ level: LogLevel.INFO, redact: [], logFile: tmpPath });
+    logger.info("file test");
+
+    // The log file should NOT contain ANSI codes
+    const fileContent = readFileSync(tmpPath, "utf8");
+    expect(fileContent).not.toContain("\u001b[");
+    expect(fileContent).toContain("[INFO]");
+
+    // stderr output SHOULD contain ANSI (TTY active)
+    const stderrOutput = (stderrSpy.mock.calls[0]?.[0] as string) ?? "";
+    expect(stderrOutput).toContain("\u001b[2m[INFO]\u001b[0m");
+
+    stderrSpy.mockRestore();
+
+    unlinkSync(tmpPath);
+    Object.defineProperty(process.stderr, "isTTY", { value: origIsTTY, configurable: true });
+  });
+});
+
 describe("STEP-007: Logger — state file redaction guard", () => {
   // REQ-SEC-007
   it("assertNoSecrets() throws if a state object contains a known secret value", async () => {

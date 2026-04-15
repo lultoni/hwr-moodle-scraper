@@ -57,6 +57,22 @@ export function createLogger(opts: LoggerOptions): Logger {
   // suppress in plain terminal output.
   const showTimestamps = opts.timestamps ?? (logFile != null);
 
+  // Color support: only when stderr is a TTY and NO_COLOR is unset
+  const USE_COLOR = process.stderr.isTTY && !process.env["NO_COLOR"];
+  const C = {
+    dim:    USE_COLOR ? "\u001b[2m"  : "",
+    yellow: USE_COLOR ? "\u001b[33m" : "",
+    red:    USE_COLOR ? "\u001b[31m" : "",
+    reset:  USE_COLOR ? "\u001b[0m"  : "",
+  };
+
+  const LEVEL_COLOR: Record<number, string> = {
+    [LogLevel.DEBUG]: C.dim,
+    [LogLevel.INFO]:  C.dim,
+    [LogLevel.WARN]:  C.yellow,
+    [LogLevel.ERROR]: C.red,
+  };
+
   if (logFile) ensureLogFile(logFile);
 
   function rotateIfNeeded(): void {
@@ -77,12 +93,17 @@ export function createLogger(opts: LoggerOptions): Logger {
     const safe = redactSecrets(msg, secrets);
     const prefix = LogLevel[msgLevel] ?? "LOG";
     const ts = new Date().toISOString();
-    const line = showTimestamps ? `[${ts}] [${prefix}] ${safe}\n` : `[${prefix}] ${safe}\n`;
+    const col = LEVEL_COLOR[msgLevel] ?? "";
+    const coloredPrefix = USE_COLOR ? `${col}[${prefix}]${C.reset}` : `[${prefix}]`;
+    // Stderr: with optional color
+    const line = showTimestamps
+      ? `[${ts}] ${coloredPrefix} ${safe}\n`
+      : `${coloredPrefix} ${safe}\n`;
     process.stderr.write(line);
     if (logFile) {
       rotateIfNeeded();
-      // Log file always gets timestamps for diagnostic value
-      const fileLine = showTimestamps ? line : `[${ts}] [${prefix}] ${safe}\n`;
+      // Log file always gets plain text (no ANSI) + timestamps for diagnostic value
+      const fileLine = `[${ts}] [${prefix}] ${safe}\n`;
       appendFileSync(logFile, fileLine);
     }
   }
