@@ -73,15 +73,19 @@ const knownPaths = new Set();
 if (existsSync(stateFile)) {
   try {
     const state = JSON.parse(readFileSync(stateFile, "utf8"));
+    // Per-file entries
     for (const course of Object.values(state.courses ?? {})) {
       for (const section of Object.values(course.sections ?? {})) {
         for (const file of Object.values(section.files ?? {})) {
           if (file.localPath) knownPaths.add(file.localPath);
           if (file.sidecarPath) knownPaths.add(file.sidecarPath);
           for (const sp of file.submissionPaths ?? []) knownPaths.add(sp);
+          for (const ip of file.imagePaths ?? []) knownPaths.add(ip);
         }
       }
     }
+    // Top-level generated files (README.md, _Abschnittsbeschreibung.md, _Beschreibungen.md, etc.)
+    for (const gf of state.generatedFiles ?? []) knownPaths.add(gf);
   } catch {
     console.warn("Warning: could not read state file — user-file detection disabled.");
   }
@@ -104,8 +108,9 @@ function scan(dir) {
   for (const entry of entries) {
     const fullPath = join(dir, entry.name);
 
-    // Skip the state file itself and sidecar .meta.json files
+    // Skip the state file itself, its backup, and sidecar .meta.json files
     if (entry.name === ".moodle-scraper-state.json") continue;
+    if (entry.name === ".moodle-scraper-state.json.bak") continue;
 
     if (entry.isDirectory()) {
       scan(fullPath);

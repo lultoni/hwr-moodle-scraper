@@ -11,6 +11,15 @@ Follow the phases in `docs/WORKFLOW.md` strictly:
 4. Implementation
 5. Iterative feedback incorporation
 
+### Phase 5 Pass Workflow (for new features / improvements)
+Each improvement is one "pass" (e.g. Pass 36). The workflow within a pass:
+
+1. **Plan** — use `EnterPlanMode` to explore relevant files and write a plan. Each feature in the pass is its own commit. Surface design decisions (approaches, trade-offs) to the user via `AskUserQuestion` before locking in.
+2. **One feature at a time** — implement features sequentially, not in parallel. Each feature follows: tests → implementation → `npx vitest run` → `node scripts/file-checker.js` → commit.
+3. **Tests before code** — write failing tests first. Tests live in `tests/unit/` or `tests/integration/`. The test must reference what it covers in a comment.
+4. **Commit per feature** — commit message format: `feat(<scope>): <what and why>` or `fix(<scope>): <what and why>`. Include the number of new tests in the body when significant.
+5. **End of pass** — update `CLAUDE.md` (test count, pass count) and memory files.
+
 ## Mottos (priority order)
 1. **Security first** — credentials never in logs, no hardcoded secrets, HTTPS only, secure credential storage
 2. **Clean code second** — readable, minimal, well-structured
@@ -20,7 +29,7 @@ Follow the phases in `docs/WORKFLOW.md` strictly:
 - **Never commit credentials or secrets**
 - **Always read source before modifying** — never modify a file you have not fully read
 - **Tests before features** — write or update the test first; the test must fail before the implementation exists
-- **After significant changes**: run `npx vitest run` — all 514 tests must pass; commit with a contextual message
+- **After changes**: run `npx vitest run` — all 646 tests must pass; commit with a contextual message
 - **Run file-checker before ending any session**: `node scripts/file-checker.js` must exit 0
 
 ## Critical Parsing Patterns — Do Not Regress
@@ -107,9 +116,9 @@ When a user reports broken files or before ending a session:
 
 ## Current Phase
 **Phase 5 — Iterative Improvements (ongoing)**
-- All 22 timeline steps fully implemented; 514/514 tests passing (38 test files)
+- All 22 timeline steps fully implemented; 646/646 tests passing (43 test files)
 - Full CLI: auth, scrape, status, wizard, reset, tui + first-run wizard + clean
-- 34 cleanup/improvement passes completed (see `docs/FEATURE_TIMELINE.md` for full history)
+- 36 cleanup/improvement passes completed (see `docs/FEATURE_TIMELINE.md` for full history)
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.
