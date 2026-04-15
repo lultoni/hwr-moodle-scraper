@@ -18,6 +18,7 @@ import { extractAssignmentFeedback } from "../scraper/assign.js";
 import { DownloadQueue, type DownloadItem } from "../scraper/downloader.js";
 import { writeUrlFile, writeWeblocFile, writeWindowsUrlFile } from "../scraper/content-types.js";
 import { filterSidecars, type SidecarItem } from "../scraper/sidecar-filter.js";
+import { CourseProgressDisplay } from "../scraper/course-progress.js";
 import { createTurndown } from "../scraper/turndown.js";
 import { EXIT_CODES } from "../exit-codes.js";
 import { registerShutdownHandlers } from "../process/shutdown.js";
@@ -687,7 +688,10 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
             destPath: planItem.destPath,
             sessionCookies,
             retryBaseDelayMs,
-            onComplete: (fp) => { progress.bar?.increment(1, { file: basename(fp) }); },
+            onComplete: (fp) => {
+              progress.bar?.increment(1, { file: basename(fp) });
+              courseDisplay?.tick(item.courseId!, basename(fp));
+            },
           },
           planItem: item,
         });
@@ -738,6 +742,38 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       hideCursor: true,
     }, cliProgress.Presets.shades_classic);
     progress.bar.start(binaryItems.length + specialItems.filter((s) => !s.isSidecar).length, 0, { file: "" });
+  }
+
+  // Per-course mini progress display — active when TTY + useProgressBar
+  // Replaces cli-progress bar when TTY is live (same gate, higher-resolution UI)
+  const useCourseDisplay = useProgressBar && Boolean(process.stdout.isTTY);
+  let courseDisplay: CourseProgressDisplay | undefined;
+  if (useCourseDisplay) {
+    // Compute per-course totals (binary + non-sidecar special items)
+    const courseTotals = new Map<number, number>();
+    for (const { planItem } of binaryItems) {
+      if (planItem.courseId) courseTotals.set(planItem.courseId, (courseTotals.get(planItem.courseId) ?? 0) + 1);
+    }
+    for (const { item, isSidecar } of specialItems) {
+      if (!isSidecar && item.courseId) courseTotals.set(item.courseId, (courseTotals.get(item.courseId) ?? 0) + 1);
+    }
+    // Build ordered course entries (follow courses array order)
+    const courseEntries = courses
+      .filter((c) => courseTotals.has(c.courseId))
+      .map((c) => {
+        const sp = courseShortPaths.get(c.courseId);
+        const name = sp?.shortName ?? (courseNameMap.get(c.courseId) ?? String(c.courseId));
+        return { courseId: c.courseId, name, total: courseTotals.get(c.courseId)! };
+      });
+    if (courseEntries.length > 0) {
+      // Stop cli-progress bar if it was started — course display takes over
+      if (progress.bar) {
+        progress.bar.stop();
+        progress.bar = undefined;
+      }
+      courseDisplay = new CourseProgressDisplay();
+      courseDisplay.start(courseEntries);
+    }
   }
 
   // Execute binary downloads via queue
@@ -943,7 +979,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           if (dirSet.has(contentHash)) {
             logger.debug(`[SUPPRESS-DEDUP] ${label} — content identical to another file in ${dir}`);
             // Still count as downloaded (it was fetched), just skip writing
-            if (specialItems[si]!.isSidecar) { sidecarCount++; } else { downloadedCount++; progress.bar?.increment(1, { file: label }); }
+            if (specialItems[si]!.isSidecar) { sidecarCount++; } else { downloadedCount++; progress.bar?.increment(1, { file: label }); courseDisplay?.tick(item.courseId!, label); }
             continue;
           }
           dirSet.add(contentHash);
@@ -968,6 +1004,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       } else {
         downloadedCount++;
         progress.bar?.increment(1, { file: label });
+        courseDisplay?.tick(item.courseId!, label);
       }
     } catch (err) {
       failedCount++;
@@ -979,6 +1016,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     progress.bar.stop();
     process.stdout.write("\n");
   }
+  courseDisplay?.finish();
 
   // Build change report entries from completed downloads.
   // Only include a file as "~ updated" when its content hash actually changed — not just
