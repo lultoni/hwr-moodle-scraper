@@ -110,6 +110,25 @@ Feel free to add your own notes, highlights, or files anywhere inside the output
 
 If you're unsure, always use `--move` first. You can delete from `User Files/` yourself once you've confirmed nothing important is there.
 
+### Permanently Protecting Personal Files
+
+If you want certain files to be permanently invisible to msc — never shown in status, never offered for deletion — name the containing folder **`_User-Files`**:
+
+```
+~/moodle-scraper-output/
+├── Semester_3/
+│   └── Datenbanken/
+│       ├── Vorlesung.pdf          ← managed by msc
+│       └── _User-Files/
+│           └── my-notes.md        ← completely invisible to msc
+└── _User-Files/
+    └── extra-resources/           ← also invisible
+```
+
+Any directory named `_User-Files` (anywhere in the output tree) is skipped entirely — its contents never appear in `msc status`, `msc status --issues`, or `msc clean`. Unlike `User Files/` (which is created by `msc clean --move`), `_User-Files` folders are ones you create yourself and can be placed at any depth.
+
+> **Note:** Because msc ignores them completely, there is no msc command to list what's inside `_User-Files` folders. Use Finder (macOS), your file explorer (Windows), or `ls` in the terminal to browse them.
+
 ### GoodNotes / iPad Annotation Workflow
 
 If you import PDFs into GoodNotes (or similar apps) for annotation:
