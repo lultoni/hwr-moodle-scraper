@@ -1,6 +1,6 @@
 /**
  * TUI Reset-Screen.
- * Radio for scope (partial/full) + toggles for options + Run button.
+ * Checkboxes for what to reset + toggles for options + Run button.
  * Always confirms with the equivalent CLI command before acting.
  */
 
@@ -10,29 +10,29 @@ import { render, paginate, C, HIDE_CURSOR, SHOW_CURSOR, CLEAR, APP_TITLE, type R
 import { showConfirm } from "./scrape-screen.js";
 import type { PromptFn } from "../../auth/prompt.js";
 
-interface Scope { value: "partial" | "full"; label: string; flag?: string }
-interface ResetToggle { key: "moveUserFiles" | "dryRun"; label: string; flag: string }
+interface ResetToggle { key: string; label: string; flag: string }
 
-const SCOPES: Scope[] = [
-  { value: "partial", label: "Partial — delete scraped files + state" },
-  { value: "full",    label: "Full    — also clear config + credentials", flag: "--full" },
+const WHAT_TOGGLES: ResetToggle[] = [
+  { key: "state",       label: "State only            (--state)",       flag: "--state" },
+  { key: "files",       label: "State + tracked files (--files)",       flag: "--files" },
+  { key: "config",      label: "Config                (--config)",      flag: "--config" },
+  { key: "credentials", label: "Credentials           (--credentials)", flag: "--credentials" },
 ];
 
-const TOGGLES: ResetToggle[] = [
+const OPT_TOGGLES: ResetToggle[] = [
   { key: "moveUserFiles", label: "Move user files first  (--move-user-files)", flag: "--move-user-files" },
   { key: "dryRun",        label: "Dry-run — preview only  (--dry-run)",         flag: "--dry-run" },
 ];
 
-const SCOPE_COUNT  = SCOPES.length;
-const TOGGLE_COUNT = TOGGLES.length;
-const RUN_IDX      = SCOPE_COUNT + TOGGLE_COUNT;
-const BACK_IDX     = SCOPE_COUNT + TOGGLE_COUNT + 1;
-const TOTAL        = SCOPE_COUNT + TOGGLE_COUNT + 2;
+const ALL_TOGGLES = [...WHAT_TOGGLES, ...OPT_TOGGLES];
+const TOGGLE_COUNT = ALL_TOGGLES.length;
+const RUN_IDX  = TOGGLE_COUNT;
+const BACK_IDX = TOGGLE_COUNT + 1;
+const TOTAL    = TOGGLE_COUNT + 2;
 
-function buildCliCommand(scopeIdx: number, boolState: Record<string, boolean>): string {
+function buildCliCommand(boolState: Record<string, boolean>): string {
   const parts = ["msc reset"];
-  if (SCOPES[scopeIdx]?.flag) parts.push(SCOPES[scopeIdx]!.flag!);
-  for (const t of TOGGLES) { if (boolState[t.key]) parts.push(t.flag); }
+  for (const t of ALL_TOGGLES) { if (boolState[t.key]) parts.push(t.flag); }
   return parts.join(" ");
 }
 
@@ -44,22 +44,23 @@ export async function resetScreen(outputDir: string, promptFn: PromptFn, version
     return;
   }
 
-  let scopeIdx = 0;
-  const boolState: Record<string, boolean> = { moveUserFiles: false, dryRun: false };
+  const boolState: Record<string, boolean> = {};
+  for (const t of ALL_TOGGLES) boolState[t.key] = false;
   let focused = 0;
   let page = 1;
 
   function buildItems(): RenderItem[] {
     const items: RenderItem[] = [];
-    items.push({ type: "text", content: "── Scope ─────────────────────────" });
-    for (let i = 0; i < SCOPES.length; i++) {
-      items.push({ type: "radio", label: SCOPES[i]!.label, selected: scopeIdx === i, focused: focused === i });
+    items.push({ type: "text", content: "── What to reset ──────────────────" });
+    for (let i = 0; i < WHAT_TOGGLES.length; i++) {
+      const t = WHAT_TOGGLES[i]!;
+      items.push({ type: "toggle", label: t.label, checked: boolState[t.key]!, focused: focused === i });
     }
     items.push({ type: "blank" });
     items.push({ type: "text", content: "── Options ───────────────────────" });
-    for (let i = 0; i < TOGGLES.length; i++) {
-      const t = TOGGLES[i]!;
-      items.push({ type: "toggle", label: t.label, checked: boolState[t.key]!, focused: focused === SCOPE_COUNT + i });
+    for (let i = 0; i < OPT_TOGGLES.length; i++) {
+      const t = OPT_TOGGLES[i]!;
+      items.push({ type: "toggle", label: t.label, checked: boolState[t.key]!, focused: focused === WHAT_TOGGLES.length + i });
     }
     items.push({ type: "blank" });
     items.push({ type: "selector", label: "→  Run Reset", focused: focused === RUN_IDX });
@@ -77,7 +78,7 @@ export async function resetScreen(outputDir: string, promptFn: PromptFn, version
     render({
       appTitle: APP_TITLE, version, title: "── Reset ──",
       items: pageItems, page, totalPages,
-      footer: "↑↓ navigate  Enter/Space select/toggle  q back",
+      footer: "↑↓ navigate  Space toggle  Enter select/run  q back",
     });
   }
 
@@ -102,13 +103,11 @@ export async function resetScreen(outputDir: string, promptFn: PromptFn, version
       } else if (key.name === "escape" || (key.name === "char" && key.char === "q")) {
         return;
       } else if (key.name === "enter" || (key.name === "char" && key.char === " ")) {
-        if (focused < SCOPE_COUNT) {
-          scopeIdx = focused;
-        } else if (focused < SCOPE_COUNT + TOGGLE_COUNT) {
-          const t = TOGGLES[focused - SCOPE_COUNT]!;
+        if (focused < TOGGLE_COUNT) {
+          const t = ALL_TOGGLES[focused]!;
           boolState[t.key] = !boolState[t.key];
         } else if (focused === RUN_IDX) {
-          const cliCmd = buildCliCommand(scopeIdx, boolState);
+          const cliCmd = buildCliCommand(boolState);
           const confirmed = await showConfirm(version, "── Reset — Confirm ──", cliCmd, promptFn);
           if (!confirmed) { draw(); continue; }
 
@@ -120,7 +119,10 @@ export async function resetScreen(outputDir: string, promptFn: PromptFn, version
           await runReset({
             outputDir,
             promptFn,
-            full: SCOPES[scopeIdx]?.value === "full",
+            state:       boolState["state"] === true,
+            files:       boolState["files"] === true,
+            config:      boolState["config"] === true,
+            credentials: boolState["credentials"] === true,
             moveUserFiles: boolState["moveUserFiles"] === true,
             dryRun: boolState["dryRun"] === true,
           });
@@ -141,7 +143,7 @@ export async function resetScreen(outputDir: string, promptFn: PromptFn, version
       const allItems = buildItems();
       let visIdx = 0;
       for (const item of allItems) {
-        if (item.type === "radio" || item.type === "toggle" || item.type === "selector") {
+        if (item.type === "toggle" || item.type === "selector") {
           if (item.focused) { page = Math.floor(visIdx / pageSize) + 1; break; }
           visIdx++;
         }

@@ -12,6 +12,15 @@ import { ui } from "../ui.js";
 
 export interface ResetOptions {
   outputDir: string;
+  /** Delete state file only (old default behaviour). */
+  state?: boolean;
+  /** Delete state + all scraper-tracked files on disk. */
+  files?: boolean;
+  /** Clear config file. */
+  config?: boolean;
+  /** Clear keychain credentials and session cookie. */
+  credentials?: boolean;
+  /** @deprecated Alias for files+config+credentials. Use those flags directly. */
   full?: boolean;
   force?: boolean;
   dryRun?: boolean;
@@ -144,7 +153,14 @@ async function handleMoveUserFiles(
 }
 
 export async function runReset(opts: ResetOptions): Promise<void> {
-  const { outputDir, full = false, force = false, dryRun = false, moveUserFiles = false, promptFn } = opts;
+  const { outputDir, force = false, dryRun = false, moveUserFiles = false, promptFn } = opts;
+
+  // Resolve flag aliases: --full is an alias for --files --config --credentials
+  const deleteFiles = opts.files || opts.full || false;
+  const clearConfig = opts.config || opts.full || false;
+  const clearCreds = opts.credentials || opts.full || false;
+  // --state: explicit state-only flag, or implied when no deletion flags given
+  const deleteState = opts.state || deleteFiles || (!clearConfig && !clearCreds);
 
   const sm = new StateManager(outputDir);
   const state = await sm.load();
@@ -162,13 +178,15 @@ export async function runReset(opts: ResetOptions): Promise<void> {
     }
   }
 
-  if (!full) {
-    // State-only reset — never touches files on disk
+  if (!deleteFiles) {
+    // State-only reset (--state or default) — never touches files on disk
     if (dryRun) {
       process.stdout.write(`[dry-run] Would clear state file only. ${totalFiles} tracked files across ${courseCount} courses would remain on disk.\n`);
+      if (clearConfig) process.stdout.write("[dry-run] Would also reset config.\n");
+      if (clearCreds) process.stdout.write("[dry-run] Would also clear credentials and session.\n");
       return;
     }
-    if (!force && promptFn) {
+    if (!force && promptFn && deleteState) {
       process.stdout.write(`This will clear sync state for ${courseCount} course${courseCount === 1 ? "" : "s"} (${totalFiles} files tracked). Your files on disk will NOT be deleted.\n`);
       const answer = await promptFn("Continue? [y/N] ");
       if (answer.trim().toLowerCase() !== "y") {
@@ -177,13 +195,29 @@ export async function runReset(opts: ResetOptions): Promise<void> {
       }
     }
     // Delete state files only
-    if (existsSync(sm.statePath)) unlinkSync(sm.statePath);
-    if (existsSync(sm.backupPath)) unlinkSync(sm.backupPath);
-    ui.success(`Sync state cleared. Files untouched. Run \`msc scrape\` to rebuild.`);
+    if (deleteState) {
+      if (existsSync(sm.statePath)) unlinkSync(sm.statePath);
+      if (existsSync(sm.backupPath)) unlinkSync(sm.backupPath);
+    }
+    // Config / credentials may be cleared independently
+    if (clearConfig) {
+      const config = new ConfigManager();
+      await config.reset();
+    }
+    if (clearCreds) {
+      const keychain = tryCreateKeychain();
+      if (keychain) await keychain.deleteCredentials();
+      await deleteSessionFile();
+    }
+    const extras: string[] = [];
+    if (clearConfig) extras.push("config reset");
+    if (clearCreds) extras.push("credentials cleared");
+    const suffix = extras.length > 0 ? ` ${extras.join(", ")}.` : "";
+    ui.success(`Sync state cleared. Files untouched.${suffix} Run \`msc scrape\` to rebuild.`);
     return;
   }
 
-  // --full: collect all scraper-owned paths and delete everything
+  // deleteFiles: collect all scraper-owned paths
   const knownPaths: string[] = [];
   let generatedCount = 0;
   let sidecarCount = 0;
@@ -223,7 +257,8 @@ export async function runReset(opts: ResetOptions): Promise<void> {
     process.stdout.write(`[dry-run] Would delete ${existingPaths.length} files (${sizeStr}) across ${courseCount} courses (${parts.join(", ")}):\n`);
     if (treeOutput) process.stdout.write("\n" + treeOutput + "\n");
     process.stdout.write(`\n+ state file: ${relative(outputDir, sm.statePath)}\n`);
-    process.stdout.write("+ config reset\n+ credentials and session cleared\n");
+    if (clearConfig) process.stdout.write("+ config reset\n");
+    if (clearCreds) process.stdout.write("+ credentials and session cleared\n");
     return;
   }
 
@@ -262,12 +297,16 @@ export async function runReset(opts: ResetOptions): Promise<void> {
   if (existsSync(sm.statePath)) unlinkSync(sm.statePath);
   if (existsSync(sm.backupPath)) unlinkSync(sm.backupPath);
 
-  // --full: also clear config and credentials
-  const config = new ConfigManager();
-  const keychain = tryCreateKeychain();
-  await config.reset();
-  if (keychain) await keychain.deleteCredentials();
-  await deleteSessionFile();
+  // --full: also clear config and credentials (conditional on flags)
+  if (clearConfig) {
+    const config = new ConfigManager();
+    await config.reset();
+  }
+  if (clearCreds) {
+    const keychain = tryCreateKeychain();
+    if (keychain) await keychain.deleteCredentials();
+    await deleteSessionFile();
+  }
 
   const extras: string[] = [];
   if (sidecarCount > 0) extras.push(`${sidecarCount} sidecar${sidecarCount === 1 ? "" : "s"}`);
@@ -275,5 +314,8 @@ export async function runReset(opts: ResetOptions): Promise<void> {
   if (imageCount > 0) extras.push(`${imageCount} image${imageCount === 1 ? "" : "s"}`);
   if (generatedCount > 0) extras.push(`${generatedCount} generated`);
   const breakdown = extras.length > 0 ? ` (incl. ${extras.join(", ")})` : "";
-  ui.success(`Deleted ${deletedCount} files${breakdown} across ${courseCount} courses. State reset. Config and credentials cleared.`);
+  const tail: string[] = ["State reset."];
+  if (clearConfig) tail.push("Config reset.");
+  if (clearCreds) tail.push("Credentials cleared.");
+  ui.success(`Deleted ${deletedCount} files${breakdown} across ${courseCount} courses. ${tail.join(" ")}`);
 }

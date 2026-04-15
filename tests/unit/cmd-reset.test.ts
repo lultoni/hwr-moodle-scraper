@@ -240,7 +240,7 @@ describe("msc reset --full", () => {
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     await runReset({ outputDir: "/out", force: true, full: true });
     const output = spy.mock.calls.flat().join("");
-    expect(output).toContain("credentials cleared");
+    expect(output).toContain("Credentials cleared");
     spy.mockRestore();
   });
 
@@ -590,6 +590,101 @@ describe("msc reset — duplicate localPath deduplication", () => {
       (args) => args[0] === "/out/Course/file.java",
     );
     expect(unlinkCalls).toHaveLength(1);
+    spy.mockRestore();
+  });
+});
+
+describe("msc reset — granular flags (--state / --files / --config / --credentials)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExistsSync.mockReturnValue(true);
+    mockReaddirSync.mockReturnValue([]);
+    mockStatSync.mockReturnValue({ size: 1000 });
+  });
+
+  // --state: deletes state only (same as old default / no flags)
+  it("--state deletes state file only, not tracked files", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", force: true, state: true });
+    expect(mockUnlinkSync).not.toHaveBeenCalledWith("/out/Course/Section/file.pdf");
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/.moodle-scraper-state.json");
+    spy.mockRestore();
+  });
+
+  it("--state does NOT call config.reset or deleteCredentials", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", force: true, state: true });
+    expect(mockConfigReset).not.toHaveBeenCalled();
+    expect(mockDeleteCredentials).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // --files: deletes tracked files + state, but NOT config/credentials
+  it("--files deletes tracked files and state", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", force: true, files: true });
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/file.pdf");
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/.moodle-scraper-state.json");
+    spy.mockRestore();
+  });
+
+  it("--files does NOT reset config or credentials", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", force: true, files: true });
+    expect(mockConfigReset).not.toHaveBeenCalled();
+    expect(mockDeleteCredentials).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // --config: clears config only
+  it("--config resets config only, does not delete state or tracked files", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", force: true, config: true });
+    expect(mockConfigReset).toHaveBeenCalled();
+    expect(mockUnlinkSync).not.toHaveBeenCalledWith("/out/Course/Section/file.pdf");
+    // State file NOT deleted when only --config
+    expect(mockUnlinkSync).not.toHaveBeenCalledWith("/out/.moodle-scraper-state.json");
+    spy.mockRestore();
+  });
+
+  // --credentials: clears credentials only
+  it("--credentials clears keychain + session, does not delete state or tracked files", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", force: true, credentials: true });
+    expect(mockDeleteCredentials).toHaveBeenCalled();
+    expect(mockDeleteSessionFile).toHaveBeenCalled();
+    expect(mockUnlinkSync).not.toHaveBeenCalledWith("/out/Course/Section/file.pdf");
+    expect(mockUnlinkSync).not.toHaveBeenCalledWith("/out/.moodle-scraper-state.json");
+    spy.mockRestore();
+  });
+
+  // Composing --files --config --credentials = old --full behaviour
+  it("--files --config --credentials behaves identically to old --full", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", force: true, files: true, config: true, credentials: true });
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/file.pdf");
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/.moodle-scraper-state.json");
+    expect(mockConfigReset).toHaveBeenCalled();
+    expect(mockDeleteCredentials).toHaveBeenCalled();
+    expect(mockDeleteSessionFile).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // --full hidden alias = --files --config --credentials
+  it("--full alias still works identically to --files --config --credentials", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", force: true, full: true });
+    expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/Section/file.pdf");
+    expect(mockConfigReset).toHaveBeenCalled();
+    expect(mockDeleteCredentials).toHaveBeenCalled();
     spy.mockRestore();
   });
 });

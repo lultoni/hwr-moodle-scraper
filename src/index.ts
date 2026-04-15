@@ -355,12 +355,16 @@ program
 // --- reset ---
 program
   .command("reset")
-  .description("Clear sync state (default) or delete all scraped files (--full)")
-  .option("--full", "Also permanently delete downloaded files (requires typing DELETE to confirm)", false)
+  .description("Clear sync state, scraped files, config, or credentials (combine flags freely)")
+  .option("--state", "Clear sync state only — files on disk are untouched", false)
+  .option("--files", "Delete all scraper-tracked files + clear state", false)
+  .option("--config", "Reset config to defaults", false)
+  .option("--credentials", "Clear saved credentials and session cookie", false)
+  .option("--full", "Alias for --files --config --credentials (backwards compatible)", false)
   .option("--force", "Skip confirmation prompt", false)
   .option("--dry-run", "Print what would be changed without making any changes", false)
   .option("--move-user-files", "Interactively move user-owned files before reset", false)
-  .action(async (opts: { full: boolean; force: boolean; dryRun: boolean; moveUserFiles: boolean }) => {
+  .action(async (opts: { state: boolean; files: boolean; config: boolean; credentials: boolean; full: boolean; force: boolean; dryRun: boolean; moveUserFiles: boolean }) => {
     const mgr = new ConfigManager();
     const outputDir = (await mgr.get("outputDir")) as string;
     if (!outputDir) {
@@ -370,6 +374,10 @@ program
     try {
       await runReset({
         outputDir,
+        state: opts.state,
+        files: opts.files,
+        config: opts.config,
+        credentials: opts.credentials,
         full: opts.full,
         force: opts.force,
         dryRun: opts.dryRun,

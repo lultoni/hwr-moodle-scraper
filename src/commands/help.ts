@@ -16,7 +16,7 @@ To remove old state entries (files stay on disk):
   msc status --dismiss-orphans
 
 To also delete the files:
-  msc reset --full
+  msc reset --files
 `,
   "old-entries": null,  // alias handled below
   "user-files": `
@@ -50,18 +50,21 @@ To clear the state (files are kept on disk):
   msc reset
 
 To clear state AND delete all files:
-  msc reset --full
+  msc reset --files
 `,
   "reset": `
 msc reset
 =========
 By default, msc reset only clears the sync state file. Your downloaded
-files are NOT deleted.
+files are NOT deleted. Flags compose freely:
 
-  msc reset            → clears state, keeps files
-  msc reset --full     → deletes files + state + config + credentials
-                         (requires typing DELETE to confirm)
-  msc reset --dry-run  → preview without making changes
+  msc reset                           → clears state, keeps files
+  msc reset --state                   → same (explicit)
+  msc reset --files                   → deletes tracked files + state
+  msc reset --config                  → resets config to defaults
+  msc reset --credentials             → clears saved credentials + session
+  msc reset --files --config --credentials  → full wipe (alias: --full)
+  msc reset --dry-run                 → preview without making changes
 `,
   "clean": `
 msc clean
