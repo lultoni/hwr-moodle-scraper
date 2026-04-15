@@ -8,37 +8,11 @@
 import { runScrape } from "../../commands/scrape.js";
 import { readKey } from "../keys.js";
 import { render, paginate, C, HIDE_CURSOR, SHOW_CURSOR, CLEAR, APP_TITLE, type RenderItem } from "../renderer.js";
+import { makeSpinner } from "../spinner.js";
 import { SCRAPE_BOOL_OPTIONS } from "../options-registry.js";
 import { StateManager } from "../../sync/state.js";
 import { matchCourses } from "../../scraper/course-filter.js";
 import type { PromptFn } from "../../auth/prompt.js";
-
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
-/** Minimal event-driven spinner for use with onPhase callbacks. */
-function makePhaseSpinner() {
-  let iv: ReturnType<typeof setInterval> | undefined;
-  let frame = 0;
-  let currentLabel = "";
-  return {
-    start(label: string) {
-      currentLabel = label;
-      frame = 0;
-      process.stdout.write("\u001b[?25l");
-      iv = setInterval(() => {
-        process.stdout.write(`\r${SPINNER_FRAMES[frame++ % SPINNER_FRAMES.length]} ${currentLabel}  `);
-      }, 80);
-    },
-    end() {
-      if (!iv) return;
-      clearInterval(iv);
-      iv = undefined;
-      const pad = " ".repeat(currentLabel.length + 4);
-      process.stdout.write(`\r${pad}\r`);
-      process.stdout.write("\u001b[?25h");
-    },
-  };
-}
 
 interface Mode {
   value: "normal" | "force" | "check" | "dry";
@@ -181,7 +155,7 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
             if (ids.length > 0) resolvedCourses = ids;
           }
 
-          const spinner = makePhaseSpinner();
+          const spinner = makeSpinner();
 
           try {
             await runScrape({
