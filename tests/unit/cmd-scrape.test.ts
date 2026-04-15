@@ -148,6 +148,37 @@ describe("STEP-020: scrape — config-driven UX improvements", () => {
   });
 });
 
+describe("STEP-020: scrape — sec/act legend + 3-char padding (Pass 42)", () => {
+  it("prints sec/act legend line after 'Fetching course content'", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+
+    expect(output).toContain("sec = sections, act = activities");
+  });
+
+  it("pads sec and act numbers to 3 chars in the course checkmark line", async () => {
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "Short", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({ courseId: 1, sections: [] });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, courses: [1] });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+
+    // Numbers should be padded to 3 chars: "  0 sec,   0 act"
+    const line = output.split("\n").find((l) => l.includes("✓") && l.includes("Short"));
+    expect(line).toBeDefined();
+    expect(line).toMatch(/\(\s*\d{1,3} sec,\s*\d{1,3} act\)/);
+    // Specifically: 0 sections → padded "  0"
+    expect(line).toContain("  0 sec");
+  });
+});
+
 describe("STEP-020: scrape — column-aligned course list (Pass 41)", () => {
   // Feature 2 (Pass 41): course name truncated to 45 chars, stats at fixed column
 

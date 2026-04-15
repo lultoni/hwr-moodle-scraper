@@ -166,6 +166,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   logger.info(`Found ${courses.length} course(s).`);
   logger.info("");
   logger.info("Fetching course content...");
+  logger.info("  (sec = sections, act = activities)");
 
   // Config values needed before the main download loop
   const retryBaseDelayMs = ((await config.get("retryBaseDelayMs")) as number | undefined) ?? 5000;
@@ -444,7 +445,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       const truncated = displayName.length > MAX_NAME
         ? displayName.slice(0, MAX_NAME - 1) + "…"
         : displayName.padEnd(MAX_NAME);
-      logger.info(`  ✓ ${truncated}  (${expandedSections.length} sec, ${totalActivities} act)`);
+      logger.info(`  ✓ ${truncated}  (${String(expandedSections.length).padStart(3)} sec, ${String(totalActivities).padStart(3)} act)`);
       return { ...tree, sections: expandedSections };
     })
   );
