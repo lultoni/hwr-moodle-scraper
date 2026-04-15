@@ -161,7 +161,17 @@ program
     } else if (opts.courses) {
       const state = await new StateManager(outputDir).load();
       const { ids, unmatched } = matchCourses(opts.courses, state);
-      if (unmatched.length) process.stderr.write(`[msc] No courses matched: ${unmatched.join(", ")}\n`);
+      if (unmatched.length) {
+        process.stderr.write(`[msc] No courses matched: ${unmatched.join(", ")}\n`);
+        if (!state || Object.keys(state.courses).length === 0) {
+          process.stderr.write("[msc] No courses in state yet. Run `msc scrape` without --courses first.\n");
+        } else {
+          process.stderr.write("[msc] Available courses:\n");
+          for (const c of Object.values(state.courses)) {
+            process.stderr.write(`[msc]   • ${c.name}\n`);
+          }
+        }
+      }
       if (ids.length > 0) scrapeOpts.courses = ids;
     }
 
