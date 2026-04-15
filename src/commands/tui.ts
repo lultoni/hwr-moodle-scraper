@@ -5,6 +5,7 @@ import { statusScreen } from "../tui/screens/status-screen.js";
 import { configScreen } from "../tui/screens/config-screen.js";
 import { authScreen } from "../tui/screens/auth-screen.js";
 import { resetScreen } from "../tui/screens/reset-screen.js";
+import { cleanScreen } from "../tui/screens/clean-screen.js";
 import { scrapeScreen } from "../tui/screens/scrape-screen.js";
 import type { PromptFn } from "../auth/prompt.js";
 
@@ -20,23 +21,27 @@ export async function runTui(opts: { promptFn: PromptFn; version: string }): Pro
     items: [
       {
         label: "Scrape",
-        action: () => scrapeScreen(outputDir, promptFn),
+        action: () => scrapeScreen(outputDir, promptFn, version),
       },
       {
         label: "Status",
-        action: () => statusScreen(outputDir, promptFn),
+        action: () => statusScreen(outputDir, promptFn, version),
       },
       {
         label: "Reset",
-        action: () => resetScreen(outputDir, promptFn),
+        action: () => resetScreen(outputDir, promptFn, version),
+      },
+      {
+        label: "Clean",
+        action: () => cleanScreen(outputDir, promptFn, version),
       },
       {
         label: "Auth",
-        action: () => authScreen(promptFn),
+        action: () => authScreen(promptFn, version),
       },
       {
         label: "Config",
-        action: () => configScreen(promptFn),
+        action: () => configScreen(promptFn, version),
       },
       {
         label: "Quit",

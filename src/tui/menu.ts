@@ -1,46 +1,21 @@
 /**
- * TUI Hauptmenü.
+ * TUI main menu.
  *
- * Renders a box-drawing menu, navigated with ↑↓ arrow keys.
- * Uses full-screen clear on every redraw — no scroll artifacts.
+ * Uses the shared renderer for a consistent box-drawing style.
+ * Listens for terminal resize and re-renders without flicker.
  * Enter selects, q/Escape exits.
  */
 
 import { readKey } from "./keys.js";
+import { render, paginate, type RenderItem } from "./renderer.js";
 import type { PromptFn } from "../auth/prompt.js";
+
+const HIDE_CURSOR = "\u001b[?25l";
+const SHOW_CURSOR = "\u001b[?25h";
 
 export interface MenuItem {
   label: string;
   action: () => Promise<void>;
-}
-
-const CLEAR = "\u001b[2J\u001b[H";   // clear screen + cursor to top-left
-const HIDE_CURSOR = "\u001b[?25l";   // hide cursor
-const SHOW_CURSOR = "\u001b[?25h";   // show cursor
-
-/** Draw the menu box to stdout. */
-function renderMenu(items: MenuItem[], selected: number, title: string, version: string): void {
-  const width = 40;
-  const hr = "═".repeat(width - 2);
-  const lines: string[] = [];
-
-  lines.push(`╔${hr}╗`);
-  lines.push(`║  ${title.padEnd(width - 4)}║`);
-  lines.push(`║  ${version.padEnd(width - 4)}║`);
-  lines.push(`╠${hr}╣`);
-  lines.push(`║${"".padEnd(width - 2)}║`);
-
-  for (let i = 0; i < items.length; i++) {
-    const cursor = i === selected ? ">" : " ";
-    const itemLabel = `  ${cursor} ${items[i]!.label}`;
-    lines.push(`║${itemLabel.padEnd(width - 2)}║`);
-  }
-
-  lines.push(`║${"".padEnd(width - 2)}║`);
-  lines.push(`║  ${"↑↓ navigate  Enter select  q quit".padEnd(width - 4)}║`);
-  lines.push(`╚${hr}╝`);
-
-  process.stdout.write(lines.join("\n") + "\n");
 }
 
 /** Run the main TUI menu loop. Returns when user quits. */
@@ -56,29 +31,72 @@ export async function runMenu(opts: {
     return runNonTtyMenu(items, promptFn);
   }
 
-  // Enter full-screen mode
   process.stdout.write(HIDE_CURSOR);
+
   let selected = 0;
+  let page = 1;
 
-  while (true) {
-    process.stdout.write(CLEAR);
-    renderMenu(items, selected, title, version);
-
-    const key = await readKey();
-
-    if (key.name === "up") {
-      selected = (selected - 1 + items.length) % items.length;
-    } else if (key.name === "down") {
-      selected = (selected + 1) % items.length;
-    } else if (key.name === "enter") {
-      // Show cursor while action runs (action may print prompts/output)
-      process.stdout.write(SHOW_CURSOR + CLEAR);
-      await items[selected]!.action();
-      process.stdout.write(HIDE_CURSOR);
-    } else if (key.name === "escape" || (key.name === "char" && key.char === "q")) {
-      process.stdout.write(SHOW_CURSOR + CLEAR);
+  function draw(): void {
+    const { rows } = { rows: process.stdout.rows ?? 24 };
+    const renderItems: RenderItem[] = items.map((item, i) => ({
+      type: "selector" as const,
+      label: item.label,
+      focused: i === selected,
+    }));
+    const { pageItems, totalPages } = paginate(renderItems, page, rows);
+    // Keep selection visible on current page
+    const pageSize = Math.max(1, rows - 9);
+    const correctPage = Math.floor(selected / pageSize) + 1;
+    if (correctPage !== page) {
+      page = correctPage;
+      const repaged = paginate(renderItems, page, rows);
+      render({
+        appTitle: title, version,
+        title: "── Main Menu ──",
+        items: repaged.pageItems,
+        page, totalPages: repaged.totalPages,
+      });
       return;
     }
+    render({ appTitle: title, version, title: "── Main Menu ──", items: pageItems, page, totalPages });
+  }
+
+  // Re-render on terminal resize (debounced)
+  let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+  const onResize = () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(draw, 50);
+  };
+  process.stdout.on("resize", onResize);
+
+  draw();
+
+  try {
+    while (true) {
+      const key = await readKey();
+
+      if (key.name === "up") {
+        selected = (selected - 1 + items.length) % items.length;
+      } else if (key.name === "down") {
+        selected = (selected + 1) % items.length;
+      } else if (key.name === "pageup") {
+        selected = Math.max(0, selected - Math.max(1, (process.stdout.rows ?? 24) - 9));
+      } else if (key.name === "pagedown") {
+        selected = Math.min(items.length - 1, selected + Math.max(1, (process.stdout.rows ?? 24) - 9));
+      } else if (key.name === "enter") {
+        process.stdout.write(SHOW_CURSOR);
+        await items[selected]!.action();
+        process.stdout.write(HIDE_CURSOR);
+      } else if (key.name === "escape" || (key.name === "char" && key.char === "q")) {
+        return;
+      }
+
+      draw();
+    }
+  } finally {
+    clearTimeout(resizeTimer);
+    process.stdout.removeListener("resize", onResize);
+    process.stdout.write(SHOW_CURSOR);
   }
 }
 
@@ -90,9 +108,7 @@ async function runNonTtyMenu(items: MenuItem[], promptFn: PromptFn): Promise<voi
     });
 
     const answer = await promptFn(`Select [1-${items.length}] or q to quit: `);
-    if (answer.trim().toLowerCase() === "q") {
-      return;
-    }
+    if (answer.trim().toLowerCase() === "q") return;
 
     const n = parseInt(answer.trim(), 10);
     if (!isNaN(n) && n >= 1 && n <= items.length) {

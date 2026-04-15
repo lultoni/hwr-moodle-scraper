@@ -111,7 +111,7 @@ async function handleMoveUserFiles(
     const title = `[${i + 1}/${groups.length}] ${group.displayPath}${suffix}`;
 
     const options = buildMoveOptions(group, outputDir);
-    const choice = await selectItem({ title, items: options, promptFn: fallbackPrompt });
+    const choice = await selectItem({ appTitle: "HWR Moodle Scraper", version: "", screenTitle: title, items: options, promptFn: fallbackPrompt });
 
     let targetDir: string | null = null;
 

@@ -1,26 +1,62 @@
 /**
  * TUI Reset-Screen.
- * Shows options and runs the reset flow (optionally with --move-user-files).
+ * Shows options and always confirms with the equivalent CLI command before running.
  */
 
 import { runReset } from "../../commands/reset.js";
 import { selectItem } from "../select.js";
+import { showConfirm } from "./scrape-screen.js";
 import { readKey } from "../keys.js";
 import type { PromptFn } from "../../auth/prompt.js";
 
-export async function resetScreen(outputDir: string, promptFn: PromptFn): Promise<void> {
-  process.stdout.write("\u001b[2J\u001b[H");
-  process.stdout.write("─── Reset ───\n\n");
-  process.stdout.write(`Output directory: ${outputDir}\n\n`);
+const APP_TITLE = "HWR Moodle Scraper";
 
+interface ResetChoice {
+  value: string;
+  label: string;
+  cliFlags: string;
+  opts: { full?: boolean; dryRun?: boolean; moveUserFiles?: boolean };
+}
+
+const CHOICES: ResetChoice[] = [
+  {
+    value: "partial",
+    label: "Partial — delete scraped files + state",
+    cliFlags: "msc reset",
+    opts: {},
+  },
+  {
+    value: "partial-move",
+    label: "Partial + move user files first",
+    cliFlags: "msc reset --move-user-files",
+    opts: { moveUserFiles: true },
+  },
+  {
+    value: "full",
+    label: "Full — also clear config and credentials",
+    cliFlags: "msc reset --full",
+    opts: { full: true },
+  },
+  {
+    value: "full-move",
+    label: "Full + move user files first",
+    cliFlags: "msc reset --full --move-user-files",
+    opts: { full: true, moveUserFiles: true },
+  },
+  {
+    value: "dry",
+    label: "Dry-run — preview what would be deleted",
+    cliFlags: "msc reset --dry-run",
+    opts: { dryRun: true },
+  },
+];
+
+export async function resetScreen(outputDir: string, promptFn: PromptFn, version: string): Promise<void> {
   const choice = await selectItem({
-    title: "Choose reset scope:",
+    appTitle: APP_TITLE, version,
+    screenTitle: "── Reset ──",
     items: [
-      { label: "Partial — delete scraped files + state (keep config/credentials)", value: "partial" },
-      { label: "Partial + move user files first", value: "partial-move" },
-      { label: "Full — also clear config and credentials", value: "full" },
-      { label: "Full + move user files first", value: "full-move" },
-      { label: "Dry-run — preview what would be deleted", value: "dry" },
+      ...CHOICES.map((c) => ({ label: c.label, value: c.value })),
       { label: "Back to menu", value: "back" },
     ],
     promptFn,
@@ -28,19 +64,19 @@ export async function resetScreen(outputDir: string, promptFn: PromptFn): Promis
 
   if (choice === "back") return;
 
-  process.stdout.write("\u001b[2J\u001b[H");
+  const selected = CHOICES.find((c) => c.value === choice);
+  if (!selected) return;
 
-  if (choice === "dry") {
-    await runReset({ outputDir, dryRun: true });
-  } else if (choice === "partial") {
-    await runReset({ outputDir, promptFn });
-  } else if (choice === "partial-move") {
-    await runReset({ outputDir, promptFn, moveUserFiles: true });
-  } else if (choice === "full") {
-    await runReset({ outputDir, full: true, promptFn });
-  } else if (choice === "full-move") {
-    await runReset({ outputDir, full: true, promptFn, moveUserFiles: true });
-  }
+  const confirmed = await showConfirm(version, "── Reset — Confirm ──", selected.cliFlags, promptFn);
+  if (!confirmed) return;
+
+  process.stdout.write("\u001b[?25h\u001b[2J\u001b[H");
+
+  await runReset({
+    outputDir,
+    promptFn,
+    ...selected.opts,
+  });
 
   if (process.stdin.isTTY) {
     process.stdout.write("\nPress any key to return to menu...\n");

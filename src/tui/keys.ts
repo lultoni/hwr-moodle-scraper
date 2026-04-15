@@ -4,7 +4,7 @@
  */
 
 export interface KeyEvent {
-  name: "up" | "down" | "left" | "right" | "enter" | "escape" | "char";
+  name: "up" | "down" | "left" | "right" | "enter" | "escape" | "pageup" | "pagedown" | "char";
   char?: string;
 }
 
@@ -32,6 +32,8 @@ export function readKey(): Promise<KeyEvent> {
       if (key === "\u001b[B") return resolve({ name: "down" });
       if (key === "\u001b[C") return resolve({ name: "right" });
       if (key === "\u001b[D") return resolve({ name: "left" });
+      if (key === "\u001b[5~") return resolve({ name: "pageup" });
+      if (key === "\u001b[6~") return resolve({ name: "pagedown" });
       if (key === "\r" || key === "\n") return resolve({ name: "enter" });
       if (key === "\u001b") return resolve({ name: "escape" });
       // Ctrl+C / Ctrl+D — restore cursor and exit cleanly
