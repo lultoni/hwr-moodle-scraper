@@ -80,6 +80,30 @@ describe("STEP-016: State file management", () => {
     const loaded = await sm.load();
     expect(loaded?.courses["1"]?.name).toBe("Macro");
   });
+
+  // UC-08: lastSync field is persisted when provided
+  it("save() persists lastSync field when provided", async () => {
+    const sm = new StateManager(tmpDir);
+    const lastSync = {
+      timestamp: "2026-04-15T10:00:00.000Z",
+      newFiles: ["CourseA/Section/file.pdf"],
+      updatedFiles: ["CourseB/Section/page.md"],
+    };
+    await sm.save({ courses: {}, lastSync });
+    const raw = JSON.parse(readFileSync(join(tmpDir, ".moodle-scraper-state.json"), "utf8"));
+    expect(raw.lastSync).toBeDefined();
+    expect(raw.lastSync.timestamp).toBe("2026-04-15T10:00:00.000Z");
+    expect(raw.lastSync.newFiles).toEqual(["CourseA/Section/file.pdf"]);
+    expect(raw.lastSync.updatedFiles).toEqual(["CourseB/Section/page.md"]);
+  });
+
+  // UC-08: lastSync absent when not provided (backward-compatible)
+  it("save() without lastSync does not write the field", async () => {
+    const sm = new StateManager(tmpDir);
+    await sm.save({ courses: {} });
+    const raw = JSON.parse(readFileSync(join(tmpDir, ".moodle-scraper-state.json"), "utf8"));
+    expect(raw.lastSync).toBeUndefined();
+  });
 });
 
 describe("migrateStatePaths — state file path migration", () => {

@@ -288,11 +288,12 @@ program
   .command("status")
   .description("Show last sync summary")
   .option("--issues", "List orphaned files", false)
-  .action(async (opts: { issues: boolean }) => {
+  .option("--changed", "Show files changed in the last scrape run", false)
+  .action(async (opts: { issues: boolean; changed: boolean }) => {
     const mgr = new ConfigManager();
     const outputDir = (await mgr.get("outputDir")) as string;
     try {
-      await runStatus({ outputDir, showIssues: opts.issues });
+      await runStatus({ outputDir, showIssues: opts.issues, showChanged: opts.changed });
     } catch (err) {
       const code = (err as { exitCode?: number }).exitCode ?? EXIT_CODES.ERROR;
       process.stderr.write(`Error: ${(err as Error).message}\n`);

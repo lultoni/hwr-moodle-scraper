@@ -7,6 +7,7 @@ import { collectFiles } from "../fs/collect.js";
 export interface StatusOptions {
   outputDir: string;
   showIssues?: boolean;
+  showChanged?: boolean;
 }
 
 /** Format bytes as human-readable size (MB or GB). */
@@ -89,7 +90,7 @@ function buildTreeLines(paths: string[], baseDir: string): string[] {
 }
 
 export async function runStatus(opts: StatusOptions): Promise<void> {
-  const { outputDir, showIssues = false } = opts;
+  const { outputDir, showIssues = false, showChanged = false } = opts;
   const sm = new StateManager(outputDir);
   const state = await sm.load();
 
@@ -99,6 +100,32 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   }
 
   const write = (s: string) => process.stdout.write(s + "\n");
+
+  // ── --changed: replay last-scrape change report from state ────────────────
+  if (showChanged) {
+    const ls = state.lastSync;
+    if (!ls) {
+      write("No sync history available. Run `msc scrape` first.");
+      return;
+    }
+    write(`Last sync: ${ls.timestamp}`);
+    write(`Legend: + new  ~ updated`);
+    if (ls.newFiles.length === 0 && ls.updatedFiles.length === 0) {
+      write("No changes in last run.");
+    } else {
+      if (ls.newFiles.length > 0) {
+        write("");
+        write(`New files (${ls.newFiles.length}):`);
+        for (const f of ls.newFiles) write(`  + ${f}`);
+      }
+      if (ls.updatedFiles.length > 0) {
+        write("");
+        write(`Updated files (${ls.updatedFiles.length}):`);
+        for (const f of ls.updatedFiles) write(`  ~ ${f}`);
+      }
+    }
+    return;
+  }
 
   // Header
   write(`Output: ${outputDir}`);

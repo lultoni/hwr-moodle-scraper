@@ -281,6 +281,50 @@ describe("STEP-021: status command — richer output", () => {
     expect(output).not.toContain("msc clean\`");
     stdoutSpy.mockRestore();
   });
+
+  // UC-08: --changed replays last-scrape change report
+  it("--changed prints new and updated files from lastSync", async () => {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        version: 1,
+        lastSyncAt: "2026-04-15T10:00:00.000Z",
+        courses: {},
+        lastSync: {
+          timestamp: "2026-04-15T10:00:00.000Z",
+          newFiles: ["CourseA/Section/file.pdf"],
+          updatedFiles: ["CourseB/page.md"],
+        },
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", showChanged: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output).toContain("+ CourseA/Section/file.pdf");
+    expect(output).toContain("~ CourseB/page.md");
+    expect(output).toContain("Legend: + new  ~ updated");
+    stdoutSpy.mockRestore();
+  });
+
+  // UC-08: --changed with no lastSync shows guidance
+  it("--changed with no lastSync shows guidance message", async () => {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        version: 1,
+        lastSyncAt: "2026-04-15T10:00:00.000Z",
+        courses: {},
+        // no lastSync field
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", showChanged: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(output).toContain("No sync history");
+    stdoutSpy.mockRestore();
+  });
 });
 
 describe("STEP-021: Log file output", () => {

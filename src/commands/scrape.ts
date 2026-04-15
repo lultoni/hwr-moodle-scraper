@@ -956,6 +956,41 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     await config.set("logHintShown", true);
   }
 
+  // ── _LastSync.md — persistent change record (UC-07) ──────────────────────
+  // Written to output root after every (non-dry-run) scrape. Syncs to iCloud/
+  // OneDrive automatically. `msc status --changed` reads lastSync from state.
+  const newFiles = changeEntries.filter((e) => e.isNew).map((e) => e.relativePath);
+  const updatedFiles = changeEntries.filter((e) => !e.isNew).map((e) => e.relativePath);
+  if (!dryRun) {
+    const nowIso = new Date().toISOString();
+    const lastSyncLines: string[] = [
+      `# Last Sync — ${nowIso.slice(0, 10)} ${nowIso.slice(11, 16)} UTC`,
+      "",
+      `Scrape completed: ${nowIso}`,
+      `Courses: ${courses.length}`,
+      `Total files: ${totalFiles}`,
+      "",
+    ];
+    if (newFiles.length === 0 && updatedFiles.length === 0) {
+      lastSyncLines.push("No changes this run.");
+    } else {
+      if (newFiles.length > 0) {
+        lastSyncLines.push(`## New files (${newFiles.length})`, "");
+        for (const f of newFiles) lastSyncLines.push(`+ ${f}`);
+        lastSyncLines.push("");
+      }
+      if (updatedFiles.length > 0) {
+        lastSyncLines.push(`## Updated files (${updatedFiles.length})`, "");
+        for (const f of updatedFiles) lastSyncLines.push(`~ ${f}`);
+        lastSyncLines.push("");
+      }
+    }
+    const lastSyncPath = join(outputDir, "_LastSync.md");
+    mkdirSync(outputDir, { recursive: true });
+    await atomicWrite(lastSyncPath, Buffer.from(lastSyncLines.join("\n"), "utf8"));
+    generatedFiles.push(lastSyncPath);
+  }
+
   // Update state with downloaded files
   const updatedCourses: Record<string, CourseState> = { ...(state.courses as Record<string, CourseState>) };
 
@@ -1052,7 +1087,11 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // (e.g. a --courses partial run only writes some courses' README/section files).
   const existingGeneratedFiles = state.generatedFiles ?? [];
   const mergedGeneratedFiles = [...new Set([...existingGeneratedFiles, ...generatedFiles])];
-  await stateManager.save({ courses: updatedCourses, generatedFiles: mergedGeneratedFiles });
+  await stateManager.save({
+    courses: updatedCourses,
+    generatedFiles: mergedGeneratedFiles,
+    lastSync: { timestamp: new Date().toISOString(), newFiles, updatedFiles },
+  });
 
   // Deregister shutdown handlers — scrape completed normally
   shutdown.unregister();
