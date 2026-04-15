@@ -148,6 +148,48 @@ describe("STEP-020: scrape — config-driven UX improvements", () => {
   });
 });
 
+describe("STEP-020: scrape — column-aligned course list (Pass 41)", () => {
+  // Feature 2 (Pass 41): course name truncated to 45 chars, stats at fixed column
+
+  it("truncates long course name to 45 chars with ellipsis in the checkmark line", async () => {
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+    const longName = "WI3042 Sehr Langer Kursname Der Definitiv Mehr Als 45 Zeichen Hat";
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: longName, courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({ courseId: 1, sections: [] });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, courses: [1] });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+
+    // Should contain truncated name with ellipsis — not the full 66-char name
+    expect(output).not.toContain(longName);
+    expect(output).toMatch(/✓.*…/); // ellipsis present
+  });
+
+  it("pads short course name to fixed column width so stats align", async () => {
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "Short", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({ courseId: 1, sections: [] });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, courses: [1] });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+
+    // Short name padded — name field is exactly 45 chars before stats
+    const line = output.split("\n").find((l) => l.includes("✓") && l.includes("Short"));
+    expect(line).toBeDefined();
+    // After "✓ " the name portion should be 45 chars
+    const match = line!.match(/✓ (.{45})\s/);
+    expect(match).not.toBeNull();
+  });
+});
+
 describe("STEP-020: scrape --courses filter", () => {
   // REQ-CLI-002 — --courses must use real enrolled course names (not placeholder numeric IDs)
   it("fetches enrolled courses and filters to matching IDs when --courses is set", async () => {

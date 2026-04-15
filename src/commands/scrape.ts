@@ -28,6 +28,14 @@ import { writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { platform } from "node:os";
 
+// Change report colors — stdout TTY only, respects NO_COLOR
+const CR_COLOR = process.stdout.isTTY && !process.env["NO_COLOR"];
+const CR = {
+  green:  CR_COLOR ? "\u001b[32m" : "",
+  yellow: CR_COLOR ? "\u001b[33m" : "",
+  reset:  CR_COLOR ? "\u001b[0m"  : "",
+};
+
 /** Escape markdown link special characters to prevent injection. */
 function escapeMarkdownLink(text: string): string {
   return text.replace(/[[\]()]/g, "\\$&");
@@ -431,7 +439,11 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       const totalActivities = expandedSections.reduce((n, s) => n + s.activities.length, 0);
       const sp = courseShortPaths.get(tree.courseId);
       const displayName = sp?.shortName ?? (courseNameMap.get(tree.courseId) ?? String(tree.courseId));
-      logger.info(`  ✓ ${displayName}  (${expandedSections.length} section(s), ${totalActivities} activity/activities)`);
+      const MAX_NAME = 45;
+      const truncated = displayName.length > MAX_NAME
+        ? displayName.slice(0, MAX_NAME - 1) + "…"
+        : displayName.padEnd(MAX_NAME);
+      logger.info(`  ✓ ${truncated}  (${expandedSections.length} sec, ${totalActivities} act)`);
       return { ...tree, sections: expandedSections };
     })
   );
@@ -1032,8 +1044,9 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     const maxLines = 30;
     const shown = sorted.slice(0, maxLines);
     for (const entry of shown) {
-      const prefix = entry.isNew ? "  + " : "  ~ ";
-      logger.info(`${prefix}${entry.relativePath}`);
+      const col = entry.isNew ? CR.green : CR.yellow;
+      const sym = entry.isNew ? "+" : "~";
+      process.stdout.write(`${col}  ${sym} ${entry.relativePath}${CR.reset}\n`);
     }
     if (sorted.length > maxLines) {
       logger.info(`  ... and ${sorted.length - maxLines} more`);
