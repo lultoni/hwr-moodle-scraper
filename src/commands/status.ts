@@ -1,6 +1,6 @@
 // REQ-CLI-006, REQ-CLI-012, REQ-CLI-016
 import { existsSync, statSync } from "node:fs";
-import { relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { StateManager } from "../sync/state.js";
 import { collectFiles } from "../fs/collect.js";
 
@@ -180,12 +180,20 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
 
   // User-added files (files in outputDir not tracked by scraper)
   const allOnDisk = collectFiles(outputDir);
-  const userFiles = allOnDisk.filter((p) => !knownPaths.has(p));
+  const allUserFiles = allOnDisk.filter((p) => !knownPaths.has(p));
+
+  // Files already relocated by `msc clean --move` live in "User Files/" — not an issue.
+  const userFilesDir = join(outputDir, "User Files");
+  const managedUserFiles = allUserFiles.filter((p) => p.startsWith(userFilesDir + sep));
+  const userFiles = allUserFiles.filter((p) => !p.startsWith(userFilesDir + sep));
 
   write("");
   if (userFiles.length > 0) {
     write(`User-added files: ${userFiles.length}  (not managed by scraper — safe to keep)`);
     write(`  Tip: Run \`msc clean\` to remove them, or \`msc clean --move\` to relocate to "User Files/".`);
+  }
+  if (managedUserFiles.length > 0) {
+    write(`User Files/: ${managedUserFiles.length} file${managedUserFiles.length === 1 ? "" : "s"} (relocated by \`msc clean --move\`)`);
   }
 
   if (!showIssues) {
@@ -217,6 +225,11 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
     for (const line of buildTreeLines(userFiles, outputDir)) {
       write(line);
     }
+  }
+
+  if (managedUserFiles.length > 0) {
+    write("");
+    write(`User Files/ (relocated by \`msc clean --move\`, ${managedUserFiles.length} file${managedUserFiles.length === 1 ? "" : "s"} — not shown)`);
   }
 
   if (orphans.length === 0 && missingFiles.length === 0 && userFiles.length === 0) {

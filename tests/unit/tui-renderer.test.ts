@@ -136,7 +136,7 @@ describe("render()", () => {
 
   it("starts with ANSI clear sequence", () => {
     render(makeState());
-    expect(output.startsWith("\u001b[2J\u001b[H")).toBe(true);
+    expect(output.startsWith("\u001b[3J\u001b[2J\u001b[H")).toBe(true);
   });
 
   it("includes app title and version in header", () => {

@@ -8,7 +8,8 @@
  * - Pagination is built-in: content that doesn't fit is split into pages
  */
 
-const CLEAR = "\u001b[2J\u001b[H";
+// \u001b[3J erases scrollback so old screen content doesn't scroll into view
+const CLEAR = "\u001b[3J\u001b[2J\u001b[H";
 
 export type RenderItem =
   | { type: "selector"; label: string; focused: boolean }

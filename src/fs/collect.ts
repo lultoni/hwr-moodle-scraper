@@ -14,7 +14,10 @@ export interface UserFileGroup {
   isDirectory: boolean;
 }
 
-/** Recursively collect all file paths under a directory. Skips state and meta files. */
+// OS-generated noise files that should never appear as "user-added" files.
+const SYSTEM_FILES = new Set([".DS_Store", "Thumbs.db", "desktop.ini", ".localized"]);
+
+/** Recursively collect all file paths under a directory. Skips state, meta, and OS noise files. */
 export function collectFiles(dir: string): string[] {
   const results: string[] = [];
   if (!existsSync(dir)) return results;
@@ -22,6 +25,7 @@ export function collectFiles(dir: string): string[] {
     if (entry.name === ".moodle-scraper-state.json") continue;
     if (entry.name === ".moodle-scraper-state.json.bak") continue;
     if (entry.name.endsWith(".meta.json")) continue;
+    if (SYSTEM_FILES.has(entry.name)) continue;
     // Normalise to NFC — macOS HFS+/APFS returns NFD filenames from readdir,
     // but the state always stores NFC (paths originate from Moodle HTML).
     // Without this, Set.has() misses umlaut files even when the path is correct.
