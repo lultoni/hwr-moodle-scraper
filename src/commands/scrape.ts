@@ -985,6 +985,11 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         content = lines.join("\n");
       } else if (strategy === "label-md" || strategy === "description-md") {
         content = createTurndown().turndown(description ?? "");
+        // Prepend an HTML comment origin header to sidecar files so the source
+        // activity is identifiable when viewed as plain text (e.g. Apple Notes, TextEdit).
+        if (strategy === "description-md" && content.trim()) {
+          content = `<!-- Source: ${label} (${activityType ?? "unknown"}) -->\n\n${content}`;
+        }
       }
       if (content !== undefined) {
         // Dedup: suppress page-md/info-md files whose content is byte-identical to another

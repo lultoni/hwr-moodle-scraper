@@ -49,6 +49,25 @@ vi.mock("../../src/config.js", () => ({
   })),
 }));
 
+vi.mock("../../src/scraper/dispatch.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/scraper/dispatch.js")>();
+  return {
+    ...actual,
+    buildDownloadPlan: vi.fn().mockReturnValue({ items: [], unknownTypes: new Map() }),
+    applyLabelSubfolders: vi.fn().mockImplementation((activities: unknown) => activities),
+  };
+});
+
+vi.mock("../../src/fs/output.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/fs/output.js")>();
+  return {
+    ...actual,
+    atomicWrite: vi.fn().mockResolvedValue({ hash: "a".repeat(64), failed: false }),
+    checkDiskSpace: vi.fn().mockResolvedValue(undefined),
+    checkDiskSpaceSafe: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
 import { runScrape } from "../../src/commands/scrape.js";
 import { ConfigManager } from "../../src/config.js";
 
@@ -337,5 +356,174 @@ describe("STEP-020: scrape — binary promotion Case (c) (Pass 42 fix)", () => {
     // "0 new activities" means the SKIP item was not converted to a download
     expect(output).not.toContain("1 new activity");
     expect(output).toContain("0 new activities");
+  });
+});
+
+describe("T-1: sidecar origin header in .description.md files", () => {
+  // Helper: sets up a DOWNLOAD plan item + matching activity in fetchContentTree so the
+  // classification loop processes the activity and calls buildDownloadPlan.
+  function setupDownloadScenario(
+    resourceId: string,
+    activityType: string,
+    activityName: string,
+    description: string,
+  ) {
+    return {
+      planItem: { action: "DOWNLOAD" as "DOWNLOAD", resourceId, courseId: 1, url: `https://moodle.example.com/r/${resourceId}` },
+      activity: { activityType, activityName, resourceId, url: `https://moodle.example.com/r/${resourceId}`, description, isAccessible: true },
+    };
+  }
+
+  it("sidecar .description.md content begins with HTML comment origin header", async () => {
+    const { atomicWrite } = await import("../../src/fs/output.js");
+    const { buildDownloadPlan } = await import("../../src/scraper/dispatch.js");
+    const { computeSyncPlan } = await import("../../src/sync/incremental.js");
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    const { planItem, activity } = setupDownloadScenario(
+      "r-lecture", "resource", "My Lecture Notes",
+      "<p>This is a long enough description that will not be consolidated.</p>",
+    );
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI24A Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [{ sectionId: "s1", sectionName: "Week 1", activities: [activity] }],
+    });
+    vi.mocked(computeSyncPlan).mockReturnValueOnce([planItem]);
+    // buildDownloadPlan returns a description-md sidecar item
+    vi.mocked(buildDownloadPlan).mockReturnValueOnce({
+      items: [{
+        resourceId: "r-lecture",
+        courseId: 1,
+        url: "https://moodle.example.com/r/r-lecture",
+        strategy: "description-md" as const,
+        destPath: "/tmp/test/Semester_1/Macro 2024/Week 1/My Lecture Notes.description.md",
+        label: "My Lecture Notes",
+        activityType: "resource",
+        description: "<p>This is a long enough description that will not be consolidated into _Descriptions.md.</p>",
+        isSidecar: true,
+        name: "My Lecture Notes",
+      }],
+      unknownTypes: new Map(),
+    } as never);
+
+    const capturedWrites: Array<{ path: string; content: string }> = [];
+    vi.mocked(atomicWrite).mockImplementation(async (path: string, buf: Buffer) => {
+      capturedWrites.push({ path, content: buf.toString("utf8") });
+      return { hash: "a".repeat(64), failed: false };
+    });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false });
+    stderrSpy.mockRestore();
+
+    const sidecarWrite = capturedWrites.find((w) => w.path.endsWith(".description.md"));
+    expect(sidecarWrite).toBeDefined();
+    expect(sidecarWrite!.content).toMatch(/^<!-- Source: My Lecture Notes \(resource\) -->/);
+  });
+
+  it("origin header is on line 1 followed by a blank line", async () => {
+    const { atomicWrite } = await import("../../src/fs/output.js");
+    const { buildDownloadPlan } = await import("../../src/scraper/dispatch.js");
+    const { computeSyncPlan } = await import("../../src/sync/incremental.js");
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    const { planItem, activity } = setupDownloadScenario(
+      "r-assign", "assign", "Activity",
+      "<p>A sufficiently long description here that exceeds the consolidation threshold.</p>",
+    );
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI24A Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [{ sectionId: "s1", sectionName: "Week 1", activities: [activity] }],
+    });
+    vi.mocked(computeSyncPlan).mockReturnValueOnce([planItem]);
+    vi.mocked(buildDownloadPlan).mockReturnValueOnce({
+      items: [{
+        resourceId: "r-assign",
+        courseId: 1,
+        url: "https://moodle.example.com/r/r-assign",
+        strategy: "description-md" as const,
+        destPath: "/tmp/test/Semester_1/Macro 2024/Week 1/Activity.description.md",
+        label: "Activity",
+        activityType: "assign",
+        description: "<p>A sufficiently long description here that exceeds the consolidation threshold.</p>",
+        isSidecar: true,
+        name: "Activity",
+      }],
+      unknownTypes: new Map(),
+    } as never);
+
+    const capturedWrites: Array<{ path: string; content: string }> = [];
+    vi.mocked(atomicWrite).mockImplementation(async (path: string, buf: Buffer) => {
+      capturedWrites.push({ path, content: buf.toString("utf8") });
+      return { hash: "a".repeat(64), failed: false };
+    });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false });
+    stderrSpy.mockRestore();
+
+    const sidecarWrite = capturedWrites.find((w) => w.path.endsWith(".description.md"));
+    expect(sidecarWrite).toBeDefined();
+    const lines = sidecarWrite!.content.split("\n");
+    expect(lines[0]).toMatch(/^<!-- Source:/);
+    expect(lines[1]).toBe("");
+  });
+
+  it("label-md items do NOT get the origin header", async () => {
+    const { atomicWrite } = await import("../../src/fs/output.js");
+    const { buildDownloadPlan } = await import("../../src/scraper/dispatch.js");
+    const { computeSyncPlan } = await import("../../src/sync/incremental.js");
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    const { planItem, activity } = setupDownloadScenario(
+      "r-label", "label", "Section Header",
+      "<p>Section introductory text that is long enough to pass the threshold check.</p>",
+    );
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI24A Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [{ sectionId: "s1", sectionName: "Week 1", activities: [activity] }],
+    });
+    vi.mocked(computeSyncPlan).mockReturnValueOnce([planItem]);
+    vi.mocked(buildDownloadPlan).mockReturnValueOnce({
+      items: [{
+        resourceId: "r-label",
+        courseId: 1,
+        url: "https://moodle.example.com/r/r-label",
+        strategy: "label-md" as const,
+        destPath: "/tmp/test/Semester_1/Macro 2024/Week 1/Section Header.md",
+        label: "Section Header",
+        activityType: "label",
+        description: "<p>Section introductory text that is long enough to pass the threshold check.</p>",
+        isSidecar: false,
+        name: "Section Header",
+      }],
+      unknownTypes: new Map(),
+    } as never);
+
+    const capturedWrites: Array<{ path: string; content: string }> = [];
+    vi.mocked(atomicWrite).mockImplementation(async (path: string, buf: Buffer) => {
+      capturedWrites.push({ path, content: buf.toString("utf8") });
+      return { hash: "a".repeat(64), failed: false };
+    });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false });
+    stderrSpy.mockRestore();
+
+    const labelWrite = capturedWrites.find((w) => w.path.endsWith("Section Header.md"));
+    expect(labelWrite).toBeDefined();
+    expect(labelWrite!.content).not.toContain("<!-- Source:");
   });
 });
