@@ -23,7 +23,7 @@ import { createTurndown } from "../scraper/turndown.js";
 import { EXIT_CODES } from "../exit-codes.js";
 import { registerShutdownHandlers } from "../process/shutdown.js";
 import { isSameOrigin } from "../http/url-guard.js";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, renameSync, existsSync } from "node:fs";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -190,6 +190,24 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   if (pathsChanged || relocateChanged) {
     await stateManager.save({ courses: state.courses, generatedFiles: state.generatedFiles });
     if (relocateChanged) logger.info("Moved files to updated folder layout.");
+  }
+
+  // One-time migration: rename legacy _Beschreibungen.md files to _Descriptions.md
+  if (state.generatedFiles) {
+    let migrationNeeded = false;
+    const migratedGF = state.generatedFiles.map((p) => {
+      if (!p.endsWith("_Beschreibungen.md")) return p;
+      const newPath = p.slice(0, -"_Beschreibungen.md".length) + "_Descriptions.md";
+      try {
+        if (existsSync(p)) renameSync(p, newPath);
+      } catch { /* best-effort */ }
+      migrationNeeded = true;
+      return newPath;
+    });
+    if (migrationNeeded) {
+      state.generatedFiles = migratedGF;
+      await stateManager.save({ courses: state.courses, generatedFiles: state.generatedFiles });
+    }
   }
 
   // Mutable container for partial state — updated during downloads so SIGINT can save progress
@@ -720,16 +738,16 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   // ── Sidecar deduplication filter ──────────────────────────────────────────
   // Runs after classification, before any writes. Suppresses exact-duplicate sidecars and
-  // consolidates short descriptions (≤60 chars) into per-dir _Beschreibungen.md files.
+  // consolidates short descriptions (≤60 chars) into per-dir _Descriptions.md files.
   const sidecarFilterResult = filterSidecars(specialItems as SidecarItem[], undefined, logger);
   specialItems = sidecarFilterResult.filteredItems as typeof specialItems;
-  const beschreibungenToWrite = sidecarFilterResult.beschreibungenFiles;
+  const descriptionsToWrite = sidecarFilterResult.descriptionsFiles;
   const suppressedSidecarCount = sidecarFilterResult.suppressedCount;
   const consolidatedShortCount = sidecarFilterResult.consolidatedCount;
 
-  // Write _Beschreibungen.md consolidation files (tracked via generatedFiles, not FileState)
+  // Write _Descriptions.md consolidation files (tracked via generatedFiles, not FileState)
   if (!dryRun) {
-    for (const bf of beschreibungenToWrite) {
+    for (const bf of descriptionsToWrite) {
       mkdirSync(dirname(bf.path), { recursive: true });
       await atomicWrite(bf.path, Buffer.from(bf.content + "\n", "utf8"));
       generatedFiles.push(bf.path);
@@ -1064,7 +1082,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   if (suppressedSidecarCount > 0)
     filterParts.push(`${suppressedSidecarCount} duplicate description file${suppressedSidecarCount === 1 ? "" : "s"} suppressed`);
   if (consolidatedShortCount > 0) {
-    const nFiles = beschreibungenToWrite.length;
+    const nFiles = descriptionsToWrite.length;
     filterParts.push(`${consolidatedShortCount} short description${consolidatedShortCount === 1 ? "" : "s"} consolidated into ${nFiles} _Descriptions.md file${nFiles === 1 ? "" : "s"}`);
   }
   if (filterParts.length > 0) logger.info(`  ${filterParts.join(", ")}.`);

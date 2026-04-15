@@ -47,7 +47,7 @@ describe("filterSidecars()", () => {
     expect(result.filteredItems).toHaveLength(0);
     expect(result.suppressedCount).toBe(1);
     expect(result.consolidatedCount).toBe(0);
-    expect(result.beschreibungenFiles).toHaveLength(0);
+    expect(result.descriptionsFiles).toHaveLength(0);
   });
 
   // ── Test 2: exact duplicate in same batch ────────────────────────────────
@@ -78,7 +78,7 @@ describe("filterSidecars()", () => {
   });
 
   // ── Test 3: short consolidation ≥2 in same dir ──────────────────────────
-  it("consolidates ≥2 short descriptions (≤60 chars) in same dir into _Beschreibungen.md", () => {
+  it("consolidates ≥2 short descriptions (≤60 chars) in same dir into _Descriptions.md", () => {
     const dir = join(tmpDir, "Section");
     mkdirSync(dir);
 
@@ -99,9 +99,9 @@ describe("filterSidecars()", () => {
     expect(result.filteredItems).toHaveLength(0);
     expect(result.consolidatedCount).toBe(2);
     expect(result.suppressedCount).toBe(0);
-    expect(result.beschreibungenFiles).toHaveLength(1);
+    expect(result.descriptionsFiles).toHaveLength(1);
 
-    const bf = result.beschreibungenFiles[0]!;
+    const bf = result.descriptionsFiles[0]!;
     expect(bf.path).toBe(join(dir, "_Descriptions.md"));
     expect(bf.content).toContain("# Descriptions");
     expect(bf.content).toContain("**FiMa Skript:** Zinssatz");
@@ -122,7 +122,7 @@ describe("filterSidecars()", () => {
     const result = filterSidecars([sidecar], TurndownService);
     expect(result.filteredItems).toHaveLength(1);
     expect(result.filteredItems[0]!.label).toBe("FiMa Skript");
-    expect(result.beschreibungenFiles).toHaveLength(0);
+    expect(result.descriptionsFiles).toHaveLength(0);
     expect(result.consolidatedCount).toBe(0);
     expect(result.suppressedCount).toBe(0);
   });
@@ -143,7 +143,7 @@ describe("filterSidecars()", () => {
     expect(result.filteredItems[0]).toStrictEqual(sidecar);
     expect(result.suppressedCount).toBe(0);
     expect(result.consolidatedCount).toBe(0);
-    expect(result.beschreibungenFiles).toHaveLength(0);
+    expect(result.descriptionsFiles).toHaveLength(0);
   });
 
   // ── Test 6: non-sidecar items always pass through ────────────────────────
@@ -216,7 +216,7 @@ describe("filterSidecars()", () => {
     const result = filterSidecars([sidecarA, sidecarB], TurndownService);
     // Each dir has only 1 short desc — both kept individually
     expect(result.filteredItems).toHaveLength(2);
-    expect(result.beschreibungenFiles).toHaveLength(0);
+    expect(result.descriptionsFiles).toHaveLength(0);
     expect(result.consolidatedCount).toBe(0);
     expect(result.suppressedCount).toBe(0);
   });
@@ -250,8 +250,8 @@ describe("filterSidecars()", () => {
     expect(result.suppressedCount).toBe(1);
   });
 
-  // ── Test 10: identical short descriptions deduped in _Beschreibungen.md ──
-  it("deduplicates identical short descriptions — only unique entries in _Beschreibungen.md", () => {
+  // ── Test 10: identical short descriptions deduped in _Descriptions.md ──
+  it("deduplicates identical short descriptions — only unique entries in _Descriptions.md", () => {
     const dir = join(tmpDir, "Section");
     mkdirSync(dir);
 
@@ -290,8 +290,8 @@ describe("filterSidecars()", () => {
     ];
 
     const result = filterSidecars(items, TurndownService);
-    expect(result.beschreibungenFiles).toHaveLength(1);
-    const bf = result.beschreibungenFiles[0]!;
+    expect(result.descriptionsFiles).toHaveLength(1);
+    const bf = result.descriptionsFiles[0]!;
     // Only 2 unique entries: "Zinssatz" and "Aufgabe 4/10 korrigiert"
     expect(bf.content).toContain("Zinssatz");
     expect(bf.content).toContain("Aufgabe 4/10 korrigiert");

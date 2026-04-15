@@ -1,7 +1,7 @@
 // Sidecar deduplication filter — runs after specialItems is classified, before the write loop.
 // Suppresses .description.md sidecars whose content is redundant (exact substring of an existing
 // .md file in the same dir, or a duplicate within the current batch), and consolidates very short
-// descriptions (≤ SHORT_THRESHOLD chars) into a single _Beschreibungen.md per directory when ≥2
+// descriptions (≤ SHORT_THRESHOLD chars) into a single _Descriptions.md per directory when ≥2
 // such descriptions exist in the same folder.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -21,8 +21,8 @@ export interface SidecarItem {
   isSidecar: boolean;
 }
 
-export interface BeschreibungenFile {
-  /** Absolute path to write _Beschreibungen.md into. */
+export interface DescriptionsFile {
+  /** Absolute path to write _Descriptions.md into. */
   path: string;
   /** Formatted Markdown content (without trailing newline — caller appends "\n"). */
   content: string;
@@ -31,11 +31,11 @@ export interface BeschreibungenFile {
 export interface FilterResult {
   /** specialItems array with suppressed/consolidated sidecars removed. */
   filteredItems: SidecarItem[];
-  /** _Beschreibungen.md files to write (caller is responsible for atomicWrite + generatedFiles). */
-  beschreibungenFiles: BeschreibungenFile[];
+  /** _Descriptions.md files to write (caller is responsible for atomicWrite + generatedFiles). */
+  descriptionsFiles: DescriptionsFile[];
   /** Number of sidecars suppressed due to exact-duplicate content. */
   suppressedCount: number;
-  /** Number of short descriptions merged into _Beschreibungen.md files. */
+  /** Number of short descriptions merged into _Descriptions.md files. */
   consolidatedCount: number;
 }
 
@@ -123,9 +123,9 @@ export function filterSidecars(
     }
     if (labelMdIndices.size > 0) {
       const cleaned = passThrough.filter((_, i) => !labelMdIndices.has(i));
-      return { filteredItems: cleaned, beschreibungenFiles: [], suppressedCount, consolidatedCount: 0 };
+      return { filteredItems: cleaned, descriptionsFiles: [], suppressedCount, consolidatedCount: 0 };
     }
-    return { filteredItems: passThrough, beschreibungenFiles: [], suppressedCount: 0, consolidatedCount: 0 };
+    return { filteredItems: passThrough, descriptionsFiles: [], suppressedCount: 0, consolidatedCount: 0 };
   }
 
   // ── 2. Convert HTML → MD for each candidate ───────────────────────────────
@@ -294,7 +294,7 @@ export function filterSidecars(
   }
 
   // ── 6. Consolidation of short descriptions ───────────────────────────────
-  const beschreibungenFiles: BeschreibungenFile[] = [];
+  const descriptionsFiles: DescriptionsFile[] = [];
   let consolidatedCount = 0;
 
   for (const [dir, items] of shortsByDir) {
@@ -320,7 +320,7 @@ export function filterSidecars(
         logger?.debug(`[SIDECAR-COLLECT] ${join(dir, "_Descriptions.md")} <- ${candidate.label} (${descMd})`);
         lines.push(`**${candidate.label}:** ${descMd}`);
       }
-      beschreibungenFiles.push({
+      descriptionsFiles.push({
         path: join(dir, "_Descriptions.md"),
         content: lines.join("\n"),
       });
@@ -331,7 +331,7 @@ export function filterSidecars(
   // ── 7. Return ─────────────────────────────────────────────────────────────
   return {
     filteredItems: [...passThrough, ...filteredSidecars],
-    beschreibungenFiles,
+    descriptionsFiles,
     suppressedCount,
     consolidatedCount,
   };
