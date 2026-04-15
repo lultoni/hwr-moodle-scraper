@@ -17,6 +17,7 @@ import { runClean } from "./commands/clean.js";
 import { runReset } from "./commands/reset.js";
 import { runWizard, shouldRunWizard } from "./commands/wizard.js";
 import { runTui } from "./commands/tui.js";
+import { checkForUpdate } from "./version-check.js";
 
 // Global error handlers — prevent unredacted stack traces from leaking sensitive data
 process.on("uncaughtException", (err) => {
@@ -105,6 +106,11 @@ program
     // Password will be added to redact list once collected
     const logger = makeLogger(globalOpts.debug);
 
+    // Fire update check early — resolved after command finishes (non-blocking)
+    const updateCheck = (await config.get("checkUpdates")) !== false
+      ? checkForUpdate(pkg.version).catch(() => null)
+      : Promise.resolve(null);
+
     // First-run wizard
     if (await shouldRunWizard({ keychain, config })) {
       await runWizard({ keychain, config, promptFn: makePromptFn(), httpClient, nonInteractive: opts.nonInteractive, ...withLogger(logger) });
@@ -139,6 +145,11 @@ program
       const code = (err as { exitCode?: number }).exitCode ?? EXIT_CODES.ERROR;
       process.stderr.write(`Error: ${(err as Error).message}\n`);
       process.exit(code);
+    }
+
+    const newer = await updateCheck;
+    if (newer && !opts.quiet) {
+      process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${pkg.version})\n      Update: npm install -g .\n`);
     }
   });
 
@@ -250,6 +261,9 @@ program
   .action(async (opts: { issues: boolean }) => {
     const mgr = new ConfigManager();
     const outputDir = (await mgr.get("outputDir")) as string;
+    const updateCheck = (await mgr.get("checkUpdates")) !== false
+      ? checkForUpdate(pkg.version).catch(() => null)
+      : Promise.resolve(null);
     try {
       await runStatus({ outputDir, showIssues: opts.issues });
     } catch (err) {
@@ -257,6 +271,8 @@ program
       process.stderr.write(`Error: ${(err as Error).message}\n`);
       process.exit(code);
     }
+    const newer = await updateCheck;
+    if (newer) process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${pkg.version})\n      Update: npm install -g .\n`);
   });
 
 // --- clean ---
@@ -273,6 +289,9 @@ program
       process.stderr.write("Error: outputDir is not configured.\n");
       process.exit(EXIT_CODES.USAGE_ERROR);
     }
+    const updateCheck = (await mgr.get("checkUpdates")) !== false
+      ? checkForUpdate(pkg.version).catch(() => null)
+      : Promise.resolve(null);
     try {
       await runClean({
         outputDir,
@@ -286,6 +305,8 @@ program
       process.stderr.write(`Error: ${(err as Error).message}\n`);
       process.exit(code);
     }
+    const newer = await updateCheck;
+    if (newer) process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${pkg.version})\n      Update: npm install -g .\n`);
   });
 
 // --- reset ---
@@ -303,6 +324,9 @@ program
       process.stderr.write("Error: outputDir is not configured.\n");
       process.exit(EXIT_CODES.USAGE_ERROR);
     }
+    const updateCheck = (await mgr.get("checkUpdates")) !== false
+      ? checkForUpdate(pkg.version).catch(() => null)
+      : Promise.resolve(null);
     try {
       await runReset({
         outputDir,
@@ -317,6 +341,8 @@ program
       process.stderr.write(`Error: ${(err as Error).message}\n`);
       process.exit(code);
     }
+    const newer = await updateCheck;
+    if (newer) process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${pkg.version})\n      Update: npm install -g .\n`);
   });
 
 // --- tui ---

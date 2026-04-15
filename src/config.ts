@@ -14,10 +14,28 @@ const DEFAULTS = {
   logFile: null as string | null,
   /** Set to true after the one-time log-file hint has been shown. */
   logHintShown: false as boolean,
+  /** Set to false to suppress the GitHub update-available notification. */
+  checkUpdates: true as boolean,
 } as const;
 
 export type ConfigKey = keyof typeof DEFAULTS;
 export type ConfigValue = string | number | boolean | null;
+
+/**
+ * Config keys shown to users in the TUI config editor and `msc config list`.
+ * Excludes internal flags (logHintShown) that users should not edit directly.
+ */
+export const USER_EDITABLE_KEYS: ConfigKey[] = [
+  "outputDir",
+  "courseSearch",
+  "minFreeDiskMb",
+  "maxConcurrentDownloads",
+  "requestDelayMs",
+  "requestJitterMs",
+  "retryBaseDelayMs",
+  "logFile",
+  "checkUpdates",
+];
 
 const VALIDATION: Partial<Record<ConfigKey, { min: number; max: number }>> = {
   requestDelayMs:         { min: 100,  max: 30_000 },
