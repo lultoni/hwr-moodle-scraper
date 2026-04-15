@@ -47,6 +47,61 @@ msc --version   # should print a version number
 
 > If `msc` doesn't work, try closing and reopening Terminal, or use the full name `moodle-scraper` instead.
 
+### Windows (Native — No WSL)
+
+Open **PowerShell as Administrator** (right-click → Run as administrator):
+
+```powershell
+# 1. Download and enter the project
+git clone <repo-url>
+cd hwr-moodle-scraper
+
+# 2. Install dependencies and build
+npm install
+npm run build
+
+# 3. Make the "msc" command available globally (no sudo on Windows)
+npm install -g .
+```
+
+After this, open a new PowerShell window and run `msc --version` to confirm.
+
+> **Credential storage on Windows**: Windows does not have a macOS Keychain equivalent, so msc will prompt for your username and password each run. To avoid this, set environment variables in your PowerShell profile:
+> ```powershell
+> $env:MSC_USERNAME = "s12345"
+> $env:MSC_PASSWORD = "yourpassword"
+> msc scrape
+> ```
+
+> **TUI on Windows**: `msc tui` requires **Windows Terminal** (available from the Microsoft Store) for correct box-drawing characters. The classic Command Prompt and older PowerShell windows may display garbled borders.
+
+### WSL2 / Linux
+
+WSL2 (Windows Subsystem for Linux) and native Linux are fully supported. Use the standard installation steps above, but:
+
+1. **No Keychain** — store your credentials as environment variables:
+   ```bash
+   export MSC_USERNAME=s12345
+   export MSC_PASSWORD=yourpassword
+   ```
+   Add these to your `~/.bashrc` or `~/.zshrc` to persist across sessions.
+
+2. **Output directory** — on WSL2, you can save files directly to your Windows filesystem:
+   ```bash
+   msc config set outputDir /mnt/c/Users/YourName/Documents/Moodle
+   ```
+   This makes files accessible from both WSL and Windows Explorer.
+
+3. **`--non-interactive` mode** — works automatically when `MSC_USERNAME` and `MSC_PASSWORD` are set:
+   ```bash
+   msc scrape --non-interactive
+   ```
+
+4. **npm global prefix** — if `msc` isn't found after `npm install -g .`, add npm's bin to your PATH:
+   ```bash
+   export PATH="$(npm prefix -g)/bin:$PATH"
+   ```
+
 ---
 
 ## First Run
@@ -87,6 +142,14 @@ The first download takes roughly **10-20 minutes** and uses about **2-3 GB** of 
 Feel free to add your own notes, highlights, or files alongside the downloaded content. The scraper **only manages files it downloaded** and will never delete your personal additions.
 
 `msc status` shows how many personal files you have. If you want to clean up old leftover files (e.g. after the scraper reorganized folders), use `msc clean` — it only touches files that aren't tracked by the scraper.
+
+### GoodNotes / iPad Annotation Workflow
+
+If you import PDFs into GoodNotes (or similar apps) for annotation, be aware:
+
+- When a lecturer **updates** a file on Moodle, msc re-downloads it and marks it as `~ updated` in the change report. Your annotated copy in GoodNotes is **not affected** — it's a separate import.
+- If you want to keep your annotations aligned with the latest version, re-import the updated file from your output folder into GoodNotes after each `msc scrape`.
+- To see what changed in the last scrape: `msc status --changed`
 
 ---
 
