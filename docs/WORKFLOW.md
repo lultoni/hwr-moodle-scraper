@@ -65,11 +65,11 @@
 
 **Checklist**:
 - [x] All 22 steps implemented
-- [x] All 514 tests passing (38 test files)
+- [x] All 646 tests passing (43 test files)
 - [x] Full CLI with auth, scrape, status, wizard, reset, tui commands
 - [x] Security: keychain integration, credential handling, HTTPS + retry logic
 - [x] Sync: rate limiting, incremental updates, state management
-- [x] Phase 5 improvements: 33 cleanup/enhancement passes completed
+- [x] Phase 5 improvements: 36 cleanup/enhancement passes completed
 
 ---
 
@@ -77,11 +77,19 @@
 **Workflow**:
 1. User provides feedback or reports a scraping quality issue
 2. Follow `agents/debug-workflow.md` if it's a parsing/scraping bug (capture HTML → write test → fix → verify)
-3. For new features: test writer updates/adds tests; developer implements; doc-updater runs before commit
-4. Run `npx vitest run` — all tests must pass before committing
-5. Run `node scripts/file-checker.js` — must exit 0 before ending the session
+3. For new features: use `EnterPlanMode`, surface design decisions via `AskUserQuestion`, then: write tests → implement → `npx vitest run` → `node scripts/file-checker.js` → commit per feature
+4. At end of pass: bump version if user-facing features were added (see versioning below), update CLAUDE.md, rebuild: `npm run build && npm install -g .`
 
-**Current status**: 35 cleanup passes completed (2026-03-27 to 2026-04-10). 514/514 tests passing (38 test files). See `docs/FEATURE_TIMELINE.md` and `CLAUDE.md` for full history.
+**Current status**: 36 cleanup passes completed. 646/646 tests passing (43 test files). Version: `0.2.0`.
+
+---
+
+## Versioning
+
+`MAJOR.MINOR.PATCH` (pre-1.0: `0.MINOR.PATCH`):
+- **MINOR** (`0.x.0`) — user-facing features added (new commands, flags, UX changes, new user-visible config keys)
+- **PATCH** (`0.0.x`) — bug fixes, refactors, test/doc-only changes
+- After bumping `package.json`: `npm run build && npm install -g .`
 
 ---
 

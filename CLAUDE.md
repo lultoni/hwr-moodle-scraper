@@ -18,7 +18,14 @@ Each improvement is one "pass" (e.g. Pass 36). The workflow within a pass:
 2. **One feature at a time** — implement features sequentially, not in parallel. Each feature follows: tests → implementation → `npx vitest run` → `node scripts/file-checker.js` → commit.
 3. **Tests before code** — write failing tests first. Tests live in `tests/unit/` or `tests/integration/`. The test must reference what it covers in a comment.
 4. **Commit per feature** — commit message format: `feat(<scope>): <what and why>` or `fix(<scope>): <what and why>`. Include the number of new tests in the body when significant.
-5. **End of pass** — update `CLAUDE.md` (test count, pass count) and memory files.
+5. **End of pass** — bump `package.json` version if user-facing features were added (see versioning below), update `CLAUDE.md` (test count, pass count), rebuild and reinstall: `npm run build && npm install -g .`
+
+### Versioning
+`MAJOR.MINOR.PATCH` — for a pre-1.0 project, treat `0.MINOR.PATCH`:
+- **MINOR bump** (`0.x.0`) — one or more user-facing features added (new commands, new flags, redesigned UX, new config keys visible to users). Bump when a pass adds features a user would notice.
+- **PATCH bump** (`0.0.x`) — bug fixes, internal refactors, test additions, documentation only. No new user-visible behaviour.
+- **Never bump for**: doc-only changes, test-only changes, file-checker fixes, CLAUDE.md updates.
+- After bumping: rebuild and reinstall with `npm run build && npm install -g .` so the running binary reflects the new version.
 
 ## Mottos (priority order)
 1. **Security first** — credentials never in logs, no hardcoded secrets, HTTPS only, secure credential storage
@@ -118,7 +125,7 @@ When a user reports broken files or before ending a session:
 **Phase 5 — Iterative Improvements (ongoing)**
 - All 22 timeline steps fully implemented; 646/646 tests passing (43 test files)
 - Full CLI: auth, scrape, status, wizard, reset, tui + first-run wizard + clean
-- 36 cleanup/improvement passes completed (see `docs/FEATURE_TIMELINE.md` for full history)
+- 36 cleanup/improvement passes completed; current version: `0.2.0`
 
 ## Tech Stack
 Node.js 20 LTS + TypeScript 5. See `docs/TECH_STACK.md` for full decisions.
