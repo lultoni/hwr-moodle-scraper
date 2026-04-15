@@ -45,37 +45,3 @@ GoodNotes annotation power user — carefully manages which PDFs have been impor
 | 3 | Annotation safety | No way to distinguish "new file" from "updated file" after the scrape run ends; `msc status` has no `--changed` or `--since` flag | High | Feature gap |
 | 4 | GoodNotes integration | Importing an updated PDF into GoodNotes creates a blank duplicate alongside the annotated original — no warning or prevention mechanism in the scraper | Medium | UX (out of scope for tool, but documentable) |
 | 5 | Change report format | Change report in terminal output lists files in processing order, not grouped by course; hard to scan for specific courses with 13 enrolled | Low | UX |
-
-## Feature Requests & Findings
-
-**TICKET-1**
-- **Type**: Feature gap
-- **Persona**: Ben (persona-14), Hannah (persona-13), Nele (persona-11)
-- **Severity**: High
-- **Description**: The change report (`+`/`~` prefixed lines) printed at the end of `msc scrape` is ephemeral — it exists only in the terminal session. Users on an iPad-first workflow (Ben, Nele) need to review the list of new vs updated files on their iPad before deciding what to import into GoodNotes. There is currently no way to retrieve this information after the terminal session ends.
-- **Proposed resolution**: Write a `_LastSync.md` file to the root of the output directory after each scrape. Contents: ISO timestamp of the scrape, total counts, and two sections — "New files" (paths prefixed `+`) and "Updated files" (paths prefixed `~`). Overwrite on each run (only last sync shown). Track in `State.generatedFiles`. This file syncs to iCloud automatically, is readable in Files app on iPad, and serves as a persistent source of truth for the change report. See also persona-13-hannah TICKET-1.
-- **Affected commands/flows**: `msc scrape`, `runScrape` in `src/commands/scrape.ts`, `State.generatedFiles`
-
-**TICKET-2**
-- **Type**: Feature gap
-- **Persona**: Ben (persona-14), Hannah (persona-13)
-- **Severity**: High
-- **Description**: There is no `msc status --changed` or `msc log` command to query what changed in the last scrape after the terminal session ends. The information exists only in the ephemeral terminal output. Users cannot retrieve "new files since last run" programmatically.
-- **Proposed resolution**: Persist a `lastSync` object in the state file: `{ timestamp: string, newFiles: string[], updatedFiles: string[] }`. Populate it at the end of each `runScrape`. Add `msc status --changed` flag that reads and prints this object. Output format: same `+`/`~` prefixed relative paths as the change report. This allows users to re-query the last-run changes without re-running the scrape. See also persona-13-hannah TICKET-2.
-- **Affected commands/flows**: `msc status`, new `--changed` flag, `State` in `src/sync/state.ts`, `runScrape`
-
-**TICKET-3**
-- **Type**: Documentation / UX
-- **Persona**: Ben (persona-14), Nele (persona-11)
-- **Severity**: Medium
-- **Description**: For GoodNotes users, importing an updated PDF (`~` in change report) creates a blank duplicate alongside the annotated original. GoodNotes has no mechanism to detect or prevent this. The scraper gives no warning that a file is an update (as opposed to a new file) at the point of iCloud sync. Users relying only on iCloud Files app cannot distinguish new from updated files.
-- **Proposed resolution**: The `_LastSync.md` file (TICKET-1) directly addresses this: it separates `+` new files from `~` updated files in a persistent, iPad-readable document. Additionally, add a note to README under a "GoodNotes / iPad annotation workflow" section: "Files marked `~` (updated) in the change report replace the existing iCloud copy. If you have annotated this PDF in GoodNotes, do NOT re-import the updated version — your GoodNotes annotations are on the old copy inside GoodNotes' internal library and are unaffected."
-- **Affected commands/flows**: README, `_LastSync.md` output (TICKET-1)
-
-**TICKET-4**
-- **Type**: UX improvement
-- **Persona**: Ben (persona-14)
-- **Severity**: Low
-- **Description**: The change report in `msc scrape` terminal output lists files in processing order, not grouped by course. With 13 courses and potentially 20+ changed files, scanning for a specific course requires reading the entire list. Users who only want to import new files from one specific course find the ungrouped list hard to use.
-- **Proposed resolution**: Group change report output by course (first two path segments: `Semester_N/CourseName`). Print each course as a subheading with its `+`/`~` files indented underneath. Add a count per course: `WI3042 Strategisches GPM: 1 new, 2 updated`. This applies both to the terminal change report and the `_LastSync.md` file. See also persona-13-hannah TICKET-4.
-- **Affected commands/flows**: `msc scrape` change report, `_LastSync.md` (TICKET-1)

@@ -44,37 +44,3 @@ Paper-first minimalist — wants PDFs in Finder, nothing else; confused and frus
 | 4 | File naming | `_Abschnittsbeschreibung.md` and `.description.md` use technical/German naming conventions opaque to non-developer users | Low | Documentation / UX |
 | 5 | `msc clean` | Help text does not clearly communicate that `msc clean` targets USER-added files, not scraper-generated files; beginners may misuse it expecting it to remove `.md` clutter | High | Documentation / UX |
 | 6 | Feature gap | No `--no-descriptions` or `--pdf-only` flag to limit output to binary files only | Medium | Feature gap |
-
-## Feature Requests & Findings
-
-**TICKET-1**
-- **Type**: Feature gap
-- **Persona**: Rafael (persona-12)
-- **Severity**: Medium
-- **Description**: No flag or config option to suppress `.md`, `.url.txt`, and `.description.md` output. Users who only want binary files (PDFs, images) must manually delete generated text files, which are recreated on the next scrape. This is a recurring frustration for non-developer users.
-- **Proposed resolution**: Add a `--no-descriptions` flag (and a persistent config key `writeDescriptions: false`) to `msc scrape`. When set: skip all `description-md` sidecar generation, skip `.url.txt` files, skip `_Abschnittsbeschreibung.md` and `_Beschreibungen.md`. Binary files and `page-md` content still download normally. Document as "PDF-focused mode" in README. Note: already proposed under TICKET-1 in persona-11-nele; this is a supporting reference.
-- **Affected commands/flows**: `msc scrape`, `buildDownloadPlan`, `msc config`
-
-**TICKET-2**
-- **Type**: Documentation / UX
-- **Persona**: Rafael (persona-12)
-- **Severity**: High
-- **Description**: `msc clean --help` output does not make clear that the command targets USER-added files (files the scraper did not create), not scraper-generated files (`.md`, `.url.txt`). A beginner expecting to "clean up the clutter" will misuse it and potentially delete their own files.
-- **Proposed resolution**: Rewrite the `msc clean` help text to explicitly state: "Removes files YOU added to the output folder that the scraper does not recognize. It does NOT remove .md or .url.txt files created by the scraper — use `--no-descriptions` for that." Add an example in `--help` showing a typical use case. Consider adding a `--what-this-does` flag that prints a plain-English explanation.
-- **Affected commands/flows**: `msc clean`, help text in `src/commands/clean.ts`
-
-**TICKET-3**
-- **Type**: Documentation / UX
-- **Persona**: Rafael (persona-12)
-- **Severity**: Medium
-- **Description**: `msc status` output uses technical jargon ("sidecar", "orphan", "state entries", "sync plan") that is inaccessible to beginner users. After reading the output once, beginners like Rafael dismiss it and never use it again, missing valuable information about their scrape state.
-- **Proposed resolution**: Add a `--plain` flag to `msc status` that outputs a human-readable summary using plain language: "You have 423 downloaded files. 5 files from Moodle no longer exist — run `msc reset` to remove them. 2 files you added manually." Avoid all technical jargon in `--plain` mode.
-- **Affected commands/flows**: `msc status`, `msc status --issues`
-
-**TICKET-4**
-- **Type**: Documentation
-- **Persona**: Rafael (persona-12)
-- **Severity**: Low
-- **Description**: The internal naming conventions for scraper-generated files (`_Abschnittsbeschreibung.md`, `.description.md`, `_Beschreibungen.md`, `_Ordnerbeschreibung.md`) are unexplained anywhere accessible to a non-developer user. There is no in-app or in-folder explanation.
-- **Proposed resolution**: Add a "What are all these files?" section to README with a simple table: filename pattern → what it contains → safe to delete? (answer: they will be recreated on next scrape). This sets beginner expectations correctly.
-- **Affected commands/flows**: README, first-run wizard output

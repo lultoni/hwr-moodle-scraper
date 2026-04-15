@@ -43,37 +43,3 @@ WSL2 power user with a complicated output path — manages cross-semester orphan
 | 3 | State migration | After a Windows reinstall, state `localPath` entries reference the old drive mount path; no command to remap a path prefix across all state entries | High | Feature gap |
 | 4 | Status | `msc status --issues` missing-file entries don't indicate whether the file was ever successfully downloaded (could be a path-drift or a failed download) | Medium | UX |
 | 5 | Config | No `msc config migrate-paths` or `msc state remap` command to bulk-update `outputDir` and all associated state `localPath` entries when the output folder moves | High | Feature gap |
-
-## Feature Requests & Findings
-
-**TICKET-1**
-- **Type**: Bug / Reliability
-- **Persona**: Luca (persona-10)
-- **Severity**: High
-- **Description**: When a cloud sync client (OneDrive, Dropbox, iCloud Drive) holds a transient file lock on a download destination during `atomicWrite`, the `fs.rename` from `.tmp` to final path fails with `EPERM`. If this error is not surfaced clearly, the file is silently missing from disk while state records it as downloaded. `--check-files` re-downloads it, but the user may not know to run it.
-- **Proposed resolution**: In `atomicWrite`, catch `EPERM`/`EBUSY` rename errors and (a) log a clear warning naming the affected file, (b) add the file to a "failed" list that is printed in the scrape summary and marked in state as `status: "error"` so `msc status --issues` surfaces it immediately without needing `--check-files`.
-- **Affected commands/flows**: `msc scrape`, `atomicWrite` in `src/fs/output.ts`, `msc status --issues`
-
-**TICKET-2**
-- **Type**: UX improvement
-- **Persona**: Luca (persona-10)
-- **Severity**: Medium
-- **Description**: `msc status` displays all orphaned state entries uniformly. There is no way to tell whether an orphan exists because (a) the Moodle resource was deleted/moved on the server, (b) the file was never successfully downloaded, or (c) the local path changed (drive letter, mount point, or folder rename). These three causes require different user actions.
-- **Proposed resolution**: Add an optional `orphanReason` field to `FileState` (values: `"moodle-removed"`, `"never-downloaded"`, `"path-missing"`). Populate `"path-missing"` when a state entry's `localPath` does not exist on disk but the Moodle resource still exists in the content tree. Populate `"moodle-removed"` during sync plan reconciliation. Display the reason in `msc status` output.
-- **Affected commands/flows**: `msc status`, `msc status --issues`, sync plan in `src/sync/`
-
-**TICKET-3**
-- **Type**: Feature gap
-- **Persona**: Luca (persona-10)
-- **Severity**: High
-- **Description**: After moving the output folder (or after a Windows reinstall changes the drive mount path), all state `localPath` entries reference the old path prefix. There is no command to remap a path prefix across all state entries. The user must either do a full reset (losing all state) or manually edit the JSON state file.
-- **Proposed resolution**: Add `msc config set-output-dir <newPath>` (or `msc state remap-paths --from <old> --to <new>`) that: (1) updates `outputDir` in config, (2) rewrites every `localPath`, `sidecarPath`, and `imagePaths` entry in state by replacing the old path prefix with the new one, (3) prints a summary of how many entries were updated, (4) supports `--dry-run`.
-- **Affected commands/flows**: `msc config`, new command `msc state remap-paths`
-
-**TICKET-4**
-- **Type**: UX improvement
-- **Persona**: Luca (persona-10)
-- **Severity**: Medium
-- **Description**: `msc status --issues` lists "missing files" (state entries whose `localPath` does not exist on disk) but does not indicate whether the file was previously successfully downloaded or was always missing. A successfully-downloaded file that disappeared (path drift, accidental deletion) looks identical to a file that failed during download and was never written.
-- **Proposed resolution**: Add a `downloadedAt` timestamp or a `everDownloaded: boolean` field to `FileState`. Use this in `msc status --issues` to annotate missing files: "previously downloaded, now missing" vs "never successfully downloaded".
-- **Affected commands/flows**: `msc status --issues`, `FileState` in `src/sync/state.ts`
