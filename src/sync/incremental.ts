@@ -19,6 +19,8 @@ export interface SyncPlanItem {
   url?: string;
   localPath?: string;
   dryRun?: boolean;
+  /** Why this entry became an orphan. Populated for ORPHAN actions only. */
+  orphanReason?: "moodle-removed" | "never-downloaded";
 }
 
 export interface ComputeSyncPlanOptions {
@@ -33,7 +35,7 @@ interface PartialStateInput {
   courses: Record<string, {
     name?: string;
     sections?: Record<string, {
-      files?: Record<string, { hash?: string; url?: string; localPath?: string }>;
+      files?: Record<string, { hash?: string; url?: string; localPath?: string; status?: string; downloadedAt?: string }>;
     }>;
   }>;
 }
@@ -103,9 +105,11 @@ export function computeSyncPlan(opts: ComputeSyncPlanOptions): SyncPlanItem[] {
         const currentResourceIds = new Set(
           section.activities.map((a) => getResourceId(a, tree.courseId, section.sectionId))
         );
-        for (const resourceId of Object.keys(sectionState.files)) {
+        for (const [resourceId, fileState] of Object.entries(sectionState.files)) {
           if (!currentResourceIds.has(resourceId)) {
-            plan.push({ action: SyncAction.ORPHAN, resourceId, dryRun });
+            const wasEverDownloaded = fileState.status === "ok" || Boolean(fileState.downloadedAt);
+            const orphanReason = wasEverDownloaded ? "moodle-removed" : "never-downloaded";
+            plan.push({ action: SyncAction.ORPHAN, resourceId, dryRun, orphanReason });
           }
         }
       }

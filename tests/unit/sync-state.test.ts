@@ -350,3 +350,115 @@ describe("relocateFiles — SK placement file moves", () => {
     expect(changed).toBe(false);
   });
 });
+
+// ── T-27 + T-28: orphanReason and downloadedAt in FileState ──────────────────
+
+describe("T-27 + T-28: orphanReason and downloadedAt fields in FileState", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "msc-state-fields-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("FileState accepts orphanReason field and round-trips via StateManager", async () => {
+    const sm = new StateManager(tmpDir);
+    const state: State = {
+      version: 1,
+      lastSyncAt: "2026-04-15T00:00:00.000Z",
+      courses: {
+        "1": {
+          name: "Macro",
+          sections: {
+            "s1": {
+              files: {
+                "r1": {
+                  name: "file.pdf",
+                  url: "https://moodle.example.com/r/1",
+                  localPath: join(tmpDir, "file.pdf"),
+                  hash: "a".repeat(64),
+                  lastModified: "2026-04-15T00:00:00.000Z",
+                  status: "orphan",
+                  orphanReason: "moodle-removed",
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    await sm.save(state);
+    const loaded = await sm.load();
+    expect(loaded?.courses["1"]?.sections["s1"]?.files["r1"]?.orphanReason).toBe("moodle-removed");
+  });
+
+  it("FileState accepts downloadedAt ISO string and round-trips via StateManager", async () => {
+    const sm = new StateManager(tmpDir);
+    const state: State = {
+      version: 1,
+      lastSyncAt: "2026-04-15T00:00:00.000Z",
+      courses: {
+        "1": {
+          name: "Macro",
+          sections: {
+            "s1": {
+              files: {
+                "r1": {
+                  name: "file.pdf",
+                  url: "https://moodle.example.com/r/1",
+                  localPath: join(tmpDir, "file.pdf"),
+                  hash: "a".repeat(64),
+                  lastModified: "2026-04-15T00:00:00.000Z",
+                  status: "ok",
+                  downloadedAt: "2026-04-15T12:00:00.000Z",
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    await sm.save(state);
+    const loaded = await sm.load();
+    expect(loaded?.courses["1"]?.sections["s1"]?.files["r1"]?.downloadedAt).toBe("2026-04-15T12:00:00.000Z");
+  });
+
+  it("FileState without new fields loads correctly and fields are undefined (backward compat)", async () => {
+    const sm = new StateManager(tmpDir);
+    const state: State = {
+      version: 1,
+      lastSyncAt: "2026-04-15T00:00:00.000Z",
+      courses: {
+        "1": {
+          name: "Macro",
+          sections: {
+            "s1": {
+              files: {
+                "r1": {
+                  name: "file.pdf",
+                  url: "https://moodle.example.com/r/1",
+                  localPath: join(tmpDir, "file.pdf"),
+                  hash: "a".repeat(64),
+                  lastModified: "2026-04-15T00:00:00.000Z",
+                  status: "ok",
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    await sm.save(state);
+    const loaded = await sm.load();
+    const file = loaded?.courses["1"]?.sections["s1"]?.files["r1"];
+    expect(file).toBeDefined();
+    expect(file?.orphanReason).toBeUndefined();
+    expect(file?.downloadedAt).toBeUndefined();
+  });
+});

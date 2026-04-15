@@ -1229,6 +1229,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       hash: computedHash || location?.hash || "",
       lastModified: new Date().toISOString(),
       status: "ok" as const,
+      ...(destPath ? { downloadedAt: new Date().toISOString() } : {}),
       ...(sidecarPath ? { sidecarPath } : {}),
       ...(submissionPaths && submissionPaths.length > 0 ? { submissionPaths } : {}),
       ...(imagePaths && imagePaths.length > 0 ? { imagePaths } : {}),
@@ -1250,6 +1251,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         const file = sectionEntry.files?.[item.resourceId];
         if (file) {
           file.status = "orphan";
+          if (item.orphanReason) file.orphanReason = item.orphanReason;
           if (verbose) logger.debug(`[ORPHAN] ${item.resourceId}`);
         }
       }

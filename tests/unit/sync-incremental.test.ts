@@ -300,3 +300,51 @@ describe("STEP-017: hash system mismatch — SHA-256 vs Moodle data-hash (Pass 4
     expect(downloads[0]?.resourceId).toBe("r1");
   });
 });
+
+// ── T-27: orphanReason in sync plan ──────────────────────────────────────────
+
+describe("T-27: orphanReason field in ORPHAN plan items", () => {
+  const emptyTree = { courseId: 1, sections: [{ sectionId: "s1", sectionName: "S1", activities: [] }] };
+
+  it("ORPHAN item gets orphanReason 'moodle-removed' when file had status 'ok'", () => {
+    const state = {
+      courses: {
+        "1": { name: "Macro", sections: { "s1": { files: {
+          "r1": { hash: "abc", url: "https://moodle.example.com/r/1", localPath: "/out/file.pdf", status: "ok" as const },
+        } } } },
+      },
+    };
+    const plan = computeSyncPlan({ state, currentTree: [emptyTree], force: false });
+    const orphan = plan.find((a) => a.action === SyncAction.ORPHAN && a.resourceId === "r1");
+    expect(orphan).toBeDefined();
+    expect(orphan?.orphanReason).toBe("moodle-removed");
+  });
+
+  it("ORPHAN item gets orphanReason 'never-downloaded' when file had status 'error' and no downloadedAt", () => {
+    const state = {
+      courses: {
+        "1": { name: "Macro", sections: { "s1": { files: {
+          "r1": { hash: "", url: "https://moodle.example.com/r/1", localPath: "/out/file.pdf", status: "error" as const },
+        } } } },
+      },
+    };
+    const plan = computeSyncPlan({ state, currentTree: [emptyTree], force: false });
+    const orphan = plan.find((a) => a.action === SyncAction.ORPHAN && a.resourceId === "r1");
+    expect(orphan).toBeDefined();
+    expect(orphan?.orphanReason).toBe("never-downloaded");
+  });
+
+  it("ORPHAN item gets orphanReason 'moodle-removed' when downloadedAt is set (even if status is error)", () => {
+    const state = {
+      courses: {
+        "1": { name: "Macro", sections: { "s1": { files: {
+          "r1": { hash: "", url: "https://moodle.example.com/r/1", localPath: "/out/file.pdf", status: "error" as const, downloadedAt: "2026-04-01T00:00:00.000Z" },
+        } } } },
+      },
+    };
+    const plan = computeSyncPlan({ state, currentTree: [emptyTree], force: false });
+    const orphan = plan.find((a) => a.action === SyncAction.ORPHAN && a.resourceId === "r1");
+    expect(orphan).toBeDefined();
+    expect(orphan?.orphanReason).toBe("moodle-removed");
+  });
+});

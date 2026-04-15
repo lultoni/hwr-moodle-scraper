@@ -18,6 +18,10 @@ export interface FileState {
   submissionPaths?: string[];
   /** Embedded image paths downloaded alongside a page-md/label-md file. */
   imagePaths?: string[];
+  /** Why this entry became an orphan. Set when transitioning to status "orphan". */
+  orphanReason?: "moodle-removed" | "never-downloaded" | "path-missing";
+  /** ISO datetime of the last successful download of this file. */
+  downloadedAt?: string;
 }
 
 export interface SectionState {
