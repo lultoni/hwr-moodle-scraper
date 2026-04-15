@@ -19,6 +19,7 @@ const CATEGORIES: Record<ConfigKey, string> = {
   courseSearch:                 "Filesystem",
   minFreeDiskMb:                "Filesystem",
   logFile:                      "Filesystem",
+  displayPathFormat:            "Filesystem",
   maxConcurrentDownloads:       "Network",
   requestDelayMs:               "Network",
   requestJitterMs:              "Network",

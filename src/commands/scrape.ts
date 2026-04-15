@@ -46,6 +46,8 @@ export interface ScrapeOptions {
   verbose?: boolean;
   courses?: number[];
   metadata?: boolean;
+  /** When true, skip description .md files and .url.txt — download binary/PDF files only. */
+  noDescriptions?: boolean;
   /** Prompt function for interactive credential entry (used as fallback when keychain unavailable). */
   promptFn?: PromptFn;
   logger?: Logger;
@@ -60,6 +62,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     baseUrl = "https://moodle.hwr-berlin.de",
     quiet = false,
     verbose = false,
+    noDescriptions = false,
   } = opts;
 
   // Guard: outputDir must be configured before we can proceed
@@ -235,7 +238,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       readmeContentByDir.set(courseDir, descMd);
     }
 
-    // Write section description files (_Abschnittsbeschreibung.md) for sections with summarytext
+    // Write section description files (_SectionDescription.md) for sections with summarytext
+    if (!noDescriptions) {
     for (const tree of trees) {
       const sp = courseShortPaths.get(tree.courseId);
       const courseDirName = sanitiseFilename(sp?.shortName ?? courseNameMap.get(tree.courseId) ?? String(tree.courseId));
@@ -261,7 +265,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         for (const imgPath of imgResult.imagePaths) generatedFiles.push(imgPath);
       }
     }
-  }
+    } // end if (!noDescriptions)
+  } // end if (!dryRun) — course READMEs and section descriptions
 
   // Write _README.md to output root (UC-06/23) — refreshed each run, always current
   if (!dryRun) {
@@ -643,6 +648,10 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       continue;
     }
     for (const planItem of planItems) {
+      if (noDescriptions && (planItem.strategy === "url-txt" || planItem.strategy === "description-md")) {
+        acknowledgedItems.push(item);
+        continue;
+      }
       if (planItem.strategy === "binary") {
         logger.debug(`[DOWNLOAD] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${meta.activity.activityName}${counter}`);
         mkdirSync(dirname(planItem.destPath), { recursive: true });

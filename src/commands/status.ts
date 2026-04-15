@@ -258,6 +258,10 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   }
 
   // --issues: tree views
+  if (orphans.length > 0 || missingFiles.length > 0 || userFiles.length > 0) {
+    write(`Issues summary: ${orphans.length} old entr${orphans.length === 1 ? "y" : "ies"}, ${missingFiles.length} missing file${missingFiles.length === 1 ? "" : "s"}, ${userFiles.length} unprotected personal file${userFiles.length === 1 ? "" : "s"}`);
+  }
+
   if (orphans.length > 0) {
     write("");
     write(`Old entries — from ended courses (${orphans.length}):`);

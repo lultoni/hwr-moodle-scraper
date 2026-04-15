@@ -20,6 +20,8 @@ const DEFAULTS = {
   updateCheckIntervalHours: 24 as number,
   /** Unix timestamp (ms) of the last update check. Internal — not user-editable. */
   lastUpdateCheckMs: 0 as number,
+  /** Path display format. "auto" = detect OS, "posix" = forward slashes, "windows" = backslashes. */
+  displayPathFormat: "auto" as "auto" | "posix" | "windows",
 } as const;
 
 export type ConfigKey = keyof typeof DEFAULTS;
@@ -40,7 +42,23 @@ export const USER_EDITABLE_KEYS: ConfigKey[] = [
   "logFile",
   "checkUpdates",
   "updateCheckIntervalHours",
+  "displayPathFormat",
 ];
+
+/** Human-readable descriptions for each user-editable config key. */
+export const CONFIG_DESCRIPTIONS: Partial<Record<ConfigKey, string>> = {
+  outputDir: "Folder where scraped files are saved",
+  courseSearch: "Default keyword filter for courses (comma-separated)",
+  minFreeDiskMb: "Minimum free disk space required before scraping (MB)",
+  maxConcurrentDownloads: "Number of files downloaded in parallel",
+  requestDelayMs: "Base delay between HTTP requests (ms)",
+  requestJitterMs: "Random jitter added to each request delay (ms)",
+  retryBaseDelayMs: "Base delay for retry back-off on failed requests (ms)",
+  logFile: "Path to write debug log file (null = disabled)",
+  checkUpdates: "Check for new msc versions on GitHub (true/false)",
+  updateCheckIntervalHours: "Hours between automatic update checks (0 = every run)",
+  displayPathFormat: "Path separator style: auto | posix | windows",
+};
 
 const VALIDATION: Partial<Record<ConfigKey, { min: number; max: number }>> = {
   requestDelayMs:             { min: 100,  max: 30_000 },

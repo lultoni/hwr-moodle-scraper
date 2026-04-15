@@ -1,7 +1,7 @@
 // UC-20: msc help <topic>
 // Plain-language explanations for common msc concepts.
 
-const TOPICS: Record<string, string> = {
+const TOPICS: Record<string, string | null> = {
   "orphaned": `
 Old Entries (from ended courses)
 =================================

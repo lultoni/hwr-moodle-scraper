@@ -55,6 +55,7 @@ export async function runClean(opts: CleanOptions): Promise<void> {
       process.stdout.write(`[dry-run] Would move ${userFiles.length} file${userFiles.length === 1 ? "" : "s"} to "${USER_FILES_DIR}/".\n`);
     } else {
       process.stdout.write(`[dry-run] Would delete ${userFiles.length} file${userFiles.length === 1 ? "" : "s"}.\n`);
+      process.stdout.write(`  Safer alternative: \`msc clean --move\` relocates files to "${USER_FILES_DIR}/" instead of deleting.\n`);
     }
     return;
   }

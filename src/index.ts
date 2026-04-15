@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXIT_CODES } from "./exit-codes.js";
-import { ConfigManager } from "./config.js";
+import { ConfigManager, CONFIG_DESCRIPTIONS } from "./config.js";
 import { tryCreateKeychain } from "./auth/keychain.js";
 import { createHttpClient } from "./http/client.js";
 import { createLogger, LogLevel, type Logger } from "./logger.js";
@@ -109,6 +109,7 @@ program
   .option("-v, --verbose", "Debug-level output", false)
   .option("--non-interactive", "Exit instead of prompting for credentials", false)
   .option("--skip-disk-check", "Skip the minimum free disk space check", false)
+  .option("--no-descriptions", "Skip description .md files and .url.txt — download binary/PDF files only", false)
   .action(async (opts: {
     outputDir?: string;
     courses?: string;
@@ -121,6 +122,7 @@ program
     verbose: boolean;
     nonInteractive: boolean;
     skipDiskCheck: boolean;
+    descriptions: boolean;  // commander negates --no-descriptions to descriptions=false
   }) => {
     const globalOpts = program.opts<{ debug: boolean }>();
     const config = new ConfigManager();
@@ -155,6 +157,7 @@ program
       quiet: opts.quiet,
       verbose: opts.verbose,
       metadata: opts.metadata,
+      noDescriptions: opts.descriptions === false,
       ...(!opts.nonInteractive ? { promptFn } : {}),
       ...withLogger(logger),
     };
@@ -275,8 +278,11 @@ config
   .action(async () => {
     const mgr = new ConfigManager();
     const all = await mgr.list();
+    const maxKeyLen = Math.max(...Object.keys(all).map((k) => k.length));
     for (const [k, v] of Object.entries(all)) {
-      process.stdout.write(`${k}=${v ?? ""}\n`);
+      const desc = CONFIG_DESCRIPTIONS[k as keyof typeof CONFIG_DESCRIPTIONS];
+      const descStr = desc ? `  # ${desc}` : "";
+      process.stdout.write(`${k.padEnd(maxKeyLen)}=${v ?? ""}${descStr}\n`);
     }
     await runUpdateCheck(mgr, pkg.version, false);
   });
@@ -319,7 +325,7 @@ program
 // --- clean ---
 program
   .command("clean")
-  .description("Delete or move user-added files from output folder")
+  .description("Delete or move personal files you added to the output folder (scraper files are never touched)")
   .option("--move", 'Move files to "User Files/" folder instead of deleting', false)
   .option("--dry-run", "Show what would happen without acting", false)
   .option("--force", "Skip confirmation prompt", false)
@@ -415,7 +421,7 @@ program
     try {
       await runArchive({
         outputDir,
-        courses: opts.courses,
+        ...(opts.courses !== undefined ? { courses: opts.courses } : {}),
         dryRun: opts.dryRun,
         force: opts.force,
         ...(!opts.force ? { promptFn: makePromptFn() } : {}),
