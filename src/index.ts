@@ -17,7 +17,7 @@ import { runClean } from "./commands/clean.js";
 import { runReset } from "./commands/reset.js";
 import { runWizard, shouldRunWizard } from "./commands/wizard.js";
 import { runTui } from "./commands/tui.js";
-import { checkForUpdate } from "./version-check.js";
+import { checkForUpdate, shouldCheck } from "./version-check.js";
 import { StateManager } from "./sync/state.js";
 import { matchCourses } from "./scraper/course-filter.js";
 
@@ -75,6 +75,23 @@ function withLogger(logger: Logger | undefined): { logger: Logger } | Record<nev
   return logger ? { logger } : {};
 }
 
+/**
+ * Check for a newer release on GitHub, respecting the configured cooldown.
+ * Updates lastUpdateCheckMs in config after each real network check.
+ * No-ops silently if disabled, on cooldown, or on any error.
+ */
+async function runUpdateCheck(config: ConfigManager, version: string, quiet: boolean): Promise<void> {
+  if ((await config.get("checkUpdates")) === false) return;
+  const lastMs = ((await config.get("lastUpdateCheckMs")) as number | undefined) ?? 0;
+  const intervalH = ((await config.get("updateCheckIntervalHours")) as number | undefined) ?? 24;
+  if (!shouldCheck(lastMs, intervalH)) return;
+  const newer = await checkForUpdate(version).catch(() => null);
+  await config.set("lastUpdateCheckMs", Date.now());
+  if (newer && !quiet) {
+    process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${version})\n      Update: npm install -g .\n`);
+  }
+}
+
 // --- scrape ---
 program
   .command("scrape")
@@ -111,9 +128,7 @@ program
     const logger = makeLogger(globalOpts.debug);
 
     // Fire update check early — resolved after command finishes (non-blocking)
-    const updateCheck = (await config.get("checkUpdates")) !== false
-      ? checkForUpdate(pkg.version).catch(() => null)
-      : Promise.resolve(null);
+    const updateCheckPromise = runUpdateCheck(config, pkg.version, opts.quiet);
 
     // First-run wizard
     if (await shouldRunWizard({ keychain, config })) {
@@ -158,10 +173,7 @@ program
       process.exit(code);
     }
 
-    const newer = await updateCheck;
-    if (newer && !opts.quiet) {
-      process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${pkg.version})\n      Update: npm install -g .\n`);
-    }
+    await updateCheckPromise;
   });
 
 // --- auth ---
@@ -176,6 +188,7 @@ auth
     const keychain = tryCreateKeychain();
     const httpClient = createHttpClient();
     const logger = makeLogger(globalOpts.debug);
+    const mgr = new ConfigManager();
     try {
       await runAuthSet({ keychain, promptFn: makePromptFn(), nonInteractive: opts.nonInteractive, httpClient, ...withLogger(logger) });
     } catch (err) {
@@ -183,6 +196,7 @@ auth
       process.stderr.write(`Error: ${(err as Error).message}\n`);
       process.exit(code);
     }
+    await runUpdateCheck(mgr, pkg.version, false);
   });
 
 auth
@@ -193,6 +207,7 @@ auth
     const keychain = tryCreateKeychain();
     const clearOpts: Parameters<typeof runAuthClear>[0] = { keychain, force: opts.force };
     if (!opts.force) clearOpts.promptFn = makePromptFn();
+    const mgr = new ConfigManager();
     try {
       await runAuthClear(clearOpts);
     } catch (err) {
@@ -200,6 +215,7 @@ auth
       process.stderr.write(`Error: ${(err as Error).message}\n`);
       process.exit(code);
     }
+    await runUpdateCheck(mgr, pkg.version, false);
   });
 
 auth
@@ -208,6 +224,7 @@ auth
   .action(async () => {
     const keychain = tryCreateKeychain();
     const httpClient = createHttpClient();
+    const mgr = new ConfigManager();
     try {
       await runAuthStatus({ keychain, httpClient });
     } catch (err) {
@@ -215,6 +232,7 @@ auth
       process.stderr.write(`Error: ${(err as Error).message}\n`);
       process.exit(code);
     }
+    await runUpdateCheck(mgr, pkg.version, false);
   });
 
 // --- config ---
@@ -234,7 +252,7 @@ config
   .description("Set a config value")
   .action(async (key: string, value: string) => {
     const mgr = new ConfigManager();
-    const numericKeys = ["minFreeDiskMb", "maxConcurrentDownloads", "requestDelayMs", "requestJitterMs"];
+    const numericKeys = ["minFreeDiskMb", "maxConcurrentDownloads", "requestDelayMs", "requestJitterMs", "retryBaseDelayMs", "updateCheckIntervalHours"];
     const coerced = numericKeys.includes(key) ? Number(value) : value;
     await mgr.set(key as Parameters<ConfigManager["set"]>[0], coerced as Parameters<ConfigManager["set"]>[1]);
   });
@@ -248,6 +266,7 @@ config
     for (const [k, v] of Object.entries(all)) {
       process.stdout.write(`${k}=${v ?? ""}\n`);
     }
+    await runUpdateCheck(mgr, pkg.version, false);
   });
 
 config
@@ -272,9 +291,6 @@ program
   .action(async (opts: { issues: boolean }) => {
     const mgr = new ConfigManager();
     const outputDir = (await mgr.get("outputDir")) as string;
-    const updateCheck = (await mgr.get("checkUpdates")) !== false
-      ? checkForUpdate(pkg.version).catch(() => null)
-      : Promise.resolve(null);
     try {
       await runStatus({ outputDir, showIssues: opts.issues });
     } catch (err) {
@@ -282,8 +298,7 @@ program
       process.stderr.write(`Error: ${(err as Error).message}\n`);
       process.exit(code);
     }
-    const newer = await updateCheck;
-    if (newer) process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${pkg.version})\n      Update: npm install -g .\n`);
+    await runUpdateCheck(mgr, pkg.version, false);
   });
 
 // --- clean ---
@@ -300,9 +315,6 @@ program
       process.stderr.write("Error: outputDir is not configured.\n");
       process.exit(EXIT_CODES.USAGE_ERROR);
     }
-    const updateCheck = (await mgr.get("checkUpdates")) !== false
-      ? checkForUpdate(pkg.version).catch(() => null)
-      : Promise.resolve(null);
     try {
       await runClean({
         outputDir,
@@ -316,8 +328,7 @@ program
       process.stderr.write(`Error: ${(err as Error).message}\n`);
       process.exit(code);
     }
-    const newer = await updateCheck;
-    if (newer) process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${pkg.version})\n      Update: npm install -g .\n`);
+    await runUpdateCheck(mgr, pkg.version, false);
   });
 
 // --- reset ---
@@ -335,9 +346,6 @@ program
       process.stderr.write("Error: outputDir is not configured.\n");
       process.exit(EXIT_CODES.USAGE_ERROR);
     }
-    const updateCheck = (await mgr.get("checkUpdates")) !== false
-      ? checkForUpdate(pkg.version).catch(() => null)
-      : Promise.resolve(null);
     try {
       await runReset({
         outputDir,
@@ -352,8 +360,7 @@ program
       process.stderr.write(`Error: ${(err as Error).message}\n`);
       process.exit(code);
     }
-    const newer = await updateCheck;
-    if (newer) process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${pkg.version})\n      Update: npm install -g .\n`);
+    await runUpdateCheck(mgr, pkg.version, false);
   });
 
 // --- tui ---
@@ -361,6 +368,7 @@ program
   .command("tui")
   .description("Launch interactive terminal UI")
   .action(async () => {
+    const mgr = new ConfigManager();
     try {
       await runTui({ promptFn: makePromptFn(), version: pkg.version });
     } catch (err) {
@@ -368,6 +376,7 @@ program
       process.stderr.write(`Error: ${(err as Error).message}\n`);
       process.exit(code);
     }
+    await runUpdateCheck(mgr, pkg.version, false);
   });
 
 // --- unknown command handler — REQ-CLI-011 ---

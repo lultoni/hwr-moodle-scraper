@@ -4,7 +4,7 @@
 // checkForUpdate uses global fetch which is mocked via vi.stubGlobal.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { parseSemver, isNewer, checkForUpdate } from "../../src/version-check.js";
+import { parseSemver, isNewer, checkForUpdate, shouldCheck } from "../../src/version-check.js";
 
 // ── parseSemver ───────────────────────────────────────────────────────────────
 
@@ -129,6 +129,40 @@ describe("checkForUpdate", () => {
   });
 });
 
+// ── shouldCheck ──────────────────────────────────────────────────────────────
+
+describe("shouldCheck", () => {
+  it("returns true when never checked (lastCheckMs = 0)", () => {
+    expect(shouldCheck(0, 24)).toBe(true);
+  });
+
+  it("returns false when checked just now (within cooldown)", () => {
+    expect(shouldCheck(Date.now(), 24)).toBe(false);
+  });
+
+  it("returns true when last check was 25h ago (past 24h cooldown)", () => {
+    expect(shouldCheck(Date.now() - 25 * 3_600_000, 24)).toBe(true);
+  });
+
+  it("returns false when last check was 10h ago (still in 24h cooldown)", () => {
+    expect(shouldCheck(Date.now() - 10 * 3_600_000, 24)).toBe(false);
+  });
+
+  it("returns true when intervalHours = 0 (always check)", () => {
+    expect(shouldCheck(Date.now(), 0)).toBe(true);
+  });
+
+  it("returns true when last check was exactly at interval boundary", () => {
+    // 24h ago exactly — should be eligible
+    expect(shouldCheck(Date.now() - 24 * 3_600_000, 24)).toBe(true);
+  });
+
+  it("respects custom interval (e.g. 1h)", () => {
+    expect(shouldCheck(Date.now() - 2 * 3_600_000, 1)).toBe(true);
+    expect(shouldCheck(Date.now() - 30 * 60_000, 1)).toBe(false);
+  });
+});
+
 // ── USER_EDITABLE_KEYS sanity check ──────────────────────────────────────────
 
 describe("Config: USER_EDITABLE_KEYS", () => {
@@ -140,5 +174,15 @@ describe("Config: USER_EDITABLE_KEYS", () => {
   it("includes checkUpdates (user-visible setting)", async () => {
     const { USER_EDITABLE_KEYS } = await import("../../src/config.js");
     expect(USER_EDITABLE_KEYS).toContain("checkUpdates");
+  });
+
+  it("includes updateCheckIntervalHours (user-visible setting)", async () => {
+    const { USER_EDITABLE_KEYS } = await import("../../src/config.js");
+    expect(USER_EDITABLE_KEYS).toContain("updateCheckIntervalHours");
+  });
+
+  it("does not include lastUpdateCheckMs (internal, not user-editable)", async () => {
+    const { USER_EDITABLE_KEYS } = await import("../../src/config.js");
+    expect(USER_EDITABLE_KEYS).not.toContain("lastUpdateCheckMs");
   });
 });

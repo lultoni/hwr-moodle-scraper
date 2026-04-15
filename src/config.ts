@@ -16,6 +16,10 @@ const DEFAULTS = {
   logHintShown: false as boolean,
   /** Set to false to suppress the GitHub update-available notification. */
   checkUpdates: true as boolean,
+  /** Hours between automatic update checks. 0 = check every run. Default 24h. */
+  updateCheckIntervalHours: 24 as number,
+  /** Unix timestamp (ms) of the last update check. Internal — not user-editable. */
+  lastUpdateCheckMs: 0 as number,
 } as const;
 
 export type ConfigKey = keyof typeof DEFAULTS;
@@ -35,14 +39,16 @@ export const USER_EDITABLE_KEYS: ConfigKey[] = [
   "retryBaseDelayMs",
   "logFile",
   "checkUpdates",
+  "updateCheckIntervalHours",
 ];
 
 const VALIDATION: Partial<Record<ConfigKey, { min: number; max: number }>> = {
-  requestDelayMs:         { min: 100,  max: 30_000 },
-  requestJitterMs:        { min: 0,    max: 10_000 },
-  maxConcurrentDownloads: { min: 1,    max: 20 },
-  minFreeDiskMb:          { min: 50,   max: 100_000 },
-  retryBaseDelayMs:       { min: 500,  max: 60_000 },
+  requestDelayMs:             { min: 100,  max: 30_000 },
+  requestJitterMs:            { min: 0,    max: 10_000 },
+  maxConcurrentDownloads:     { min: 1,    max: 20 },
+  minFreeDiskMb:              { min: 50,   max: 100_000 },
+  retryBaseDelayMs:           { min: 500,  max: 60_000 },
+  updateCheckIntervalHours:   { min: 0,    max: 8_760 },
 };
 
 export class ConfigManager {

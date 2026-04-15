@@ -15,20 +15,23 @@ const SHOW_CURSOR = "\u001b[?25h";
 
 /** Category labels for config keys */
 const CATEGORIES: Record<ConfigKey, string> = {
-  outputDir:              "Filesystem",
-  courseSearch:           "Filesystem",
-  minFreeDiskMb:          "Filesystem",
-  logFile:                "Filesystem",
-  maxConcurrentDownloads: "Network",
-  requestDelayMs:         "Network",
-  requestJitterMs:        "Network",
-  retryBaseDelayMs:       "Network",
-  checkUpdates:           "Notifications",
-  logHintShown:           "Internal",
+  outputDir:                    "Filesystem",
+  courseSearch:                 "Filesystem",
+  minFreeDiskMb:                "Filesystem",
+  logFile:                      "Filesystem",
+  maxConcurrentDownloads:       "Network",
+  requestDelayMs:               "Network",
+  requestJitterMs:              "Network",
+  retryBaseDelayMs:             "Network",
+  checkUpdates:                 "Notifications",
+  updateCheckIntervalHours:     "Notifications",
+  logHintShown:                 "Internal",
+  lastUpdateCheckMs:            "Internal",
 };
 
 const NUMERIC_KEYS: ConfigKey[] = [
   "minFreeDiskMb", "maxConcurrentDownloads", "requestDelayMs", "requestJitterMs", "retryBaseDelayMs",
+  "updateCheckIntervalHours",
 ];
 
 const BOOL_KEYS: ConfigKey[] = ["checkUpdates"];

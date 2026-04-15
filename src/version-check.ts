@@ -28,6 +28,17 @@ export function isNewer(current: [number, number, number], candidate: [number, n
 }
 
 /**
+ * Determine whether an update check should run based on the last check time and interval.
+ *
+ * @param lastCheckMs  Unix timestamp (ms) of the last successful check. 0 = never checked.
+ * @param intervalHours  Minimum hours between checks. 0 = always check.
+ */
+export function shouldCheck(lastCheckMs: number, intervalHours: number): boolean {
+  if (intervalHours === 0) return true;
+  return Date.now() - lastCheckMs >= intervalHours * 3_600_000;
+}
+
+/**
  * Check GitHub Releases for a version newer than `currentVersion`.
  * Returns the newer version string (without leading "v") if one is found, null otherwise.
  * Always resolves — never rejects.
