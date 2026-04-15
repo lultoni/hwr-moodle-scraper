@@ -9,6 +9,8 @@ import { runScrape } from "../../commands/scrape.js";
 import { readKey } from "../keys.js";
 import { render, paginate, type RenderItem } from "../renderer.js";
 import { SCRAPE_BOOL_OPTIONS } from "../options-registry.js";
+import { StateManager } from "../../sync/state.js";
+import { matchCourses } from "../../scraper/course-filter.js";
 import type { PromptFn } from "../../auth/prompt.js";
 
 const HIDE_CURSOR = "\u001b[?25l";
@@ -29,13 +31,13 @@ const MODES: Mode[] = [
   { value: "dry",    label: "Dry-run — plan without downloading",  flag: "--dry-run" },
 ];
 
-function buildCliCommand(mode: Mode, boolState: Record<string, boolean>, coursesFilter?: number[]): string {
+function buildCliCommand(mode: Mode, boolState: Record<string, boolean>, coursesKeywords?: string): string {
   const parts = ["msc scrape"];
   if (mode.flag) parts.push(mode.flag);
   for (const opt of SCRAPE_BOOL_OPTIONS) {
     if (boolState[opt.key]) parts.push(`--${opt.key.replace(/([A-Z])/g, "-$1").toLowerCase()}`);
   }
-  if (coursesFilter && coursesFilter.length > 0) parts.push(`--courses ${coursesFilter.join(",")}`);
+  if (coursesKeywords) parts.push(`--courses "${coursesKeywords}"`);
   return parts.join(" ");
 }
 
@@ -44,7 +46,7 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
   for (const opt of SCRAPE_BOOL_OPTIONS) boolState[opt.key] = opt.default;
 
   let modeIdx = 0;
-  let coursesFilter: number[] | undefined;
+  let coursesKeywords: string | undefined;
   // focusedRow: 0..MODES.length-1 = mode rows, MODES.length..MODES.length+SCRAPE_BOOL_OPTIONS.length-1 = toggles,
   // then "courses" row, then "Run" row
   const modCount = MODES.length;
@@ -66,7 +68,7 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
       items.push({ type: "toggle", label: opt.label, checked: boolState[opt.key]!, focused: focused === modCount + i });
     }
     items.push({ type: "blank" });
-    const coursesTxt = coursesFilter ? coursesFilter.join(", ") : "all courses";
+    const coursesTxt = coursesKeywords ? `"${coursesKeywords}"` : "all courses";
     items.push({ type: "selector", label: `Courses: ${coursesTxt}`, focused: focused === modCount + optCount });
     items.push({ type: "blank" });
     items.push({ type: "selector", label: "→  Run Scrape", focused: focused === modCount + optCount + 1 });
@@ -119,24 +121,23 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
             for (const k of opt.mutuallyExclusive) boolState[k] = false;
           }
         } else if (focused === modCount + optCount) {
-          // Courses picker
+          // Courses keyword picker — toggle off if already set, prompt if not
           process.stdout.write(SHOW_CURSOR);
           clearTimeout(resizeTimer);
           process.stdout.removeListener("resize", onResize);
-          if (coursesFilter) {
-            coursesFilter = undefined;
+          if (coursesKeywords) {
+            coursesKeywords = undefined;
           } else {
-            process.stdout.write("\nCourse IDs (comma-separated, e.g. 12345,67890): ");
+            process.stdout.write("\nCourse keywords (comma-separated, e.g. OOP, Datenbank): ");
             const input = await promptFn("");
-            const ids = input.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
-            coursesFilter = ids.length > 0 ? ids : undefined;
+            coursesKeywords = input.trim() || undefined;
           }
           process.stdout.write(HIDE_CURSOR);
           process.stdout.on("resize", onResize);
         } else {
           // Run — show confirmation
           const mode = MODES[modeIdx]!;
-          const cliCmd = buildCliCommand(mode, boolState, coursesFilter);
+          const cliCmd = buildCliCommand(mode, boolState, coursesKeywords);
 
           const confirmed = await showConfirm(version, "── Scrape — Confirm ──", cliCmd, promptFn);
           if (!confirmed) { draw(); continue; }
@@ -144,6 +145,15 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
           clearTimeout(resizeTimer);
           process.stdout.removeListener("resize", onResize);
           process.stdout.write(SHOW_CURSOR);
+
+          // Resolve keyword filter → numeric course IDs via state
+          let resolvedCourses: number[] | undefined;
+          if (coursesKeywords) {
+            const state = await new StateManager(outputDir).load();
+            const { ids, unmatched } = matchCourses(coursesKeywords, state);
+            if (unmatched.length) process.stderr.write(`[msc] No courses matched: ${unmatched.join(", ")}\n`);
+            if (ids.length > 0) resolvedCourses = ids;
+          }
 
           try {
             await runScrape({
@@ -155,7 +165,7 @@ export async function scrapeScreen(outputDir: string, promptFn: PromptFn, versio
               quiet: boolState["quiet"] ?? false,
               skipDiskCheck: boolState["skipDiskCheck"] ?? false,
               metadata: boolState["metadata"] ?? false,
-              ...(coursesFilter !== undefined && { courses: coursesFilter }),
+              ...(resolvedCourses !== undefined && { courses: resolvedCourses }),
             });
           } catch (err) {
             process.stderr.write(`Error: ${(err as Error).message}\n`);

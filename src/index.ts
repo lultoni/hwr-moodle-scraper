@@ -18,6 +18,8 @@ import { runReset } from "./commands/reset.js";
 import { runWizard, shouldRunWizard } from "./commands/wizard.js";
 import { runTui } from "./commands/tui.js";
 import { checkForUpdate } from "./version-check.js";
+import { StateManager } from "./sync/state.js";
+import { matchCourses } from "./scraper/course-filter.js";
 
 // Global error handlers — prevent unredacted stack traces from leaking sensitive data
 process.on("uncaughtException", (err) => {
@@ -78,7 +80,8 @@ program
   .command("scrape")
   .description("Download / sync Moodle content to local folder")
   .option("--output-dir <path>", "Override output directory for this run")
-  .option("--courses <ids>", "Comma-separated course IDs to scrape")
+  .option("--courses <keywords>", "Comma-separated keywords to filter courses (fuzzy match against course names)")
+  .option("--course-ids <ids>", "Comma-separated numeric course IDs to scrape (exact match)")
   .option("--force", "Re-download everything, ignoring cached state", false)
   .option("--check-files", "Re-download any files missing from disk (even if state says up-to-date)", false)
   .option("--dry-run", "Print planned actions without writing files", false)
@@ -90,6 +93,7 @@ program
   .action(async (opts: {
     outputDir?: string;
     courses?: string;
+    courseIds?: string;
     force: boolean;
     checkFiles: boolean;
     dryRun: boolean;
@@ -137,7 +141,14 @@ program
       ...(!opts.nonInteractive ? { promptFn } : {}),
       ...withLogger(logger),
     };
-    if (opts.courses) scrapeOpts.courses = opts.courses.split(",").map(Number);
+    if (opts.courseIds) {
+      scrapeOpts.courses = opts.courseIds.split(",").map(Number).filter((n) => !isNaN(n));
+    } else if (opts.courses) {
+      const state = await new StateManager(outputDir).load();
+      const { ids, unmatched } = matchCourses(opts.courses, state);
+      if (unmatched.length) process.stderr.write(`[msc] No courses matched: ${unmatched.join(", ")}\n`);
+      if (ids.length > 0) scrapeOpts.courses = ids;
+    }
 
     try {
       await runScrape(scrapeOpts);
