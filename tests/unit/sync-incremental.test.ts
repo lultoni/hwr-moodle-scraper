@@ -218,3 +218,85 @@ describe("STEP-017: --dry-run flag", () => {
     expect(plan.some((a) => a.action === SyncAction.DOWNLOAD)).toBe(true);
   });
 });
+
+describe("STEP-017: hash system mismatch — SHA-256 vs Moodle data-hash (Pass 42 fix)", () => {
+  // Root cause: fileState.hash stores SHA-256 (64 hex chars) for downloaded binary files,
+  // but activity.hash is Moodle's opaque data-hash token (short string). Comparing them
+  // directly always returns "not equal" → false DOWNLOAD every run.
+
+  const sha256 = "a".repeat(64); // valid SHA-256: 64 lowercase hex chars
+
+  it("returns SKIP when fileState.hash is SHA-256 and activity.hash is a Moodle token", () => {
+    // This is the Dockerfile.base / sshd_config scenario: file was downloaded (SHA-256 stored),
+    // but Moodle HTML has a data-hash token → previously always triggered re-download
+    const stateFile = {
+      courses: { "1": { name: "IT-Sec", sections: { "s1": { files: {
+        "r1": { ...makeFile("r1", sha256), localPath: "/out/Dockerfile.base" },
+      } } } } },
+    };
+    const currentTree = {
+      courseId: 1,
+      sections: [{ sectionId: "s1", sectionName: "Weitere Ressourcen", activities: [{
+        activityType: "resource",
+        resourceId: "r1",
+        activityName: "Dockerfile.base",
+        url: "https://moodle.example.com/r/r1",
+        hash: "moodle-token-abc123",  // Moodle data-hash token, NOT a SHA-256
+        isAccessible: true,
+      }] }],
+    };
+
+    const plan = computeSyncPlan({ state: stateFile, currentTree: [currentTree], force: false });
+    const downloads = plan.filter((a) => a.action === SyncAction.DOWNLOAD);
+    expect(downloads).toHaveLength(0); // must NOT re-download
+  });
+
+  it("returns SKIP when both hashes are Moodle tokens and they match", () => {
+    // Acknowledged items (labels, info-md) store Moodle data-hash in state — comparison still works
+    const stateFile = {
+      courses: { "1": { name: "Course", sections: { "s1": { files: {
+        "r1": { ...makeFile("r1", "moodle-token-xyz"), localPath: "/out/label.md" },
+      } } } } },
+    };
+    const currentTree = {
+      courseId: 1,
+      sections: [{ sectionId: "s1", sectionName: "S1", activities: [{
+        activityType: "label",
+        resourceId: "r1",
+        activityName: "label",
+        url: "",
+        hash: "moodle-token-xyz",
+        isAccessible: true,
+      }] }],
+    };
+
+    const plan = computeSyncPlan({ state: stateFile, currentTree: [currentTree], force: false });
+    const downloads = plan.filter((a) => a.action === SyncAction.DOWNLOAD);
+    expect(downloads).toHaveLength(0);
+  });
+
+  it("returns DOWNLOAD when both hashes are Moodle tokens and they differ", () => {
+    // Moodle changed the file — data-hash changed → must re-download
+    const stateFile = {
+      courses: { "1": { name: "Course", sections: { "s1": { files: {
+        "r1": { ...makeFile("r1", "old-token"), localPath: "/out/label.md" },
+      } } } } },
+    };
+    const currentTree = {
+      courseId: 1,
+      sections: [{ sectionId: "s1", sectionName: "S1", activities: [{
+        activityType: "label",
+        resourceId: "r1",
+        activityName: "label",
+        url: "",
+        hash: "new-token",  // data-hash changed on Moodle
+        isAccessible: true,
+      }] }],
+    };
+
+    const plan = computeSyncPlan({ state: stateFile, currentTree: [currentTree], force: false });
+    const downloads = plan.filter((a) => a.action === SyncAction.DOWNLOAD);
+    expect(downloads).toHaveLength(1);
+    expect(downloads[0]?.resourceId).toBe("r1");
+  });
+});

@@ -38,6 +38,16 @@ interface PartialStateInput {
   }>;
 }
 
+/**
+ * Returns true if the hash string is a SHA-256 hex digest (64 lowercase hex chars).
+ * Used to distinguish SHA-256 digests (computed from local file content) from
+ * Moodle's opaque data-hash tokens (short strings used as change markers).
+ * These two systems must not be compared directly.
+ */
+function isSha256(h: string): boolean {
+  return /^[0-9a-f]{64}$/.test(h);
+}
+
 export function computeSyncPlan(opts: ComputeSyncPlanOptions): SyncPlanItem[] {
   const { state, currentTree, force, checkFiles = false, dryRun = false } = opts;
   const plan: SyncPlanItem[] = [];
@@ -66,7 +76,10 @@ export function computeSyncPlan(opts: ComputeSyncPlanOptions): SyncPlanItem[] {
 
         const needsDownload = force
           || !fileState
-          || (activity.hash && fileState.hash !== activity.hash)
+          // Moodle data-hash comparison: only valid when fileState.hash is also a Moodle token
+          // (not a SHA-256). SHA-256 and Moodle tokens are different systems — comparing them
+          // directly always returns "not equal" and triggers false re-downloads every run.
+          || (activity.hash && !isSha256(fileState.hash ?? "") && fileState.hash !== activity.hash)
           || (checkFiles && fileState.localPath && !existsSync(fileState.localPath))
           || (checkFiles && fileState.localPath && fileState.hash
               && existsSync(fileState.localPath)
