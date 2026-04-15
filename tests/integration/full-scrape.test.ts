@@ -54,6 +54,12 @@ describe("Integration: full scrape pipeline", () => {
     mockAgent.get(BASE).intercept({ path: "/my/", method: "GET" })
       .reply(200, "<html><body>Dashboard</body></html>", { headers: { "content-type": "text/html" } });
 
+    // fetchEnrolledCourses: second /my/ hit (no sesskey) + static fallback
+    mockAgent.get(BASE).intercept({ path: "/my/", method: "GET" })
+      .reply(200, "<html><body>Dashboard</body></html>", { headers: { "content-type": "text/html" } });
+    mockAgent.get(BASE).intercept({ path: /\/my\/courses\.php/, method: "GET" })
+      .reply(200, "<html><body></body></html>", { headers: { "content-type": "text/html" } });
+
     // Course list via search page
     mockAgent.get(BASE).intercept({ path: /\/course\/search\.php/, method: "GET" })
       .reply(200, `

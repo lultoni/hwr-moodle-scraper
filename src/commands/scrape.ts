@@ -131,13 +131,18 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Course search query from config (e.g. "WI24A")
   const searchQuery = (await config.get("courseSearch")) as string | undefined;
 
-  // Course list — prefer dashboard (all enrolled courses) over search query
+  // Course list — fetch all enrolled courses first so real names (with WI#### codes) are available.
+  // When --courses filter is set, we still need the real names for correct semester-folder mapping.
   opts.onPhase?.("start", "Fetching courses...");
+  const allCourses: Course[] = searchQuery
+    ? await fetchCourseList({ baseUrl, sessionCookies, searchQuery })
+    : await fetchEnrolledCourses({ baseUrl, sessionCookies });
   const courses: Course[] = opts.courses
-    ? opts.courses.map((id) => ({ courseId: id, courseName: String(id), courseUrl: `${baseUrl}/course/view.php?id=${id}` }))
-    : searchQuery
-      ? await fetchCourseList({ baseUrl, sessionCookies, searchQuery })
-      : await fetchEnrolledCourses({ baseUrl, sessionCookies });
+    ? opts.courses.map((id) => {
+        const found = allCourses.find((c) => c.courseId === id);
+        return found ?? { courseId: id, courseName: String(id), courseUrl: `${baseUrl}/course/view.php?id=${id}` };
+      })
+    : allCourses;
   opts.onPhase?.("end", "Fetching courses...");
 
   if (courses.length === 0) {

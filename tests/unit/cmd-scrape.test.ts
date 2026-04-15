@@ -147,3 +147,54 @@ describe("STEP-020: scrape — config-driven UX improvements", () => {
     stderrSpy.mockRestore();
   });
 });
+
+describe("STEP-020: scrape --courses filter", () => {
+  // REQ-CLI-002 — --courses must use real enrolled course names (not placeholder numeric IDs)
+  it("fetches enrolled courses and filters to matching IDs when --courses is set", async () => {
+    const { fetchEnrolledCourses } = await import("../../src/scraper/courses.js");
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI24A Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+      { courseId: 2, courseName: "WI24B Micro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=2" },
+    ]);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, courses: [1] });
+    stderrSpy.mockRestore();
+
+    // fetchEnrolledCourses must be called even when --courses is specified
+    expect(vi.mocked(fetchEnrolledCourses)).toHaveBeenCalled();
+  });
+
+  it("uses real course name (with WI#### code) for filtered course — not numeric placeholder", async () => {
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 98824, courseName: "WI3042 Prozessmodellierung", courseUrl: "https://moodle.example.com/course/view.php?id=98824" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({ courseId: 98824, sections: [] });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, courses: [98824] });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+
+    // Output must mention the real course name, not just the numeric ID
+    expect(output).not.toContain('"98824"');
+    expect(vi.mocked(fetchContentTree)).toHaveBeenCalledWith(
+      expect.objectContaining({ courseId: 98824 })
+    );
+  });
+
+  it("falls back to numeric placeholder when ID not found in enrolled list", async () => {
+    const { fetchEnrolledCourses } = await import("../../src/scraper/courses.js");
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI24A Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    // courseId 999 not in enrolled list — should not throw
+    await expect(
+      runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, courses: [999] })
+    ).resolves.toBeUndefined();
+    stderrSpy.mockRestore();
+  });
+});

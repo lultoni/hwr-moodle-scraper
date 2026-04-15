@@ -39,8 +39,15 @@ vi.mock("../../src/auth/keychain.js", () => {
 const BASE = "https://moodle.example.com";
 
 function setupMocks(fileHash: string) {
+  // Session validation: GET /my/
   mockAgent.get(BASE).intercept({ path: "/my/", method: "GET" })
     .reply(200, "<html><body>Dashboard</body></html>", { headers: { "content-type": "text/html" } });
+
+  // fetchEnrolledCourses: GET /my/ (second hit — no sesskey → falls back to /my/courses.php)
+  mockAgent.get(BASE).intercept({ path: "/my/", method: "GET" })
+    .reply(200, "<html><body>Dashboard</body></html>", { headers: { "content-type": "text/html" } });
+  mockAgent.get(BASE).intercept({ path: /\/my\/courses\.php/, method: "GET" })
+    .reply(200, "<html><body></body></html>", { headers: { "content-type": "text/html" } });
 
   mockAgent.get(BASE).intercept({ path: "/course/view.php?id=1", method: "GET" })
     .reply(200, `
@@ -114,6 +121,11 @@ describe("Integration: incremental sync", () => {
     // First run
     mockAgent.get(BASE).intercept({ path: "/my/", method: "GET" })
       .reply(200, "<html><body>Dashboard</body></html>", { headers: { "content-type": "text/html" } });
+    // fetchEnrolledCourses second /my/ hit + fallback
+    mockAgent.get(BASE).intercept({ path: "/my/", method: "GET" })
+      .reply(200, "<html><body>Dashboard</body></html>", { headers: { "content-type": "text/html" } });
+    mockAgent.get(BASE).intercept({ path: /\/my\/courses\.php/, method: "GET" })
+      .reply(200, "<html><body></body></html>", { headers: { "content-type": "text/html" } });
     mockAgent.get(BASE).intercept({ path: "/course/view.php?id=1", method: "GET" })
       .reply(200, courseHtml, { headers: { "content-type": "text/html" } });
     mockAgent.get(BASE).intercept({ path: "/mod/resource/view.php?id=10", method: "GET" })
@@ -134,6 +146,11 @@ describe("Integration: incremental sync", () => {
     // Second run — assign and resource should both be SKIP
     mockAgent.get(BASE).intercept({ path: "/my/", method: "GET" })
       .reply(200, "<html><body>Dashboard</body></html>", { headers: { "content-type": "text/html" } });
+    // fetchEnrolledCourses second /my/ hit + fallback
+    mockAgent.get(BASE).intercept({ path: "/my/", method: "GET" })
+      .reply(200, "<html><body>Dashboard</body></html>", { headers: { "content-type": "text/html" } });
+    mockAgent.get(BASE).intercept({ path: /\/my\/courses\.php/, method: "GET" })
+      .reply(200, "<html><body></body></html>", { headers: { "content-type": "text/html" } });
     mockAgent.get(BASE).intercept({ path: "/course/view.php?id=1", method: "GET" })
       .reply(200, courseHtml, { headers: { "content-type": "text/html" } });
     // No download mocks — any download attempt will throw (disableNetConnect)
