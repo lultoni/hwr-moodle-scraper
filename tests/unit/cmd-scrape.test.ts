@@ -615,3 +615,35 @@ describe("T-8: scrape --json output mode", () => {
     expect(typeof result.skipped).toBe("number");
   });
 });
+
+// ── T-18: --fast flag ─────────────────────────────────────────────────────────
+
+describe("T-18: --fast flag", () => {
+  it("--fast resolves without error", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await expect(runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, fast: true })).resolves.toBeUndefined();
+    stderrSpy.mockRestore();
+  });
+
+  it("--fast prints [fast mode] info message to stderr", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, fast: true });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+    expect(output).toContain("[fast mode]");
+  });
+
+  it("--fast with --dry-run resolves without error (warning emitted, no crash)", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await expect(runScrape({ outputDir: "/tmp/test", dryRun: true, force: false, fast: true })).resolves.toBeUndefined();
+    stderrSpy.mockRestore();
+  });
+
+  it("--fast with --quiet does not print [fast mode] message", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, fast: true, quiet: true });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+    expect(output).not.toContain("[fast mode]");
+  });
+});

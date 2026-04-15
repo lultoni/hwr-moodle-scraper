@@ -258,6 +258,36 @@ describe("SCRAPE_BOOL_OPTIONS", () => {
   });
 });
 
+// ─── T-18: CONFIG_DESCRIPTIONS coverage ──────────────────────────────────────
+
+import { CONFIG_DESCRIPTIONS } from "../../src/config.js";
+
+describe("T-18: CONFIG_DESCRIPTIONS", () => {
+  it("has a description for every USER_EDITABLE_KEY", () => {
+    for (const key of USER_EDITABLE_KEYS) {
+      expect(CONFIG_DESCRIPTIONS).toHaveProperty(key);
+      expect(typeof CONFIG_DESCRIPTIONS[key]).toBe("string");
+      expect((CONFIG_DESCRIPTIONS[key] as string).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("outputDir description mentions 'folder' or 'directory'", () => {
+    const desc = CONFIG_DESCRIPTIONS.outputDir ?? "";
+    expect(desc.toLowerCase()).toMatch(/folder|directory/);
+  });
+
+  it("maxConcurrentDownloads description mentions 'parallel' or 'concurrent'", () => {
+    const desc = CONFIG_DESCRIPTIONS.maxConcurrentDownloads ?? "";
+    expect(desc.toLowerCase()).toMatch(/parallel|concurrent/);
+  });
+
+  it("descriptions are short enough to fit in a terminal line (under 80 chars)", () => {
+    for (const [key, desc] of Object.entries(CONFIG_DESCRIPTIONS)) {
+      expect((desc ?? "").length).toBeLessThanOrEqual(80);
+    }
+  });
+});
+
 // ─── USER_EDITABLE_KEYS ──────────────────────────────────────────────────────
 
 describe("USER_EDITABLE_KEYS", () => {

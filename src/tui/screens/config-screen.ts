@@ -4,7 +4,7 @@
  * Derives keys from USER_EDITABLE_KEYS (single source of truth in config.ts).
  */
 
-import { ConfigManager, USER_EDITABLE_KEYS, type ConfigKey, type ConfigValue } from "../../config.js";
+import { ConfigManager, USER_EDITABLE_KEYS, CONFIG_DESCRIPTIONS, type ConfigKey, type ConfigValue } from "../../config.js";
 import { readKey } from "../keys.js";
 import { render, paginate, HIDE_CURSOR, SHOW_CURSOR, CLEAR, APP_TITLE, type RenderItem } from "../renderer.js";
 import type { PromptFn } from "../../auth/prompt.js";
@@ -65,11 +65,15 @@ export async function configScreen(promptFn: PromptFn, version: string): Promise
         renderItems.push({ type: "text", content: `── ${cat} ────────────────────────` });
         for (const key of keys) {
           const val = formatValue(all[key] ?? null);
+          const desc = CONFIG_DESCRIPTIONS[key];
           renderItems.push({
             type: "selector",
             label: `${key.padEnd(26)} ${val}`,
             focused: fIdx === focusableKeys.length,
           });
+          if (desc) {
+            renderItems.push({ type: "text", content: `   ${desc}` });
+          }
           focusableKeys.push(key);
         }
         renderItems.push({ type: "blank" });
@@ -153,6 +157,8 @@ export async function configScreen(promptFn: PromptFn, version: string): Promise
 
     const current = formatValue(all[selectedKey] ?? null);
     process.stdout.write(CLEAR);
+    const desc = CONFIG_DESCRIPTIONS[selectedKey];
+    if (desc) process.stdout.write(`  ${desc}\n\n`);
     process.stdout.write(`Editing: ${selectedKey}\nCurrent: ${current}\n\n`);
 
     if (BOOL_KEYS.includes(selectedKey)) {

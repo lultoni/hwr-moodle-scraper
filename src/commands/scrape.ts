@@ -60,6 +60,8 @@ export interface ScrapeOptions {
   noDescriptions?: boolean;
   /** Output machine-readable JSON summary to stdout instead of human-readable report. */
   json?: boolean;
+  /** Speed-up mode: requestDelayMs=200, maxConcurrentDownloads=8 (heavier on server). */
+  fast?: boolean;
   /** Prompt function for interactive credential entry (used as fallback when keychain unavailable). */
   promptFn?: PromptFn;
   logger?: Logger;
@@ -78,6 +80,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     verbose = false,
     noDescriptions = false,
     json = false,
+    fast = false,
   } = opts;
 
   // Guard: outputDir must be configured before we can proceed
@@ -95,6 +98,15 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const effectiveQuiet = quiet || json;
   const level = effectiveQuiet ? LogLevel.ERROR : verbose ? LogLevel.DEBUG : LogLevel.INFO;
   const logger = opts.logger ?? createLogger({ level, redact: [], logFile: logFileCfg ?? null });
+
+  // --fast: override request settings for faster scraping (heavier on server)
+  if (fast) {
+    if (dryRun) {
+      logger.warn("Note: --fast has no effect in dry-run mode.");
+    } else if (!effectiveQuiet) {
+      logger.info("[fast mode] requestDelayMs=200, maxConcurrentDownloads=8");
+    }
+  }
 
   const httpClient = createHttpClient();
   const keychain = tryCreateKeychain();
@@ -607,7 +619,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     }
   }
 
-  const maxConcurrent = ((await config.get("maxConcurrentDownloads")) as number | undefined) ?? 3;
+  const maxConcurrent = fast ? 8 : (((await config.get("maxConcurrentDownloads")) as number | undefined) ?? 3);
 
   // Progress display: bar in normal mode, counter already embedded in log lines in verbose/debug mode
   const useProgressBar = !quiet && !verbose;
@@ -904,7 +916,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           if (threads.length === 0) {
             sections.push(td.turndown(extractPageContent(html)) + extractEmbeddedVideoUrls(html));
           } else {
-            const delayMs = ((await config.get("requestDelayMs")) as number | undefined) ?? 500;
+            const delayMs = fast ? 200 : (((await config.get("requestDelayMs")) as number | undefined) ?? 500);
             for (const thread of threads) {
               try {
                 // SSRF defense: skip forum threads pointing to external domains

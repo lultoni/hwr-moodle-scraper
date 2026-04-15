@@ -95,6 +95,7 @@ program
   .option("--skip-disk-check", "Skip the minimum free disk space check", false)
   .option("--no-descriptions", "Skip description .md files and .url.txt — download binary/PDF files only", false)
   .option("--json", "Output machine-readable JSON summary to stdout", false)
+  .option("--fast", "Speed up: requestDelayMs=200, maxConcurrentDownloads=8 (heavier on server)", false)
   .action(async (opts: {
     outputDir?: string;
     courses?: string;
@@ -109,6 +110,7 @@ program
     skipDiskCheck: boolean;
     descriptions: boolean;  // commander negates --no-descriptions to descriptions=false
     json: boolean;
+    fast: boolean;
   }) => {
     const globalOpts = program.opts<{ debug: boolean }>();
     const config = new ConfigManager();
@@ -145,6 +147,7 @@ program
       metadata: opts.metadata,
       noDescriptions: opts.descriptions === false,
       json: opts.json,
+      fast: opts.fast,
       ...(!opts.nonInteractive ? { promptFn } : {}),
       ...withLogger(logger),
     };
