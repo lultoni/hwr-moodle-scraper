@@ -16,7 +16,7 @@ import { sanitiseFilename } from "../fs/sanitise.js";
 import { extractForumThreadUrls, extractPageContent, extractEmbeddedVideoUrls } from "../scraper/forum.js";
 import { extractAssignmentFeedback } from "../scraper/assign.js";
 import { DownloadQueue, type DownloadItem } from "../scraper/downloader.js";
-import { writeUrlFile } from "../scraper/content-types.js";
+import { writeUrlFile, writeWeblocFile, writeWindowsUrlFile } from "../scraper/content-types.js";
 import { filterSidecars, type SidecarItem } from "../scraper/sidecar-filter.js";
 import { createTurndown } from "../scraper/turndown.js";
 import { EXIT_CODES } from "../exit-codes.js";
@@ -25,6 +25,7 @@ import { isSameOrigin } from "../http/url-guard.js";
 import { mkdirSync } from "node:fs";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { writeFile } from "node:fs/promises";
+import { platform } from "node:os";
 
 /** Escape markdown link special characters to prevent injection. */
 function escapeMarkdownLink(text: string): string {
@@ -260,6 +261,62 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         for (const imgPath of imgResult.imagePaths) generatedFiles.push(imgPath);
       }
     }
+  }
+
+  // Write _README.md to output root (UC-06/23) — refreshed each run, always current
+  if (!dryRun) {
+    const rootReadmePath = join(outputDir, "_README.md");
+    mkdirSync(outputDir, { recursive: true });
+    const rootReadmeContent = [
+      `# HWR Moodle — Scraped Files`,
+      ``,
+      `This folder contains files downloaded from HWR Berlin's Moodle LMS by **msc** (HWR Moodle Scraper).`,
+      ``,
+      `## Folder Structure`,
+      ``,
+      `Files are organised as:`,
+      `\`\`\``,
+      `Semester_N/`,
+      `  Course_Name/`,
+      `    Section_Name/`,
+      `      file.pdf          ← downloaded resource`,
+      `      file.description.md  ← activity description`,
+      `      link.url.txt      ← external link`,
+      `      link.webloc       ← macOS shortcut (double-click to open)`,
+      `      _SectionDescription.md  ← section summary`,
+      `\`\`\``,
+      ``,
+      `## File Types`,
+      ``,
+      `| Extension | Description |`,
+      `|-----------|-------------|`,
+      `| \`.pdf\`, \`.docx\`, \`.zip\`, … | Downloaded course files |`,
+      `| \`.md\` | Markdown text — open with any text editor or Markdown viewer |`,
+      `| \`.url.txt\` | External link — contains the URL |`,
+      `| \`.webloc\` | macOS URL shortcut — double-click to open in browser |`,
+      `| \`.url\` | Windows URL shortcut — double-click to open in browser |`,
+      ``,
+      `## Your Own Files`,
+      ``,
+      `Place personal notes and files in a \`_User-Files/\` folder here. This folder is`,
+      `never touched by \`msc\` — its contents are protected from cleanup operations.`,
+      ``,
+      `## Commands`,
+      ``,
+      `| Command | Description |`,
+      `|---------|-------------|`,
+      `| \`msc scrape\` | Download new and updated files |`,
+      `| \`msc status\` | Show sync summary |`,
+      `| \`msc status --changed\` | List files changed in the last run |`,
+      `| \`msc status --issues\` | Check for missing files or old entries |`,
+      `| \`msc clean\` | Remove personal files not managed by scraper |`,
+      `| \`msc reset\` | Clear sync state (files kept) |`,
+      ``,
+    ].join("\n");
+    try {
+      await atomicWrite(rootReadmePath, Buffer.from(rootReadmeContent, "utf8"));
+      generatedFiles.push(rootReadmePath);
+    } catch { /* best-effort — don't fail scrape for README write error */ }
   }
 
   // Expand folders: replace folder activities with their contained files
@@ -719,6 +776,20 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         await writeUrlFile(destPath, item.url!, { name: label, description });
         // url-txt: content is not buffered through atomicWrite, so specialItemHashes[si] stays "".
         // The file is still tracked via allDownloadedItems → FileState.localPath (no hash comparison).
+        // Also write a platform-native URL shortcut alongside the .url.txt file
+        if (!dryRun) {
+          const nativePath = destPath.replace(/\.url\.txt$/, platform() === "darwin" ? ".webloc" : platform() === "win32" ? ".url" : "");
+          if (nativePath !== destPath) {
+            try {
+              if (platform() === "darwin") {
+                writeWeblocFile(nativePath, item.url!);
+              } else {
+                writeWindowsUrlFile(nativePath, item.url!);
+              }
+              generatedFiles.push(nativePath);
+            } catch { /* best-effort */ }
+          }
+        }
       } else if (strategy === "page-md") {
         // SSRF defense: validate URL is on the Moodle domain before fetching with session cookies
         if (!isSameOrigin(item.url!, baseUrl)) {
@@ -850,8 +921,12 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           specialItemImagePaths[si] = imgResult.imagePaths;
         }
         const buf = Buffer.from(content, "utf8");
-        const { hash } = await atomicWrite(destPath, buf);
-        specialItemHashes[si] = hash;
+        const writeResult = await atomicWrite(destPath, buf);
+        if (writeResult.failed) {
+          logger.warn(`  Warning: could not write ${destPath} — file may be locked by OneDrive/iCloud sync. Skipping.`);
+          continue;
+        }
+        specialItemHashes[si] = writeResult.hash;
       }
       if (specialItems[si]!.isSidecar) {
         sidecarCount++;

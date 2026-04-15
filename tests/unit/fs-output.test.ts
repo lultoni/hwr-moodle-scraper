@@ -289,3 +289,35 @@ describe("Security: atomicWrite — file permissions", () => {
     expect(mode).toBe(0o600);
   });
 });
+
+// UC-11: EPERM/EBUSY handling in atomicWrite
+describe("UC-11: atomicWrite EPERM/EBUSY handling", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "msc-eperm-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns { hash } (no failed) on normal successful write", async () => {
+    const target = join(tmpDir, "ok.pdf");
+    const result = await atomicWrite(target, Buffer.from("content"));
+    expect(result.failed).toBeUndefined();
+    expect(result.hash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("atomicWrite return type includes optional failed field", async () => {
+    // Type check: the return type must be { hash: string; failed?: true }
+    // A real EPERM can't be easily triggered in tests, so we verify the
+    // return type structure and that normal writes don't set failed.
+    const target = join(tmpDir, "type-check.txt");
+    const result = await atomicWrite(target, Buffer.from("hello"));
+    // Type guard: failed should be falsy (undefined) on success
+    expect(result.failed).toBeFalsy();
+    // Hash should be a valid SHA-256 hex string
+    expect(result.hash).toHaveLength(64);
+  });
+});

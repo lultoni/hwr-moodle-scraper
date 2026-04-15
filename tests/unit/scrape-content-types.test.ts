@@ -13,6 +13,8 @@ import {
   writeAssignmentDescription,
   writeForumPost,
   appendLabelContent,
+  writeWeblocFile,
+  writeWindowsUrlFile,
 } from "../../src/scraper/content-types.js";
 import { createTurndown } from "../../src/scraper/turndown.js";
 
@@ -146,5 +148,37 @@ describe("GFM table support via createTurndown", () => {
     const html = "<p>This is <s>wrong</s> correct.</p>";
     const md = td.turndown(html);
     expect(md).toContain("~wrong~");
+  });
+});
+
+// UC-05: native URL shortcut files
+describe("UC-05: platform-native URL shortcut files", () => {
+  let tmpDir: string;
+  beforeEach(() => { tmpDir = mkdtempSync(join(tmpdir(), "msc-url-test-")); });
+  afterEach(() => { rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it("writeWeblocFile writes valid XML plist with the URL", () => {
+    const dest = join(tmpDir, "link.webloc");
+    writeWeblocFile(dest, "https://example.com/page");
+    const content = readFileSync(dest, "utf8");
+    expect(content).toContain("<?xml");
+    expect(content).toContain("<plist");
+    expect(content).toContain("https://example.com/page");
+  });
+
+  it("writeWeblocFile escapes URL entities in XML", () => {
+    const dest = join(tmpDir, "link.webloc");
+    writeWeblocFile(dest, "https://example.com/page?a=1&b=2");
+    const content = readFileSync(dest, "utf8");
+    expect(content).toContain("&amp;");
+    expect(content).not.toContain("&b=");
+  });
+
+  it("writeWindowsUrlFile writes INI format with the URL", () => {
+    const dest = join(tmpDir, "link.url");
+    writeWindowsUrlFile(dest, "https://example.com/win");
+    const content = readFileSync(dest, "utf8");
+    expect(content).toContain("[InternetShortcut]");
+    expect(content).toContain("URL=https://example.com/win");
   });
 });

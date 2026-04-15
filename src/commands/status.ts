@@ -121,7 +121,9 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
     if (dryRun) {
       write(`[dry-run] Would remove ${count} old state entr${count === 1 ? "y" : "ies"}. Files on disk would be unchanged.`);
     } else {
-      await sm.save({ courses: state.courses, generatedFiles: state.generatedFiles, lastSync: state.lastSync });
+      const saveData: Parameters<typeof sm.save>[0] = { courses: state.courses, generatedFiles: state.generatedFiles ?? [] };
+      if (state.lastSync) saveData.lastSync = state.lastSync;
+      await sm.save(saveData);
       write(`Removed ${count} old state entr${count === 1 ? "y" : "ies"}. Files on disk are unchanged.`);
     }
     return;

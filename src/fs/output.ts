@@ -45,13 +45,25 @@ export async function buildOutputPath(opts: OutputPathOptions): Promise<string> 
   return fullPath;
 }
 
-/** Atomically write content to destPath and return its SHA-256 hex digest. */
-export async function atomicWrite(destPath: string, content: Buffer): Promise<{ hash: string }> {
+/** Atomically write content to destPath and return its SHA-256 hex digest.
+ *  On EPERM/EBUSY (e.g. file locked by OneDrive/iCloud sync), returns { hash, failed: true }
+ *  instead of throwing so callers can track failed files without crashing.
+ */
+export async function atomicWrite(destPath: string, content: Buffer): Promise<{ hash: string; failed?: true }> {
   const hash = createHash("sha256").update(content).digest("hex");
   // Use a short fixed-name tmp file in the same dir to avoid ENAMETOOLONG when destPath is near 255 bytes
   const tmpPath = join(dirname(destPath), "." + randomBytes(4).toString("hex") + ".tmp");
   writeFileSync(tmpPath, content, { mode: 0o600 });
-  renameSync(tmpPath, destPath);
+  try {
+    renameSync(tmpPath, destPath);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "EPERM" || code === "EBUSY") {
+      try { unlinkSync(tmpPath); } catch { /* best-effort cleanup */ }
+      return { hash, failed: true };
+    }
+    throw err;
+  }
   return { hash };
 }
 

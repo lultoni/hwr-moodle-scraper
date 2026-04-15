@@ -4,6 +4,28 @@ import { createTurndown } from "./turndown.js";
 
 const td = createTurndown();
 
+/** Write a macOS .webloc file (XML plist) that opens a URL in the default browser. */
+export function writeWeblocFile(destPath: string, url: string): void {
+  const xml = [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">`,
+    `<plist version="1.0">`,
+    `<dict>`,
+    `\t<key>URL</key>`,
+    `\t<string>${url.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</string>`,
+    `</dict>`,
+    `</plist>`,
+    ``,
+  ].join("\n");
+  writeFileSync(destPath, xml, { mode: 0o600 });
+}
+
+/** Write a Windows .url shortcut file (INI format). */
+export function writeWindowsUrlFile(destPath: string, url: string): void {
+  const content = `[InternetShortcut]\r\nURL=${url}\r\n`;
+  writeFileSync(destPath, content, { mode: 0o600 });
+}
+
 export async function writeUrlFile(
   destPath: string,
   url: string,
