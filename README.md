@@ -12,95 +12,57 @@
 
 | | |
 |---|---|
-| **macOS, Linux, or Windows** | macOS recommended (credentials saved in Keychain). On Linux/Windows, you'll be asked for your password each run |
+| **macOS, Linux, or Windows** | All platforms supported. Credentials are saved automatically — macOS uses Keychain, Linux/Windows use an encrypted local file |
 | **Node.js 20 or newer** | Check with `node --version` in Terminal. Download from [nodejs.org](https://nodejs.org) if needed |
 | **HWR Berlin Moodle account** | Your normal HWR login — same as for `moodle.hwr-berlin.de` |
-
-> On macOS, the first time you run `npm install` (next section), macOS may ask you to install "Command Line Tools". Click **Install** when prompted — this is normal and only happens once.
 
 ---
 
 ## Installation
 
-Open Terminal and run these commands one by one:
+### macOS (recommended)
+
+Open Terminal:
 
 ```bash
-# 1. Download the project (or unzip it if you got it as a .zip)
 git clone <repo-url>
 cd hwr-moodle-scraper
-
-# 2. Install dependencies
 npm install
-
-# 3. Build the project
 npm run build
-
-# 4. Make the "msc" command available everywhere
-sudo npm link
+npm install -g .
 ```
 
-After this, you can use `msc` from anywhere in Terminal:
+> The first time you run `npm install`, macOS may ask to install "Command Line Tools" — click **Install** when prompted. This only happens once.
+
+Confirm it works:
 
 ```bash
-msc --version   # should print a version number
+msc --version
 ```
 
-> If `msc` doesn't work, try closing and reopening Terminal, or use the full name `moodle-scraper` instead.
+### Linux / WSL2
 
-### Windows (Native — No WSL)
+Same steps as macOS. On WSL2 you can point the output directory at your Windows filesystem:
+
+```bash
+msc config set outputDir /mnt/c/Users/YourName/Documents/Moodle
+```
+
+### Windows (Native)
 
 Open **PowerShell as Administrator** (right-click → Run as administrator):
 
 ```powershell
-# 1. Download and enter the project
 git clone <repo-url>
 cd hwr-moodle-scraper
-
-# 2. Install dependencies and build
 npm install
 npm run build
-
-# 3. Make the "msc" command available globally (no sudo on Windows)
 npm install -g .
 ```
 
-After this, open a new PowerShell window and run `msc --version` to confirm.
+Open a new PowerShell window and run `msc --version` to confirm.
 
-> **Credential storage on Windows**: Windows does not have a macOS Keychain equivalent, so msc will prompt for your username and password each run. To avoid this, set environment variables in your PowerShell profile:
-> ```powershell
-> $env:MSC_USERNAME = "s12345"
-> $env:MSC_PASSWORD = "yourpassword"
-> msc scrape
-> ```
-
-> **TUI on Windows**: `msc tui` requires **Windows Terminal** (available from the Microsoft Store) for correct box-drawing characters. The classic Command Prompt and older PowerShell windows may display garbled borders.
-
-### WSL2 / Linux
-
-WSL2 (Windows Subsystem for Linux) and native Linux are fully supported. Use the standard installation steps above, but:
-
-1. **No Keychain** — store your credentials as environment variables:
-   ```bash
-   export MSC_USERNAME=s12345
-   export MSC_PASSWORD=yourpassword
-   ```
-   Add these to your `~/.bashrc` or `~/.zshrc` to persist across sessions.
-
-2. **Output directory** — on WSL2, you can save files directly to your Windows filesystem:
-   ```bash
-   msc config set outputDir /mnt/c/Users/YourName/Documents/Moodle
-   ```
-   This makes files accessible from both WSL and Windows Explorer.
-
-3. **`--non-interactive` mode** — works automatically when `MSC_USERNAME` and `MSC_PASSWORD` are set:
-   ```bash
-   msc scrape --non-interactive
-   ```
-
-4. **npm global prefix** — if `msc` isn't found after `npm install -g .`, add npm's bin to your PATH:
-   ```bash
-   export PATH="$(npm prefix -g)/bin:$PATH"
-   ```
+> **TUI on Windows**: `msc tui` requires **Windows Terminal** (available from the Microsoft Store) for correct display. The classic Command Prompt may show garbled characters.
 
 ---
 
@@ -110,13 +72,11 @@ WSL2 (Windows Subsystem for Linux) and native Linux are fully supported. Use the
 msc scrape
 ```
 
-On the first run, a setup wizard asks you two things:
+On the first run, a setup wizard asks two things:
 1. **Where to save files** — pick any folder (default: `~/moodle-scraper-output`)
-2. **Your Moodle login** — username and password, stored securely in your Mac's Keychain (never saved as a file)
+2. **Your Moodle login** — username and password, stored securely (Keychain on macOS, encrypted file on Linux/Windows)
 
-macOS will show a Keychain permission dialog — click **Always Allow** so it doesn't ask again.
-
-The first download takes roughly **10-20 minutes** and uses about **2-3 GB** of disk space (depending on how many courses you're enrolled in - this is from a 4th semester perspective). After that, re-running `msc scrape` only takes a few minutes since it skips files you already have.
+The first download takes roughly **10–20 minutes** and uses about **2–3 GB** of disk space (4th-semester perspective). After that, re-running `msc scrape` only takes a few minutes since it skips files you already have.
 
 ---
 
@@ -145,10 +105,10 @@ Feel free to add your own notes, highlights, or files alongside the downloaded c
 
 ### GoodNotes / iPad Annotation Workflow
 
-If you import PDFs into GoodNotes (or similar apps) for annotation, be aware:
+If you import PDFs into GoodNotes (or similar apps) for annotation:
 
 - When a lecturer **updates** a file on Moodle, msc re-downloads it and marks it as `~ updated` in the change report. Your annotated copy in GoodNotes is **not affected** — it's a separate import.
-- If you want to keep your annotations aligned with the latest version, re-import the updated file from your output folder into GoodNotes after each `msc scrape`.
+- Re-import the updated file after each `msc scrape` if you want annotations aligned with the latest version.
 - To see what changed in the last scrape: `msc status --changed`
 
 ---
@@ -169,9 +129,6 @@ Your files are organized by semester and course:
 │   ├── Finanzbuchführung/
 │   └── Analysis/
 ├── Semester_2/
-│   ├── Projektmanagement/
-│   ├── Rechnersysteme/
-│   └── Netzwerke/
 ├── Semester_3/
 ├── Semester_4/
 └── Sonstiges/
@@ -188,22 +145,22 @@ Your files are organized by semester and course:
 ## Troubleshooting
 
 **macOS asks to install "Command Line Tools"**
-This is needed once for the initial setup. Click Install and wait for it to finish, then run `npm install` again.
+Needed once for initial setup. Click Install, wait for it to finish, then re-run `npm install`.
 
 **"No courses found"**
-The scraper searches your Moodle dashboard for courses. If none are found, make sure you're enrolled in at least one course on `moodle.hwr-berlin.de`.
+Make sure you're enrolled in at least one course on `moodle.hwr-berlin.de`.
 
 **"0 files to download" on every run**
-Everything is already up to date. To double-check:
+Everything is already up to date. To verify:
 - `msc status` — shows what you have
-- `msc scrape --check-files` — re-downloads files that got deleted from disk
+- `msc scrape --check-files` — re-downloads files missing from disk
 - `msc scrape --force` — re-downloads everything regardless
 
-**Keychain dialog keeps appearing**
-Select **Always Allow** (not just "Allow") when macOS shows the Keychain prompt.
+**Keychain dialog keeps appearing (macOS)**
+Select **Always Allow** (not just "Allow") when the prompt appears.
 
 **Session expires during a long download**
-The scraper automatically re-authenticates. If it fails repeatedly, update your password with `msc auth set`.
+The scraper re-authenticates automatically. If it fails repeatedly, run `msc auth set` to update your password.
 
 ---
 
