@@ -381,10 +381,13 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   // Build set of resourceIds already in state (to distinguish new vs updated in change report)
   const existingResourceIds = new Set<string>();
+  // Also build hash map to detect whether re-fetched content actually changed
+  const previousHashes = new Map<string, string>();
   for (const course of Object.values(state.courses)) {
     for (const section of Object.values(course.sections ?? {})) {
-      for (const resourceId of Object.keys(section.files ?? {})) {
+      for (const [resourceId, fileState] of Object.entries(section.files ?? {})) {
         existingResourceIds.add(resourceId);
+        if (fileState.hash) previousHashes.set(resourceId, fileState.hash);
       }
     }
   }
@@ -867,17 +870,28 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     process.stdout.write("\n");
   }
 
-  // Build change report entries from completed downloads
+  // Build change report entries from completed downloads.
+  // Only include a file as "~ updated" when its content hash actually changed — not just
+  // because the activity was re-fetched (e.g. Moodle metadata touch with identical content).
   const changeEntries: Array<{ relativePath: string; isNew: boolean }> = [];
   for (let i = 0; i < binaryItems.length; i++) {
     const fp = binaryFinalPaths[i]?.path ?? binaryItems[i]!.downloadItem.destPath;
     const resourceId = binaryItems[i]!.planItem.resourceId ?? "";
-    if (fp) changeEntries.push({ relativePath: relative(outputDir, fp), isNew: !existingResourceIds.has(resourceId) });
+    const isNew = !existingResourceIds.has(resourceId);
+    const computedHash = binaryFinalPaths[i]?.hash ?? "";
+    const prevHash = previousHashes.get(resourceId) ?? "";
+    const contentChanged = isNew || !prevHash || computedHash !== prevHash;
+    if (fp && contentChanged) changeEntries.push({ relativePath: relative(outputDir, fp), isNew });
   }
-  for (const si of specialItems) {
+  for (let i = 0; i < specialItems.length; i++) {
+    const si = specialItems[i]!;
     if (si.isSidecar) continue; // don't list sidecars in change report
     const resourceId = si.item.resourceId ?? "";
-    if (si.destPath) changeEntries.push({ relativePath: relative(outputDir, si.destPath), isNew: !existingResourceIds.has(resourceId) });
+    const isNew = !existingResourceIds.has(resourceId);
+    const computedHash = specialItemHashes[i] ?? "";
+    const prevHash = previousHashes.get(resourceId) ?? "";
+    const contentChanged = isNew || !prevHash || computedHash !== prevHash;
+    if (si.destPath && contentChanged) changeEntries.push({ relativePath: relative(outputDir, si.destPath), isNew });
   }
 
   const failedMsg = failedCount > 0 ? `, ${failedCount} failed` : "";
