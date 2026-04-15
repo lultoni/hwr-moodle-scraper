@@ -1,5 +1,6 @@
 // REQ-AUTH-002, REQ-SEC-001, REQ-SEC-004
 import { platform } from "node:os";
+import { EncryptedFileAdapter } from "./encrypted-store.js";
 
 const SERVICE = "moodle-scraper";
 
@@ -108,4 +109,17 @@ export class KeychainAdapter {
 export function tryCreateKeychain(): KeychainAdapter | null {
   if (platform() !== "darwin") return null;
   return new KeychainAdapter();
+}
+
+/**
+ * Returns a credential store for the current platform:
+ * - macOS: KeychainAdapter (system keychain via keytar)
+ * - Other: EncryptedFileAdapter (AES-256-GCM encrypted file in configDir)
+ *
+ * Unlike tryCreateKeychain(), this never returns null — it always provides
+ * a working credential store.
+ */
+export function tryCreateCredentialStore(configDir: string): KeychainAdapter | EncryptedFileAdapter {
+  if (platform() === "darwin") return new KeychainAdapter();
+  return new EncryptedFileAdapter(configDir);
 }

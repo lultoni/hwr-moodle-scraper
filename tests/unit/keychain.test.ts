@@ -30,7 +30,7 @@ vi.mock("keytar", () => {
   };
 });
 
-import { KeychainAdapter, PlatformNotSupportedError, tryCreateKeychain } from "../../src/auth/keychain.js";
+import { KeychainAdapter, PlatformNotSupportedError, tryCreateKeychain, tryCreateCredentialStore } from "../../src/auth/keychain.js";
 import keytar from "keytar";
 
 const mockedKeytar = vi.mocked(keytar);
@@ -116,6 +116,27 @@ describe("tryCreateKeychain", () => {
     // without mocking platform(), so this test is conditional
     if (process.platform !== "darwin") {
       expect(tryCreateKeychain()).toBeNull();
+    }
+  });
+});
+
+describe("T-6: tryCreateCredentialStore", () => {
+  it("returns a non-null credential store on any platform", () => {
+    const store = tryCreateCredentialStore("/tmp/test-config");
+    expect(store).not.toBeNull();
+  });
+
+  it("returns KeychainAdapter on macOS", () => {
+    if (process.platform === "darwin") {
+      const store = tryCreateCredentialStore("/tmp/test-config");
+      expect(store).toBeInstanceOf(KeychainAdapter);
+    }
+  });
+
+  it("returns a credential store that has readCredentials on non-macOS", () => {
+    if (process.platform !== "darwin") {
+      const store = tryCreateCredentialStore("/tmp/test-config");
+      expect(typeof (store as { readCredentials: unknown }).readCredentials).toBe("function");
     }
   });
 });
