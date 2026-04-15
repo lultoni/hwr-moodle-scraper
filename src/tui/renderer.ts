@@ -54,44 +54,53 @@ function fitLine(s: string, width: number): string {
   return s.padEnd(width);
 }
 
-/** Render one box line: ║ <content padded to inner width> ║ */
-function boxLine(content: string, innerWidth: number): string {
-  return `║ ${fitLine(content, innerWidth - 1)} ║\n`;
+/** Render one box line: ║ <content padded to content width> ║
+ *  contentWidth = boxWidth - 2 (one space margin on each side)
+ */
+function boxLine(content: string, contentWidth: number): string {
+  return `║ ${fitLine(content, contentWidth)} ║\n`;
 }
 
-function renderItem(item: RenderItem, innerWidth: number): string {
+function renderItem(item: RenderItem, contentWidth: number): string {
   switch (item.type) {
     case "selector": {
       const cursor = item.focused ? ">" : " ";
-      return boxLine(`  ${cursor} ${item.label}`, innerWidth);
+      return boxLine(`  ${cursor} ${item.label}`, contentWidth);
     }
     case "toggle": {
       const cursor = item.focused ? ">" : " ";
       const box = item.checked ? "[x]" : "[ ]";
-      return boxLine(`  ${cursor} ${box} ${item.label}`, innerWidth);
+      return boxLine(`  ${cursor} ${box} ${item.label}`, contentWidth);
     }
     case "radio": {
       const cursor = item.focused ? ">" : " ";
       const dot = item.selected ? "(•)" : "( )";
-      return boxLine(`  ${cursor} ${dot} ${item.label}`, innerWidth);
+      return boxLine(`  ${cursor} ${dot} ${item.label}`, contentWidth);
     }
     case "text":
-      return boxLine(`  ${item.content}`, innerWidth);
+      return boxLine(`  ${item.content}`, contentWidth);
     case "command":
-      return boxLine(`  ↳ ${item.cmd}`, innerWidth);
+      return boxLine(`  ↳ ${item.cmd}`, contentWidth);
     case "blank":
-      return boxLine("", innerWidth);
+      return boxLine("", contentWidth);
   }
 }
 
 /**
  * Render the full screen to stdout.
  * Clears the screen, draws the box with dynamic width, content, footer.
+ *
+ * Geometry (all measured in terminal columns):
+ *   w          = boxWidth(cols)          — total inner width incl. side spaces
+ *   contentW   = w - 2                   — usable text width (one space each side)
+ *   border     = ╔ + ═×w + ╗            — w + 2 cols wide
+ *   box line   = ║ + space + text×(w-2) + space + ║  — w + 2 cols wide ✓
  */
 export function render(state: ScreenState): void {
   const { cols } = termSize();
-  const w = boxWidth(cols); // inner width (between ║ and ║)
-  const hr = "═".repeat(w + 1); // +1 for the space after ║
+  const w = boxWidth(cols);      // inner width (the ═ run, also the space between ║ and ║)
+  const contentW = w - 2;        // usable text width inside the margins
+  const hr = "═".repeat(w);
 
   let out = CLEAR;
 
@@ -99,25 +108,24 @@ export function render(state: ScreenState): void {
   out += `╔${hr}╗\n`;
 
   // Header: app title + version
-  const header = `${state.appTitle}  ${state.version}`;
-  out += boxLine(header, w + 1);
+  out += boxLine(`${state.appTitle}  ${state.version}`, contentW);
 
   // Subtitle: screen name
-  out += boxLine(state.title, w + 1);
+  out += boxLine(state.title, contentW);
 
   // Separator
   out += `╠${hr}╣\n`;
 
   // Blank spacer
-  out += boxLine("", w + 1);
+  out += boxLine("", contentW);
 
   // Content items
   for (const item of state.items) {
-    out += renderItem(item, w + 1);
+    out += renderItem(item, contentW);
   }
 
   // Blank spacer
-  out += boxLine("", w + 1);
+  out += boxLine("", contentW);
 
   // Bottom separator
   out += `╠${hr}╣\n`;
@@ -127,7 +135,7 @@ export function render(state: ScreenState): void {
   if (state.totalPages && state.totalPages > 1) {
     footerText += `  [${state.page ?? 1}/${state.totalPages}] PgUp/PgDn`;
   }
-  out += boxLine(footerText, w + 1);
+  out += boxLine(footerText, contentW);
 
   // Bottom border
   out += `╚${hr}╝\n`;
