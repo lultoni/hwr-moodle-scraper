@@ -541,3 +541,106 @@ describe("T-22 + T-24: grouped orphan tree and summary-first --issues output", (
     expect(output).not.toContain("Old entries —");
   });
 });
+
+// ── T-8: status --json ────────────────────────────────────────────────────────
+
+describe("T-8: status --json output mode", () => {
+  beforeEach(() => {
+    mockCollectFiles.mockReturnValue([]);
+  });
+
+  function makeStateWithOrphan() {
+    return {
+      version: 1,
+      lastSyncAt: "2026-04-01T00:00:00.000Z",
+      courses: {
+        "1": {
+          name: "Macro",
+          sections: {
+            "s1": {
+              files: {
+                "r1": { name: "file1.pdf", status: "ok", localPath: "/out/Macro/file1.pdf", url: "https://moodle.example.com/r/1", hash: "a".repeat(64), lastModified: "2026-04-01" },
+                "r2": { name: "file2.pdf", status: "ok", localPath: "/out/Macro/file2.pdf", url: "https://moodle.example.com/r/2", hash: "b".repeat(64), lastModified: "2026-04-01", sidecarPath: "/out/Macro/file2.description.md" },
+                "r3": { name: "file3.pdf", status: "orphan", localPath: "/out/Macro/file3.pdf", url: "https://moodle.example.com/r/3", hash: "", lastModified: "2026-04-01" },
+              },
+            },
+          },
+        },
+      },
+    };
+  }
+
+  function mockWithState(state: unknown) {
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue(state),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+  }
+
+  it("--json outputs valid JSON to stdout", async () => {
+    mockWithState(makeStateWithOrphan());
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/out", json: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    expect(() => JSON.parse(output)).not.toThrow();
+  });
+
+  it("--json output contains expected top-level keys", async () => {
+    mockWithState(makeStateWithOrphan());
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/out", json: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    const result = JSON.parse(output) as Record<string, unknown>;
+    expect(result).toHaveProperty("downloaded");
+    expect(result).toHaveProperty("orphaned");
+    expect(result).toHaveProperty("userAdded");
+    expect(result).toHaveProperty("sidecars");
+    expect(result).toHaveProperty("missing");
+    expect(result).toHaveProperty("orphans");
+    expect(result).toHaveProperty("userFiles");
+    expect(result).toHaveProperty("missingFiles");
+  });
+
+  it("--json orphaned count matches state orphan entries", async () => {
+    mockWithState(makeStateWithOrphan());
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/out", json: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    const result = JSON.parse(output) as { orphaned: number; orphans: unknown[] };
+    expect(result.orphaned).toBe(1);
+    expect(result.orphans).toHaveLength(1);
+  });
+
+  it("--json sidecars count matches files with sidecarPath", async () => {
+    mockWithState(makeStateWithOrphan());
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/out", json: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    const result = JSON.parse(output) as { sidecars: number };
+    expect(result.sidecars).toBe(1); // only r2 has a sidecarPath
+  });
+
+  it("--json does not print any human-readable text", async () => {
+    mockWithState(makeStateWithOrphan());
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/out", json: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    expect(output).not.toContain("Courses:");
+    expect(output).not.toContain("Last sync");
+    expect(output).not.toContain("Old entries");
+    // Output must be parseable as a single JSON object
+    const parsed = JSON.parse(output);
+    expect(typeof parsed).toBe("object");
+  });
+});

@@ -11,6 +11,7 @@ export interface StatusOptions {
   showChanged?: boolean;
   dismissOrphans?: boolean;
   dryRun?: boolean;
+  json?: boolean;
 }
 
 /** Format bytes as human-readable size (MB or GB). */
@@ -93,7 +94,7 @@ function buildTreeLines(paths: string[], baseDir: string): string[] {
 }
 
 export async function runStatus(opts: StatusOptions): Promise<void> {
-  const { outputDir, showIssues = false, showChanged = false, dismissOrphans = false, dryRun = false } = opts;
+  const { outputDir, showIssues = false, showChanged = false, dismissOrphans = false, dryRun = false, json = false } = opts;
   const sm = new StateManager(outputDir);
   const state = await sm.load();
 
@@ -156,15 +157,18 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
     return;
   }
 
-  // Header
-  write(`Output: ${outputDir}`);
-  write(`Last sync: ${formatDate(state.lastSyncAt ?? "")}`);
-  write("");
+  // Header (skipped in JSON mode — all output is deferred to the JSON block)
+  if (!json) {
+    write(`Output: ${outputDir}`);
+    write(`Last sync: ${formatDate(state.lastSyncAt ?? "")}`);
+    write("");
+  }
 
   // Collect stats
   let totalFiles = 0;
   let totalSize = 0;
   let orphanedFiles = 0;
+  let sidecarFiles = 0;
   const orphans: Array<{ localPath: string; url: string; courseName: string }> = [];
   const missingFiles: Array<{ localPath: string; url: string }> = [];
   const knownPaths = new Set<string>();
@@ -184,6 +188,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
       for (const file of Object.values(section.files ?? {})) {
         totalFiles++;
         courseFiles++;
+        if (file.sidecarPath) sidecarFiles++;
 
         if (file.localPath) {
           // Normalise to NFC — state paths may be NFD (from macOS rename) or NFC (from HTML).
@@ -219,19 +224,20 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
     courseStats.set(courseId, { label, files: courseFiles, size: courseSize, lastModified: courseLastMod });
   }
 
-  // Summary line
-  const sizeStr = totalSize > 0 ? ` (${formatSize(totalSize)})` : "";
-  write(`Courses: ${Object.keys(state.courses).length} | Files: ${totalFiles}${sizeStr} | Old entries: ${orphanedFiles}`);
-  write("");
+  // Summary line + per-course table (skipped in JSON mode)
+  if (!json) {
+    const sizeStr = totalSize > 0 ? ` (${formatSize(totalSize)})` : "";
+    write(`Courses: ${Object.keys(state.courses).length} | Files: ${totalFiles}${sizeStr} | Old entries: ${orphanedFiles}`);
+    write("");
 
-  // Per-course table
-  const maxLabel = Math.max(...[...courseStats.values()].map((s) => s.label.length), 0);
-  for (const { label, files, size, lastModified } of courseStats.values()) {
-    const labelPad = label.padEnd(maxLabel);
-    const fileStr = `${files} file${files === 1 ? "" : "s"}`.padStart(9);
-    const sizeCol = size > 0 ? `  (${formatSize(size)})`.padEnd(10) : "".padEnd(10);
-    const timeCol = lastModified ? `  ${timeAgo(lastModified)}` : "";
-    write(`  ${labelPad}  ${fileStr}${sizeCol}${timeCol}`);
+    const maxLabel = Math.max(...[...courseStats.values()].map((s) => s.label.length), 0);
+    for (const { label, files, size, lastModified } of courseStats.values()) {
+      const labelPad = label.padEnd(maxLabel);
+      const fileStr = `${files} file${files === 1 ? "" : "s"}`.padStart(9);
+      const sizeCol = size > 0 ? `  (${formatSize(size)})`.padEnd(10) : "".padEnd(10);
+      const timeCol = lastModified ? `  ${timeAgo(lastModified)}` : "";
+      write(`  ${labelPad}  ${fileStr}${sizeCol}${timeCol}`);
+    }
   }
 
   // User-added files (files in outputDir not tracked by scraper)
@@ -242,6 +248,25 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   const userFilesDir = join(outputDir, "User Files");
   const managedUserFiles = allUserFiles.filter((p) => p.startsWith(userFilesDir + sep));
   const userFiles = allUserFiles.filter((p) => !p.startsWith(userFilesDir + sep));
+
+  // ── JSON output mode ───────────────────────────────────────────────────────
+  if (json) {
+    const result = {
+      downloaded: totalFiles - orphanedFiles,
+      orphaned: orphanedFiles,
+      userAdded: userFiles.length,
+      sidecars: sidecarFiles,
+      missing: missingFiles.length,
+      orphans: orphans.map((o) => ({ path: o.localPath, courseName: o.courseName })),
+      userFiles,
+      missingFiles: missingFiles.map((m) => ({
+        path: m.localPath,
+        everDownloaded: true, // presence in state implies it was once tracked
+      })),
+    };
+    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    return;
+  }
 
   write("");
   if (userFiles.length > 0) {

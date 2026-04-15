@@ -58,6 +58,8 @@ export interface ScrapeOptions {
   metadata?: boolean;
   /** When true, skip description .md files and .url.txt — download binary/PDF files only. */
   noDescriptions?: boolean;
+  /** Output machine-readable JSON summary to stdout instead of human-readable report. */
+  json?: boolean;
   /** Prompt function for interactive credential entry (used as fallback when keychain unavailable). */
   promptFn?: PromptFn;
   logger?: Logger;
@@ -75,6 +77,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     quiet = false,
     verbose = false,
     noDescriptions = false,
+    json = false,
   } = opts;
 
   // Guard: outputDir must be configured before we can proceed
@@ -88,7 +91,9 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Config must be initialised before the logger so we can read logFile
   const config = new ConfigManager();
   const logFileCfg = (await config.get("logFile")) as string | null | undefined ?? null;
-  const level = quiet ? LogLevel.ERROR : verbose ? LogLevel.DEBUG : LogLevel.INFO;
+  // --json implies quiet for logger (suppress INFO to stderr)
+  const effectiveQuiet = quiet || json;
+  const level = effectiveQuiet ? LogLevel.ERROR : verbose ? LogLevel.DEBUG : LogLevel.INFO;
   const logger = opts.logger ?? createLogger({ level, redact: [], logFile: logFileCfg ?? null });
 
   const httpClient = createHttpClient();
@@ -1092,8 +1097,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
   if (filterParts.length > 0) logger.info(`  ${filterParts.join(", ")}.`);
 
-  // Change report — show new/updated files this run (skip on --quiet, skip when nothing changed)
-  if (!quiet && changeEntries.length > 0) {
+  // Change report — show new/updated files this run (skip on --quiet/--json, skip when nothing changed)
+  if (!effectiveQuiet && changeEntries.length > 0) {
     const newCount = changeEntries.filter((e) => e.isNew).length;
     const updatedCount = changeEntries.length - newCount;
     const parts: string[] = [];
@@ -1283,6 +1288,17 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         process.stderr.write(`[msc] postScrapeHook error: ${err.message}\n`);
       }
     });
+  }
+
+  // ── JSON summary output ────────────────────────────────────────────────────
+  if (json) {
+    const jsonResult = {
+      newFiles: changeEntries.filter((e) => e.isNew).map((e) => e.relativePath),
+      updatedFiles: changeEntries.filter((e) => !e.isNew).map((e) => e.relativePath),
+      skipped: skipped.length,
+      errors: failedCount > 0 ? [`${failedCount} download(s) failed`] : [] as string[],
+    };
+    process.stdout.write(JSON.stringify(jsonResult, null, 2) + "\n");
   }
 
   // Deregister shutdown handlers — scrape completed normally

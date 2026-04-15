@@ -94,6 +94,7 @@ program
   .option("--non-interactive", "Exit instead of prompting for credentials", false)
   .option("--skip-disk-check", "Skip the minimum free disk space check", false)
   .option("--no-descriptions", "Skip description .md files and .url.txt — download binary/PDF files only", false)
+  .option("--json", "Output machine-readable JSON summary to stdout", false)
   .action(async (opts: {
     outputDir?: string;
     courses?: string;
@@ -107,6 +108,7 @@ program
     nonInteractive: boolean;
     skipDiskCheck: boolean;
     descriptions: boolean;  // commander negates --no-descriptions to descriptions=false
+    json: boolean;
   }) => {
     const globalOpts = program.opts<{ debug: boolean }>();
     const config = new ConfigManager();
@@ -142,6 +144,7 @@ program
       verbose: opts.verbose,
       metadata: opts.metadata,
       noDescriptions: opts.descriptions === false,
+      json: opts.json,
       ...(!opts.nonInteractive ? { promptFn } : {}),
       ...withLogger(logger),
     };
@@ -293,11 +296,12 @@ program
   .option("--changed", "Show files changed in the last scrape run", false)
   .option("--dismiss-orphans", "Remove old state entries from ended courses", false)
   .option("--dry-run", "Preview changes without writing", false)
-  .action(async (opts: { issues: boolean; changed: boolean; dismissOrphans: boolean; dryRun: boolean }) => {
+  .option("--json", "Output machine-readable JSON to stdout", false)
+  .action(async (opts: { issues: boolean; changed: boolean; dismissOrphans: boolean; dryRun: boolean; json: boolean }) => {
     const mgr = new ConfigManager();
     const outputDir = (await mgr.get("outputDir")) as string;
     try {
-      await runStatus({ outputDir, showIssues: opts.issues, showChanged: opts.changed, dismissOrphans: opts.dismissOrphans, dryRun: opts.dryRun });
+      await runStatus({ outputDir, showIssues: opts.issues, showChanged: opts.changed, dismissOrphans: opts.dismissOrphans, dryRun: opts.dryRun, json: opts.json });
     } catch (err) {
       const code = (err as { exitCode?: number }).exitCode ?? EXIT_CODES.ERROR;
       process.stderr.write(`Error: ${(err as Error).message}\n`);

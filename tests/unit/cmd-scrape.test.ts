@@ -527,3 +527,91 @@ describe("T-1: sidecar origin header in .description.md files", () => {
     expect(labelWrite!.content).not.toContain("<!-- Source:");
   });
 });
+
+// ── T-8: scrape --json ────────────────────────────────────────────────────────
+
+describe("T-8: scrape --json output mode", () => {
+  it("--json outputs valid JSON summary after scrape", async () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, json: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+
+    expect(() => JSON.parse(output)).not.toThrow();
+  });
+
+  it("--json output contains newFiles, updatedFiles, skipped, errors keys", async () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, json: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+
+    const result = JSON.parse(output) as Record<string, unknown>;
+    expect(result).toHaveProperty("newFiles");
+    expect(result).toHaveProperty("updatedFiles");
+    expect(result).toHaveProperty("skipped");
+    expect(result).toHaveProperty("errors");
+  });
+
+  it("--json suppresses human-readable output (no 'Legend:', no 'Done:')", async () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, json: true });
+    const stdoutOutput = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    const stderrOutput = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+
+    // stdout must only contain JSON
+    expect(stdoutOutput.trim()).toMatch(/^\{[\s\S]*\}$/);
+    // stderr must have no INFO messages (--json implies quiet)
+    expect(stderrOutput).not.toContain("Done:");
+    expect(stderrOutput).not.toContain("Legend:");
+  });
+
+  it("--json with new files lists them in newFiles array", async () => {
+    const { computeSyncPlan } = await import("../../src/sync/incremental.js");
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+    const { buildDownloadPlan } = await import("../../src/scraper/dispatch.js");
+    const { atomicWrite } = await import("../../src/fs/output.js");
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI24A Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [{ sectionId: "s1", sectionName: "Week 1", activities: [{
+        activityType: "label", activityName: "New Label", resourceId: "r-new", url: "https://moodle.example.com/r/new", isAccessible: true,
+      }] }],
+    });
+    vi.mocked(computeSyncPlan).mockReturnValueOnce([
+      { action: "DOWNLOAD" as "DOWNLOAD", resourceId: "r-new", courseId: 1, url: "https://moodle.example.com/r/new" },
+    ]);
+    vi.mocked(buildDownloadPlan).mockReturnValueOnce({
+      items: [{
+        resourceId: "r-new", courseId: 1, url: "https://moodle.example.com/r/new",
+        strategy: "label-md" as const, destPath: "/tmp/test/Semester_1/Macro 2024/Week 1/New Label.md",
+        label: "New Label", activityType: "label",
+        description: "<p>New content that is long enough to be kept.</p>",
+        isSidecar: false, name: "New Label",
+      }],
+      unknownTypes: new Map(),
+    } as never);
+    vi.mocked(atomicWrite).mockResolvedValueOnce({ hash: "c".repeat(64), failed: false });
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, json: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+
+    const result = JSON.parse(output) as { newFiles: string[]; skipped: number };
+    expect(result.newFiles.length).toBeGreaterThanOrEqual(1);
+    expect(typeof result.skipped).toBe("number");
+  });
+});
