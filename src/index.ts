@@ -17,6 +17,8 @@ import { runClean } from "./commands/clean.js";
 import { runReset } from "./commands/reset.js";
 import { runWizard, shouldRunWizard } from "./commands/wizard.js";
 import { runTui } from "./commands/tui.js";
+import { runHelp } from "./commands/help.js";
+import { runArchive } from "./commands/archive.js";
 import { checkForUpdate, shouldCheck } from "./version-check.js";
 import { StateManager } from "./sync/state.js";
 import { matchCourses } from "./scraper/course-filter.js";
@@ -384,6 +386,40 @@ program
     const mgr = new ConfigManager();
     try {
       await runTui({ promptFn: makePromptFn(), version: pkg.version });
+    } catch (err) {
+      const code = (err as { exitCode?: number }).exitCode ?? EXIT_CODES.ERROR;
+      process.stderr.write(`Error: ${(err as Error).message}\n`);
+      process.exit(code);
+    }
+    await runUpdateCheck(mgr, pkg.version, false);
+  });
+
+// --- help ---
+program
+  .command("help [topic]")
+  .description("Show plain-language help for a topic (e.g. orphaned, user-files, reset)")
+  .action((topic?: string) => {
+    runHelp(topic);
+  });
+
+// --- archive ---
+program
+  .command("archive")
+  .description("Remove courses from sync state (files on disk are untouched)")
+  .option("--courses <keywords>", "Comma-separated keywords to match course names")
+  .option("--dry-run", "Preview without making changes", false)
+  .option("--force", "Skip confirmation prompt", false)
+  .action(async (opts: { courses?: string; dryRun: boolean; force: boolean }) => {
+    const mgr = new ConfigManager();
+    const outputDir = (await mgr.get("outputDir")) as string;
+    try {
+      await runArchive({
+        outputDir,
+        courses: opts.courses,
+        dryRun: opts.dryRun,
+        force: opts.force,
+        ...(!opts.force ? { promptFn: makePromptFn() } : {}),
+      });
     } catch (err) {
       const code = (err as { exitCode?: number }).exitCode ?? EXIT_CODES.ERROR;
       process.stderr.write(`Error: ${(err as Error).message}\n`);
