@@ -169,7 +169,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   const missingFiles: Array<{ localPath: string; url: string }> = [];
   const knownPaths = new Set<string>();
 
-  // Include generated files (README.md, _Abschnittsbeschreibung.md) written outside FileState
+  // Include generated files (README.md, _SectionDescription.md) written outside FileState
   for (const p of state.generatedFiles ?? []) knownPaths.add(p.normalize("NFC"));
 
   // Per-course stats: name → { files, size, lastModified }

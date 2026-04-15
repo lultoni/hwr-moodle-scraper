@@ -43,7 +43,7 @@ export interface Section {
    * Moodle 4.x (boost_union theme) places a rich-text section description directly
    * above the activity list inside each `<li class="section">`. It is extracted in
    * `parseContentTree` using a balanced-div depth counter and written to disk by
-   * `runScrape` as `_Abschnittsbeschreibung.md` in the section directory.
+   * `runScrape` as `_SectionDescription.md` in the section directory.
    *
    * This is DIFFERENT from `ContentTree.summary`, which is the course-level description.
    */
@@ -573,7 +573,7 @@ function parseFolderFiles(html: string): FolderFile[] {
  *   Each section chunk is scanned for `<div class="summarytext">`, which Moodle 4.x uses to
  *   display a rich-text description above the activity list. The content is extracted with a
  *   balanced-div depth counter (same technique as `extractCourseDescription`) and stored in
- *   `Section.summary`. The caller (`runScrape`) writes this to `_Abschnittsbeschreibung.md`
+ *   `Section.summary`. The caller (`runScrape`) writes this to `_SectionDescription.md`
  *   in the section directory. Do NOT simplify the balanced-div loop to a regex — section
  *   descriptions routinely contain nested divs (image wrappers, formatting containers).
  */

@@ -114,7 +114,7 @@ export function buildDownloadPlan(
     // Divider labels that are heading-only (e.g. "Textmaterialien") are visual
     // section headings — skip them. But content-rich dividers (e.g. "Lernziele"
     // with learning objectives) should be written as _SubfolderName.md inside
-    // their subfolder, similar to _Ordnerbeschreibung.md for folders.
+    // their subfolder, similar to _FolderDescription.md for folders.
     if (activity.isDivider) {
       if (!activity.description || !isDividerContentRich(activity.description)) continue;
       // Content-rich divider → write as _SubfolderName.md

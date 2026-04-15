@@ -215,7 +215,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   );
   opts.onPhase?.("end", "Fetching course content...");
 
-  // ── README.md + _Abschnittsbeschreibung.md ────────────────────────────────
+  // ── README.md + _SectionDescription.md ────────────────────────────────
   // These files are written OUTSIDE the sync-state system (no FileState entry,
   // no hash tracking). They are refreshed on every run from the live Moodle HTML,
   // so they stay current without user intervention.
@@ -225,8 +225,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   //   Source:     <div class="summary">, <div class="course-summary-section">,
   //               or <div class="summarytext"> (Moodle 4.x onetopic courses)
   //
-  // _Abschnittsbeschreibung.md → Section.summary  (from parseContentTree summarytext)
-  //   Written to: <outputDir>/.../<courseDir>/<sectionDir>/_Abschnittsbeschreibung.md
+  // _SectionDescription.md → Section.summary  (from parseContentTree summarytext)
+  //   Written to: <outputDir>/.../<courseDir>/<sectionDir>/_SectionDescription.md
   //   Source:     <div class="summarytext"> inside each <li class="section">
   //   Moodle 4.x shows rich section descriptions (text, images, formatted HTML) here.
   //   Example: GPM "Herzlich Willkommen Jahrgang 2024!", RTG course intro text.
@@ -393,7 +393,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
               // course page (activity.description) or from the folder's own intro div
               // (folderDescription, extracted from <div id="intro"> on the folder page) —
               // preserve it as a label-md. When placed inside a subfolder, rename to
-              // _Ordnerbeschreibung.md for clarity.
+              // _FolderDescription.md for clarity.
               const descHtml = activity.description ?? folderDescription;
               if (descHtml) {
                 expandedActivities.push({
