@@ -136,7 +136,10 @@ export function buildDownloadPlan(
 
     switch (activity.activityType) {
       case "url":
-        destPath = join(fileDir, `${safeName}.url.txt`);
+        // URL activities are placed in a _Links/ subfolder to avoid cluttering the section dir
+        // with .url.txt + .webloc pairs for every link. The subfolder sorts before alphabetic
+        // folders (leading underscore) and signals "secondary/reference content".
+        destPath = join(fileDir, "_Links", `${safeName}.url.txt`);
         strategy = "url-txt";
         break;
       case "page":
@@ -182,11 +185,13 @@ export function buildDownloadPlan(
     // under "## Description", so a separate sidecar would be pure redundancy.
     // page-md items DO get a sidecar because their main file contains fetched page content
     // (not the description), so the description is genuinely separate metadata.
+    // url-txt sidecars live in the same _Links/ folder as the .url.txt file.
     if (activity.description && strategy !== "label-md" && strategy !== "info-md") {
+      const sidecarDir = strategy === "url-txt" ? join(fileDir, "_Links") : fileDir;
       items.push({
         activity,
         url: activity.url,
-        destPath: join(fileDir, `${safeName}.description.md`),
+        destPath: join(sidecarDir, `${safeName}.description.md`),
         strategy: "description-md",
         courseName,
         sectionName,

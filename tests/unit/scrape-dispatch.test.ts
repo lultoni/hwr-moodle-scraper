@@ -256,6 +256,22 @@ describe("buildDownloadPlan: activity type dispatch", () => {
     expect(items[0]?.destPath).toMatch(/\.url\.txt$/);
   });
 
+  it("url activity destPath is placed inside _Links/ subfolder", () => {
+    // URL activities should be grouped in _Links/ to avoid cluttering the section folder
+    const act = makeActivity({ activityType: "url", activityName: "BPMN Poster", url: "https://moodle.example.com/mod/url/view.php?id=5" });
+    const { items } = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
+    expect(items[0]?.destPath).toContain("/_Links/");
+    expect(items[0]?.destPath).toMatch(/\/_Links\/BPMN Poster\.url\.txt$/);
+  });
+
+  it("url activity with subDir places _Links inside the subDir", () => {
+    // When an activity has a subDir (from label-subfolder grouping), _Links goes inside it
+    const act = makeActivity({ activityType: "url", activityName: "Tutorial", url: "https://moodle.example.com/mod/url/view.php?id=5", subDir: "Materialien" });
+    const { items } = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
+    expect(items[0]?.destPath).toContain("/Materialien/_Links/");
+    expect(items[0]?.destPath).toMatch(/\/Materialien\/_Links\/Tutorial\.url\.txt$/);
+  });
+
   it("label with description → label-md strategy, destPath ends in .md", () => {
     const act = makeActivity({ activityType: "label", url: "", description: "<p>Dauer: 120 Minuten</p>" });
     const { items } = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");

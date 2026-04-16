@@ -231,6 +231,77 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     }
   }
 
+  // One-time migration: move .url.txt files (and their .webloc/.url companions) into _Links/ subfolders.
+  // URL activities now generate paths like SectionDir/_Links/Name.url.txt. State entries written before
+  // this change have localPath = SectionDir/Name.url.txt (without _Links/). Without this migration,
+  // computeSyncPlan would SKIP those activities forever (hash unchanged), leaving files at old paths.
+  //
+  // Strategy: for each FileState whose localPath ends in .url.txt and is NOT already in /_Links/:
+  //   1. Compute newPath by inserting _Links before the filename
+  //   2. Move file on disk (best-effort — if missing, newPath write will happen on next scrape)
+  //   3. Update localPath in state
+  // For generatedFiles: move .webloc/.url companions the same way.
+  {
+    let urlMigrationNeeded = false;
+    const isUrlTxtOutsideLinks = (p: string) =>
+      p.endsWith(".url.txt") && !p.includes("/_Links/");
+    const isNativeShortcutOutsideLinks = (p: string) =>
+      (p.endsWith(".webloc") || (p.endsWith(".url") && !p.endsWith(".url.txt"))) && !p.includes("/_Links/");
+
+    // Helper: insert _Links before the filename segment
+    const toLinksPath = (p: string) => join(dirname(p), "_Links", basename(p));
+
+    // Migrate per-file state entries
+    for (const courseEntry of Object.values(state.courses)) {
+      for (const sectionEntry of Object.values(courseEntry.sections ?? {})) {
+        for (const fileState of Object.values(sectionEntry.files ?? {})) {
+          if (fileState.localPath && isUrlTxtOutsideLinks(fileState.localPath)) {
+            const newPath = toLinksPath(fileState.localPath);
+            try {
+              mkdirSync(dirname(newPath), { recursive: true });
+              if (existsSync(fileState.localPath)) renameSync(fileState.localPath, newPath);
+            } catch { /* best-effort */ }
+            // Also migrate the sidecar .description.md if it matches this url.txt exactly
+            // (same dir, same base name). Only do this when the localPath is a url-txt.
+            if (fileState.sidecarPath && !fileState.sidecarPath.includes("/_Links/")) {
+              const sidecarBase = basename(fileState.sidecarPath, ".description.md");
+              const urlBase = basename(fileState.localPath, ".url.txt");
+              if (sidecarBase === urlBase && dirname(fileState.sidecarPath) === dirname(fileState.localPath)) {
+                const newSidecarPath = toLinksPath(fileState.sidecarPath);
+                try {
+                  mkdirSync(dirname(newSidecarPath), { recursive: true });
+                  if (existsSync(fileState.sidecarPath)) renameSync(fileState.sidecarPath, newSidecarPath);
+                } catch { /* best-effort */ }
+                fileState.sidecarPath = newSidecarPath;
+              }
+            }
+            fileState.localPath = newPath;
+            urlMigrationNeeded = true;
+          }
+        }
+      }
+    }
+
+    // Migrate generatedFiles (.webloc / .url native shortcuts)
+    if (state.generatedFiles) {
+      const migratedGF = state.generatedFiles.map((p) => {
+        if (!isNativeShortcutOutsideLinks(p)) return p;
+        const newPath = toLinksPath(p);
+        try {
+          mkdirSync(dirname(newPath), { recursive: true });
+          if (existsSync(p)) renameSync(p, newPath);
+        } catch { /* best-effort */ }
+        urlMigrationNeeded = true;
+        return newPath;
+      });
+      state.generatedFiles = migratedGF;
+    }
+
+    if (urlMigrationNeeded) {
+      await stateManager.save({ courses: state.courses, generatedFiles: state.generatedFiles });
+    }
+  }
+
   // Mutable container for partial state — updated during downloads so SIGINT can save progress
   const generatedFiles: string[] = [];
   const partialState: { courses: Record<string, CourseState>; generatedFiles: string[] } = {
