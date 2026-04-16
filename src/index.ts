@@ -93,7 +93,7 @@ program
   .option("-v, --verbose", "Debug-level output", false)
   .option("--non-interactive", "Exit instead of prompting for credentials", false)
   .option("--skip-disk-check", "Skip the minimum free disk space check", false)
-  .option("--no-descriptions", "Skip description .md files and .url.txt — download binary/PDF files only", false)
+  .option("--no-descriptions", "Skip description .md files and .url.txt — download binary/PDF files only")
   .option("--json", "Output machine-readable JSON summary to stdout", false)
   .option("--fast", "Speed up: requestDelayMs=200, maxConcurrentDownloads=8 (heavier on server)", false)
   .action(async (opts: {

@@ -29,6 +29,8 @@ const KNOWN_EXTS = new Set([
   ".mp3", ".mp4", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".heic",
   ".txt", ".csv", ".md", ".json", ".xml", ".html", ".yml", ".yaml",
   ".url.txt",  // url-txt strategy
+  ".webloc",   // macOS URL shortcut
+  ".url",      // Windows URL shortcut
   ".java", ".py", ".js", ".ts", ".sql", ".sh", ".bin",
   ".jar", ".ipynb", ".rtf", ".conf", ".base",
 ]);

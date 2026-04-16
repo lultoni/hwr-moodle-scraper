@@ -15,6 +15,7 @@ import {
   appendLabelContent,
   writeWeblocFile,
   writeWindowsUrlFile,
+  extractExternalUrl,
 } from "../../src/scraper/content-types.js";
 import { createTurndown } from "../../src/scraper/turndown.js";
 
@@ -152,8 +153,7 @@ describe("GFM table support via createTurndown", () => {
 });
 
 // UC-05: native URL shortcut files
-describe("UC-05: platform-native URL shortcut files", () => {
-  let tmpDir: string;
+describe("UC-05: platform-native URL shortcut files", () => {  let tmpDir: string;
   beforeEach(() => { tmpDir = mkdtempSync(join(tmpdir(), "msc-url-test-")); });
   afterEach(() => { rmSync(tmpDir, { recursive: true, force: true }); });
 
@@ -180,5 +180,43 @@ describe("UC-05: platform-native URL shortcut files", () => {
     const content = readFileSync(dest, "utf8");
     expect(content).toContain("[InternetShortcut]");
     expect(content).toContain("URL=https://example.com/win");
+  });
+});
+
+// extractExternalUrl — parses the real external URL from Moodle URL activity pages
+describe("extractExternalUrl", () => {
+  it("extracts URL from urlworkaround div", () => {
+    // Moodle URL activity page has a <div class="urlworkaround"><a href="REAL_URL">...</a></div>
+    const html = `<html><body>
+      <div class="urlworkaround">
+        <a href="http://www.bpmb.de/images/BPMN2_0_Poster_DE.pdf">Click here</a>
+      </div>
+    </body></html>`;
+    expect(extractExternalUrl(html)).toBe("http://www.bpmb.de/images/BPMN2_0_Poster_DE.pdf");
+  });
+
+  it("extracts URL from urlworkaround div with extra class attributes", () => {
+    const html = `<div class="box urlworkaround py-2">
+      <a class="btn btn-primary" href="https://example.com/external-resource?q=1&amp;page=2">Visit</a>
+    </div>`;
+    // HTML entities in href should be decoded
+    expect(extractExternalUrl(html)).toBe("https://example.com/external-resource?q=1&page=2");
+  });
+
+  it("returns null when no urlworkaround div is present", () => {
+    const html = `<html><body><div class="box generalbox">No URL here</div></body></html>`;
+    expect(extractExternalUrl(html)).toBeNull();
+  });
+
+  it("returns null when urlworkaround div has no anchor", () => {
+    const html = `<div class="urlworkaround">No link inside</div>`;
+    expect(extractExternalUrl(html)).toBeNull();
+  });
+
+  it("handles youtube-nocookie.com and other non-moodle domains", () => {
+    const html = `<div class="urlworkaround">
+      <a href="https://www.youtube-nocookie.com/embed/abc123">YouTube</a>
+    </div>`;
+    expect(extractExternalUrl(html)).toBe("https://www.youtube-nocookie.com/embed/abc123");
   });
 });

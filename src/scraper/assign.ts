@@ -3,6 +3,7 @@
 //   - grade (if graded)
 //   - feedback comment from the grader
 //   - URLs of the student's own submitted files
+//   - URLs of teacher-attached introattachment files
 //   - online text submission (assignsubmission_onlinetext)
 
 export interface AssignmentFeedback {
@@ -10,8 +11,10 @@ export interface AssignmentFeedback {
   grade: string | null;
   /** Raw inner HTML of the feedback comment block, or null if no feedback. */
   feedbackHtml: string | null;
-  /** URLs of the student's own submission files (pluginfile.php links). */
+  /** URLs of the student's own submission files (pluginfile.php links, assignsubmission paths). */
   submissionUrls: string[];
+  /** URLs of teacher-attached files (pluginfile.php links, mod_assign/introattachment paths). */
+  introattachmentUrls: string[];
   /** Raw inner HTML of an online text submission, or null if none. */
   submissionTextHtml: string | null;
 }
@@ -95,7 +98,21 @@ export function extractAssignmentFeedback(html: string, _baseUrl: string): Assig
     }
   }
 
+  // --- Teacher-attached introattachment file URLs ---
+  // Teacher files: pluginfile.php links with mod_assign/introattachment path component
+  // Example: pluginfile.php/4891149/mod_assign/introattachment/0/Lernbrief%201_OGPM.pdf?forcedownload=1
+  const introattachmentUrls: string[] = [];
+  const introRe = /href="(https?:\/\/[^"]*pluginfile\.php\/[^"]*\/mod_assign\/introattachment\/[^"]+)"/gi;
+  let introM: RegExpExecArray | null;
+  while ((introM = introRe.exec(html)) !== null) {
+    const url = introM[1]!;
+    if (!seen.has(url)) {
+      seen.add(url);
+      introattachmentUrls.push(url);
+    }
+  }
+
   // Return the result — even if grade/feedback are null, submission URLs may exist
-  if (grade === null && feedbackHtml === null && submissionUrls.length === 0 && submissionTextHtml === null) return null;
-  return { grade, feedbackHtml, submissionUrls, submissionTextHtml };
+  if (grade === null && feedbackHtml === null && submissionUrls.length === 0 && introattachmentUrls.length === 0 && submissionTextHtml === null) return null;
+  return { grade, feedbackHtml, submissionUrls, introattachmentUrls, submissionTextHtml };
 }

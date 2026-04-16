@@ -96,3 +96,30 @@ export async function appendLabelContent(labelsFilePath: string, html: string): 
   const md = td.turndown(html);
   appendFileSync(labelsFilePath, md + "\n\n", { mode: 0o600 });
 }
+
+/**
+ * Extract the real external URL from a Moodle URL activity page.
+ *
+ * Moodle wraps external links in a `<div class="urlworkaround">` containing
+ * an `<a href="REAL_URL">` tag. This function locates that div and extracts
+ * the href, decoding any HTML entities (e.g. `&amp;` → `&`).
+ *
+ * Returns null if no urlworkaround div or anchor is found.
+ */
+export function extractExternalUrl(html: string): string | null {
+  // Find the urlworkaround div (any position in class attribute)
+  const divRe = /<div[^>]+class="[^"]*\burlworkaround\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i;
+  const divM = divRe.exec(html);
+  if (!divM?.[1]) return null;
+  // Extract the first href from inside the div
+  const aRe = /<a[^>]+href="([^"]+)"[^>]*>/i;
+  const aM = aRe.exec(divM[1]);
+  if (!aM?.[1]) return null;
+  // Decode HTML entities in the URL
+  return aM[1]
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}

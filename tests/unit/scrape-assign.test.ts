@@ -105,4 +105,63 @@ describe("extractAssignmentFeedback — unit tests", () => {
     const result = extractAssignmentFeedback(html, BASE);
     expect(result?.submissionTextHtml ?? null).toBeNull();
   });
+
+  it("extracts teacher-attached introattachment PDF URLs", () => {
+    // Teacher-attached files appear in a box with mod_assign/introattachment pluginfile URLs.
+    // Example from Prozessmodellierung (course 98824): Lernbrief 1 assignment page.
+    const html = `<html><body>
+      <div class="submissionstatustable">
+        <div class="box py-3 generalbox boxaligncenter">
+          <div id="assign_files_tree">
+            <a target="_blank" href="${BASE}/pluginfile.php/4891149/mod_assign/introattachment/0/Lernbrief%201_OGPM.pdf?forcedownload=1">Lernbrief 1_OGPM.pdf</a>
+          </div>
+        </div>
+      </div>
+    </body></html>`;
+    const result = extractAssignmentFeedback(html, BASE);
+    expect(result).not.toBeNull();
+    expect(result?.introattachmentUrls).toHaveLength(1);
+    expect(result?.introattachmentUrls[0]).toContain("introattachment");
+    expect(result?.introattachmentUrls[0]).toContain("Lernbrief");
+  });
+
+  it("extracts multiple teacher introattachment files", () => {
+    const html = `<html><body>
+      <div class="submissionstatustable">
+        <a target="_blank" href="${BASE}/pluginfile.php/100/mod_assign/introattachment/0/Task1.pdf?forcedownload=1">Task1.pdf</a>
+        <a target="_blank" href="${BASE}/pluginfile.php/101/mod_assign/introattachment/0/Task2.docx?forcedownload=1">Task2.docx</a>
+      </div>
+    </body></html>`;
+    const result = extractAssignmentFeedback(html, BASE);
+    expect(result).not.toBeNull();
+    expect(result?.introattachmentUrls).toHaveLength(2);
+  });
+
+  it("does not mix introattachment URLs into submissionUrls", () => {
+    // submissionUrls should contain only student assignsubmission files
+    const html = `<html><body>
+      <div class="submissionstatustable">
+        <a href="${BASE}/pluginfile.php/100/mod_assign/introattachment/0/Task.pdf?forcedownload=1">Task.pdf</a>
+        <a href="${BASE}/pluginfile.php/200/assignsubmission_file/submission_files/1/Hauarbeit.pdf">Hausarbeit.pdf</a>
+      </div>
+    </body></html>`;
+    const result = extractAssignmentFeedback(html, BASE);
+    expect(result).not.toBeNull();
+    expect(result?.submissionUrls).toHaveLength(1);
+    expect(result?.submissionUrls[0]).toContain("assignsubmission");
+    expect(result?.introattachmentUrls).toHaveLength(1);
+    expect(result?.introattachmentUrls[0]).toContain("introattachment");
+  });
+
+  it("returns empty introattachmentUrls when no teacher files are attached", () => {
+    const html = `<html><body>
+      <div class="submissionstatustable">
+        <a href="${BASE}/pluginfile.php/1/assignsubmission_file/submission_files/1/file.pdf">file.pdf</a>
+      </div>
+    </body></html>`;
+    const result = extractAssignmentFeedback(html, BASE);
+    if (result !== null) {
+      expect(result.introattachmentUrls).toHaveLength(0);
+    }
+  });
 });

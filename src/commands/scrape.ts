@@ -16,7 +16,7 @@ import { sanitiseFilename } from "../fs/sanitise.js";
 import { extractForumThreadUrls, extractPageContent, extractEmbeddedVideoUrls } from "../scraper/forum.js";
 import { extractAssignmentFeedback } from "../scraper/assign.js";
 import { DownloadQueue, type DownloadItem } from "../scraper/downloader.js";
-import { writeUrlFile, writeWeblocFile, writeWindowsUrlFile } from "../scraper/content-types.js";
+import { writeUrlFile, writeWeblocFile, writeWindowsUrlFile, extractExternalUrl } from "../scraper/content-types.js";
 import { filterSidecars, type SidecarItem } from "../scraper/sidecar-filter.js";
 import { CourseProgressDisplay } from "../scraper/course-progress.js";
 import { createTurndown } from "../scraper/turndown.js";
@@ -530,7 +530,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   //   (c) binary items whose localPath has no recognised file extension (ENAMETOOLONG/BUG-C legacy)
   const INFO_MD_ACTIVITY_TYPES = new Set(["assign","feedback","choice","vimp","hvp","h5pactivity","scorm","flashcard","survey","chat","lti","imscp","grouptool","bigbluebuttonbn","customcert","etherpadlite"]);
   const PAGE_MD_ACTIVITY_TYPES = new Set(["page","forum","quiz","glossary","book","lesson","wiki","workshop"]);
-  const KNOWN_FILE_EXTS = new Set([".pdf",".doc",".docx",".xls",".xlsx",".ppt",".pptx",".odt",".ods",".odp",".zip",".tar",".gz",".7z",".rar",".mp3",".mp4",".png",".jpg",".jpeg",".gif",".svg",".heic",".txt",".csv",".json",".xml",".html",".yml",".yaml",".java",".py",".js",".ts",".sql",".sh",".bin",".jar",".ipynb",".rtf",".conf",".md",".url.txt"]);
+  const KNOWN_FILE_EXTS = new Set([".pdf",".doc",".docx",".xls",".xlsx",".ppt",".pptx",".odt",".ods",".odp",".zip",".tar",".gz",".7z",".rar",".mp3",".mp4",".png",".jpg",".jpeg",".gif",".svg",".heic",".txt",".csv",".json",".xml",".html",".yml",".yaml",".java",".py",".js",".ts",".sql",".sh",".bin",".jar",".ipynb",".rtf",".conf",".md",".url.txt",".webloc",".url"]);
   for (const item of plan) {
     if (item.action !== SyncAction.SKIP || !item.resourceId || !item.courseId) continue;
     const courseIdStr = String(item.courseId);
@@ -885,7 +885,19 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       mkdirSync(dirname(destPath), { recursive: true });
       let content: string | undefined;
       if (strategy === "url-txt") {
-        await writeUrlFile(destPath, item.url!, { name: label, description });
+        // For URL activities: fetch the Moodle redirect page and extract the real external URL
+        // from the <div class="urlworkaround"> so we store the destination URL, not the Moodle wrapper.
+        let effectiveUrl = item.url!;
+        if (activityType === "url" && item.url && isSameOrigin(item.url, baseUrl)) {
+          try {
+            const { request } = await import("undici");
+            const { body: urlPageBody } = await request(item.url, { headers: { cookie: sessionCookies } });
+            const urlPageHtml = await urlPageBody.text();
+            const externalUrl = extractExternalUrl(urlPageHtml);
+            if (externalUrl) effectiveUrl = externalUrl;
+          } catch { /* fall through with Moodle wrapper URL */ }
+        }
+        await writeUrlFile(destPath, effectiveUrl, { name: label, description });
         // url-txt: content is not buffered through atomicWrite, so specialItemHashes[si] stays "".
         // The file is still tracked via allDownloadedItems → FileState.localPath (no hash comparison).
         // Also write a platform-native URL shortcut alongside the .url.txt file
@@ -894,9 +906,9 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           if (nativePath !== destPath) {
             try {
               if (platform() === "darwin") {
-                writeWeblocFile(nativePath, item.url!);
+                writeWeblocFile(nativePath, effectiveUrl);
               } else {
-                writeWindowsUrlFile(nativePath, item.url!);
+                writeWindowsUrlFile(nativePath, effectiveUrl);
               }
               generatedFiles.push(nativePath);
             } catch { /* best-effort */ }
@@ -977,6 +989,26 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
               }
               if (feedback.submissionTextHtml) {
                 lines.push(``, `## Eigene Einreichung (Online-Text)`, ``, td.turndown(feedback.submissionTextHtml));
+              }
+              if (feedback.introattachmentUrls.length > 0) {
+                lines.push(``, `## Aufgabenstellung (Anhänge)`);
+                for (const introUrl of feedback.introattachmentUrls) {
+                  // SSRF defense: skip introattachment URLs on external domains
+                  if (!isSameOrigin(introUrl, baseUrl)) continue;
+                  const rawName = introUrl.split("/").pop()?.split("?")[0] ?? "file";
+                  const fname = decodeURIComponent(rawName);
+                  const introExt = fname.includes(".") ? fname.split(".").pop()! : "bin";
+                  const introDest = join(dirname(destPath), fname);
+                  try {
+                    const { downloadFile } = await import("../scraper/downloader.js");
+                    const { finalPath } = await downloadFile({ url: introUrl, destPath: introDest, sessionCookies, retryBaseDelayMs: 0 });
+                    specialItemSubmissionPaths[si]!.push(finalPath);
+                    lines.push(`- [${fname}](${finalPath})`);
+                  } catch {
+                    lines.push(`- [${fname}](${introUrl}) *(Download fehlgeschlagen)*`);
+                  }
+                  void introExt; // used only to derive introDest via fname
+                }
               }
               if (feedback.submissionUrls.length > 0) {
                 lines.push(``, `## Eigene Einreichung`);
