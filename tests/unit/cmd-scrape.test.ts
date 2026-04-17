@@ -647,3 +647,148 @@ describe("T-18: --fast flag", () => {
     expect(output).not.toContain("[fast mode]");
   });
 });
+
+// ── T-19: --no-descriptions state integrity (Pass 47 fix) ─────────────────────
+// Regression tests for the bug where noDescriptions=true caused the parent sync
+// item to be pushed to acknowledgedItems (localPath="") even when a sibling
+// "binary" planItem was dispatched — overwriting the real localPath in state.
+
+describe("T-19: --no-descriptions does not corrupt state for binary activities", () => {
+  // Helper: sets up a DOWNLOAD plan item + matching activity in fetchContentTree.
+  function setupScenario(
+    resourceId: string,
+    activityType: string,
+    activityName: string,
+    planItems: object[],
+  ) {
+    return {
+      planItem: { action: "DOWNLOAD" as "DOWNLOAD", resourceId, courseId: 1, url: `https://moodle.example.com/r/${resourceId}` },
+      activity: { activityType, activityName, resourceId, url: `https://moodle.example.com/r/${resourceId}`, description: "<p>desc</p>", isAccessible: true },
+      planItems,
+    };
+  }
+
+  it("binary + description-md: binary file is downloaded even when noDescriptions=true", async () => {
+    // Covers the bug: description-md planItem must NOT push the parent item to acknowledgedItems
+    // when a sibling binary planItem will also be processed for the same item.
+    const { buildDownloadPlan } = await import("../../src/scraper/dispatch.js");
+    const { computeSyncPlan } = await import("../../src/sync/incremental.js");
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+    const { StateManager } = await import("../../src/sync/state.js");
+
+    const { planItem, activity } = setupScenario("r-slides", "resource", "Folien 4.1", []);
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI24A Finanzmathematik", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [{ sectionId: "s1", sectionName: "Topic 1", activities: [activity] }],
+    });
+    vi.mocked(computeSyncPlan).mockReturnValueOnce([planItem]);
+
+    // buildDownloadPlan returns both a binary item AND a description-md sidecar
+    vi.mocked(buildDownloadPlan).mockReturnValueOnce({
+      items: [
+        {
+          resourceId: "r-slides", courseId: 1,
+          url: "https://moodle.example.com/r/r-slides",
+          strategy: "binary" as const,
+          destPath: "/tmp/test/Semester_1/Finanzmathematik/Topic 1/Folien 4.1.pptx",
+          label: "Folien 4.1", activityType: "resource", isSidecar: false, name: "Folien 4.1",
+        },
+        {
+          resourceId: "r-slides", courseId: 1,
+          url: "https://moodle.example.com/r/r-slides",
+          strategy: "description-md" as const,
+          destPath: "/tmp/test/Semester_1/Finanzmathematik/Topic 1/Folien 4.1.description.md",
+          label: "Folien 4.1", activityType: "resource", isSidecar: true, name: "Folien 4.1",
+          description: "<p>desc</p>",
+        },
+      ],
+      unknownTypes: new Map(),
+    } as never);
+
+    // Capture save() calls to check state written with real localPath
+    const savedStates: object[] = [];
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue(null),
+      save: vi.fn().mockImplementation((s: object) => { savedStates.push(s); return Promise.resolve(); }),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+      backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
+    } as unknown as InstanceType<typeof StateManager>));
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, noDescriptions: true });
+    stderrSpy.mockRestore();
+
+    // State must be saved at least once
+    expect(savedStates.length).toBeGreaterThan(0);
+    const lastState = savedStates[savedStates.length - 1] as { courses: Record<string, { sections: Record<string, { files: Record<string, { localPath: string }> }> }> };
+
+    // The file's state entry must have a NON-EMPTY localPath (not corrupted to "")
+    const section = lastState.courses?.["1"]?.sections?.["s1"];
+    const fileEntry = section?.files?.["r-slides"];
+    expect(fileEntry).toBeDefined();
+    // localPath must NOT be empty — that would be the old bug behaviour
+    expect(fileEntry?.localPath).not.toBe("");
+    // localPath must point to the binary file
+    expect(fileEntry?.localPath).toContain("Folien 4.1");
+  });
+
+  it("url-only activity: url-txt item is acknowledged (localPath='') when noDescriptions=true", async () => {
+    // Covers: a url activity that has only a url-txt planItem — this SHOULD become acknowledged
+    // with localPath="" so it is not re-planned on every subsequent run.
+    const { buildDownloadPlan } = await import("../../src/scraper/dispatch.js");
+    const { computeSyncPlan } = await import("../../src/sync/incremental.js");
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+    const { StateManager } = await import("../../src/sync/state.js");
+
+    const planItem = { action: "DOWNLOAD" as "DOWNLOAD", resourceId: "r-url", courseId: 1, url: "https://moodle.example.com/mod/url/view.php?id=999" };
+    const activity = { activityType: "url", activityName: "Moodle Docs", resourceId: "r-url", url: "https://moodle.example.com/mod/url/view.php?id=999", isAccessible: true };
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI24A Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [{ sectionId: "s1", sectionName: "Week 1", activities: [activity] }],
+    });
+    vi.mocked(computeSyncPlan).mockReturnValueOnce([planItem]);
+
+    // buildDownloadPlan returns only a url-txt item (no binary sibling)
+    vi.mocked(buildDownloadPlan).mockReturnValueOnce({
+      items: [
+        {
+          resourceId: "r-url", courseId: 1,
+          url: "https://moodle.example.com/mod/url/view.php?id=999",
+          strategy: "url-txt" as const,
+          destPath: "/tmp/test/Semester_1/Macro 2024/Week 1/_Links/Moodle Docs.url.txt",
+          label: "Moodle Docs", activityType: "url", isSidecar: false, name: "Moodle Docs",
+        },
+      ],
+      unknownTypes: new Map(),
+    } as never);
+
+    const savedStates: object[] = [];
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue(null),
+      save: vi.fn().mockImplementation((s: object) => { savedStates.push(s); return Promise.resolve(); }),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+      backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
+    } as unknown as InstanceType<typeof StateManager>));
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, noDescriptions: true });
+    stderrSpy.mockRestore();
+
+    expect(savedStates.length).toBeGreaterThan(0);
+    const lastState = savedStates[savedStates.length - 1] as { courses: Record<string, { sections: Record<string, { files: Record<string, { localPath: string }> }> }> };
+
+    // The url activity must be acknowledged with localPath="" (so it is not re-planned every run)
+    const section = lastState.courses?.["1"]?.sections?.["s1"];
+    const fileEntry = section?.files?.["r-url"];
+    expect(fileEntry).toBeDefined();
+    expect(fileEntry?.localPath).toBe("");
+  });
+});

@@ -786,12 +786,23 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       acknowledgedItems.push(item);
       continue;
     }
+    // Track whether any planItem was dispatched to binaryItems or specialItems.
+    // Only acknowledge the parent item when NOTHING was dispatched — otherwise the
+    // acknowledgement (localPath="") would overwrite a real binary state entry written later.
+    // Bug context: with noDescriptions=true, a resource+description activity produces both
+    // "binary" and "description-md" planItems. The old code pushed `item` to acknowledgedItems
+    // when the description-md planItem was processed, then the binary planItem also pushed `item`
+    // to binaryItems. In allDownloadedItems, binaryItems come first (correct localPath) but
+    // acknowledgedItems come last — overwriting with localPath="" and permanently hiding the file.
+    let itemWasDispatched = false;
     for (const planItem of planItems) {
       if (noDescriptions && (planItem.strategy === "url-txt" || planItem.strategy === "description-md")) {
-        acknowledgedItems.push(item);
+        // Skip this planItem only — do NOT acknowledge the parent item here.
+        // If "binary" is another planItem for this same item, it will set itemWasDispatched=true.
         continue;
       }
       if (planItem.strategy === "binary") {
+        itemWasDispatched = true;
         logger.debug(`[DOWNLOAD] ${semesterDir ? semesterDir + "/" : ""}${courseName} / ${sectionName} / ${meta.activity.activityName}${counter}`);
         mkdirSync(dirname(planItem.destPath), { recursive: true });
         binaryItems.push({
@@ -808,6 +819,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           planItem: item,
         });
       } else {
+        itemWasDispatched = true;
         const strategyLabel = planItem.strategy === "info-md" ? "info-md" : planItem.strategy;
         const isSidecar = planItem.strategy === "description-md";
         if (isSidecar) {
@@ -825,6 +837,11 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
           ...(meta.activity.description ? { description: meta.activity.description } : {}),
         });
       }
+    }
+    // Only acknowledge if all planItems were skipped (e.g. url-txt with noDescriptions=true).
+    // When at least one planItem was dispatched, the item is tracked via binaryItems/specialItems.
+    if (!itemWasDispatched) {
+      acknowledgedItems.push(item);
     }
   }
 
