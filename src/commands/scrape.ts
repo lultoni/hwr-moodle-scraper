@@ -1430,7 +1430,9 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       MSC_UPDATED_COUNT: String(updatedFiles.length),
       MSC_CHANGED_FILES: [...newFiles, ...updatedFiles].join("\n"),
     };
-    execFile("/bin/sh", ["-c", hookCmd], { env: hookEnv }, (err) => {
+    // Use platform-appropriate shell: cmd.exe on Windows, /bin/sh on POSIX
+    const [shell, flag] = platform() === "win32" ? ["cmd.exe", "/c"] : ["/bin/sh", "-c"];
+    execFile(shell, [flag, hookCmd], { env: hookEnv }, (err) => {
       if (err) {
         process.stderr.write(`[msc] postScrapeHook error: ${err.message}\n`);
       }

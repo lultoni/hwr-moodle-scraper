@@ -108,7 +108,7 @@ export function buildDownloadPlan(
     // Optional subfolder (e.g. when two folders contain same-named files)
     // Compound subDir (e.g. "Materialien/Foliensammlung") is split into segments
     const fileDir = activity.subDir
-      ? join(sectionDir, ...activity.subDir.split("/").map(sanitiseFilename))
+      ? join(sectionDir, ...activity.subDir.split(/[\\/]/).map(sanitiseFilename))
       : sectionDir;
 
     // Divider labels that are heading-only (e.g. "Textmaterialien") are visual
