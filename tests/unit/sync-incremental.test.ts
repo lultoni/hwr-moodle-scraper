@@ -348,3 +348,105 @@ describe("T-27: orphanReason field in ORPHAN plan items", () => {
     expect(orphan?.orphanReason).toBe("moodle-removed");
   });
 });
+
+// ── T-28: self-heal corrupted localPath="" state entries ─────────────────────
+
+describe("T-28: self-heal corrupted state with localPath='' (Pass 44 noDescriptions bug)", () => {
+  const makeTree = (url: string) => ({
+    courseId: 1,
+    sections: [{
+      sectionId: "s0",
+      sectionName: "Allgemeines",
+      activities: [{
+        activityName: "Lecture Slides",
+        activityType: "resource",
+        url,
+        isAccessible: true,
+        description: "Short desc",
+      }],
+    }],
+  });
+
+  it("re-downloads entry with localPath='' and no downloadedAt (corrupted state)", () => {
+    const state = {
+      courses: {
+        "1": { name: "Course", sections: { "s0": { files: {
+          "1-s0-Lecture Slides": {
+            localPath: "",           // corrupted — file was never written to disk
+            url: "https://moodle.example.com/mod/resource/view.php?id=42",
+            hash: "",
+            downloadedAt: undefined, // never saved
+            status: "ok" as const,
+          },
+        } } } },
+      },
+    };
+    const plan = computeSyncPlan({
+      state,
+      currentTree: [makeTree("https://moodle.example.com/mod/resource/view.php?id=42")],
+      force: false,
+    });
+    const dl = plan.filter((p) => p.action === SyncAction.DOWNLOAD);
+    expect(dl).toHaveLength(1);
+    expect(dl[0]?.resourceId).toContain("Lecture Slides");
+  });
+
+  it("does NOT re-download entry with localPath='' when downloadedAt IS set (intentionally acknowledged)", () => {
+    const state = {
+      courses: {
+        "1": { name: "Course", sections: { "s0": { files: {
+          "1-s0-Lecture Slides": {
+            localPath: "",
+            url: "https://moodle.example.com/mod/resource/view.php?id=42",
+            hash: "",
+            downloadedAt: "2026-04-15T10:00:00.000Z", // was downloaded — empty localPath is intentional
+            status: "ok" as const,
+          },
+        } } } },
+      },
+    };
+    const plan = computeSyncPlan({
+      state,
+      currentTree: [makeTree("https://moodle.example.com/mod/resource/view.php?id=42")],
+      force: false,
+    });
+    const dl = plan.filter((p) => p.action === SyncAction.DOWNLOAD);
+    expect(dl).toHaveLength(0); // SKIP — already handled, no re-download needed
+  });
+
+  it("does NOT re-download entry with empty url (acknowledged label/assign with no real download)", () => {
+    const makeTreeNoUrl = () => ({
+      courseId: 1,
+      sections: [{
+        sectionId: "s0",
+        sectionName: "Allgemeines",
+        activities: [{
+          activityName: "Lecture Slides",
+          activityType: "label",
+          url: "",
+          isAccessible: true,
+          description: "",
+        }],
+      }],
+    });
+    const state = {
+      courses: {
+        "1": { name: "Course", sections: { "s0": { files: {
+          "1-s0-Lecture Slides": {
+            localPath: "",
+            url: "",
+            hash: "",
+            status: "ok" as const,
+          },
+        } } } },
+      },
+    };
+    const plan = computeSyncPlan({
+      state,
+      currentTree: [makeTreeNoUrl()],
+      force: false,
+    });
+    const dl = plan.filter((p) => p.action === SyncAction.DOWNLOAD);
+    expect(dl).toHaveLength(0); // no URL → no re-download
+  });
+});

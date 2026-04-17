@@ -861,6 +861,13 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       await atomicWrite(bf.path, Buffer.from(bf.content + "\n", "utf8"));
       generatedFiles.push(bf.path);
     }
+    // Eagerly persist generatedFiles to state so SIGINT during the download phase
+    // (which runs next) still records any _Descriptions.md paths that were just written.
+    // Downloads have not started yet, so courses are unchanged — only generatedFiles is updated.
+    if (generatedFiles.length > 0) {
+      const mergedNow = [...new Set([...(state.generatedFiles ?? []), ...generatedFiles])];
+      await stateManager.save({ courses: state.courses as Record<string, import("../sync/state.js").CourseState>, generatedFiles: mergedNow });
+    }
   }
 
   // Per-course mini progress display — active when TTY + useProgressBar.

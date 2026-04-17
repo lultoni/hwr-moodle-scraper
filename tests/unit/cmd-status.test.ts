@@ -644,3 +644,72 @@ describe("T-8: status --json output mode", () => {
     expect(typeof parsed).toBe("object");
   });
 });
+
+// T-20: imagePaths are always claimed as scraper-owned regardless of localPath
+describe("T-20: imagePaths claimed even when localPath is empty (noDescriptions corruption recovery)", () => {
+  function mockWithStateT20(state: object) {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue(state),
+      save: vi.fn(),
+      statePath: "/out/.moodle-scraper-state.json",
+    } as never));
+  }
+
+  it("image in imagePaths is NOT user-added when localPath is non-empty", async () => {
+    mockWithStateT20({
+      version: 1,
+      lastSyncAt: "2026-04-17T10:00:00.000Z",
+      courses: {
+        "1": { name: "Course", sections: { "s0": { files: {
+          "r1": {
+            status: "ok",
+            localPath: "/out/Course/Sec/Forum.md",
+            url: "https://moodle.example.com/mod/forum/view.php?id=1",
+            imagePaths: ["/out/Course/Sec/images/f1.jpg"],
+          },
+        } } } },
+      },
+    });
+    // collectFiles returns the forum .md and the image
+    mockCollectFiles.mockReturnValue([
+      "/out/Course/Sec/Forum.md",
+      "/out/Course/Sec/images/f1.jpg",
+    ]);
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/out" });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+    // Image should not be user-added — "User-added files: N" line is only printed when N > 0
+    expect(output).not.toContain("User-added files: 1");
+    expect(output).not.toContain("msc clean");
+  });
+
+  it("image in imagePaths is NOT user-added even when localPath is empty (corrupted state)", async () => {
+    // Simulates the Pass 44 noDescriptions bug: localPath="" but imagePaths set
+    mockWithStateT20({
+      version: 1,
+      lastSyncAt: "2026-04-17T10:00:00.000Z",
+      courses: {
+        "1": { name: "Course", sections: { "s0": { files: {
+          "r1": {
+            status: "ok",
+            localPath: "",           // corrupted by noDescriptions bug
+            url: "https://moodle.example.com/mod/forum/view.php?id=1",
+            imagePaths: ["/out/Course/Sec/images/f1.jpg"],
+          },
+        } } } },
+      },
+    });
+    // collectFiles returns only the image (forum .md was never written due to state corruption)
+    mockCollectFiles.mockReturnValue([
+      "/out/Course/Sec/images/f1.jpg",
+    ]);
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/out" });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+    // Image must NOT be shown as user-added — it belongs to the scraper
+    expect(output).not.toContain("User-added files: 1");
+    expect(output).not.toContain("msc clean");
+  });
+});

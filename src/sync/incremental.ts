@@ -78,6 +78,10 @@ export function computeSyncPlan(opts: ComputeSyncPlanOptions): SyncPlanItem[] {
 
         const needsDownload = force
           || !fileState
+          // Self-heal corrupted state: localPath="" with a real activity URL and no downloadedAt
+          // means the file was never actually written to disk (Pass 44 noDescriptions bug or similar).
+          // Re-download so the file is fetched and the state is correctly updated.
+          || (fileState.localPath === "" && Boolean(activity.url) && !fileState.downloadedAt)
           // Moodle data-hash comparison: only valid when fileState.hash is also a Moodle token
           // (not a SHA-256). SHA-256 and Moodle tokens are different systems — comparing them
           // directly always returns "not equal" and triggers false re-downloads every run.

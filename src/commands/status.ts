@@ -190,13 +190,17 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
         courseFiles++;
         if (file.sidecarPath) sidecarFiles++;
 
+        // imagePaths and submissionPaths are scraper-owned regardless of whether localPath is set.
+        // localPath can be empty due to the Pass 44 noDescriptions state-corruption bug, but the
+        // images were still downloaded by the scraper and must not appear as user-added.
+        for (const ip of file.imagePaths ?? []) knownPaths.add(ip.normalize("NFC"));
+        for (const sp of file.submissionPaths ?? []) knownPaths.add(sp.normalize("NFC"));
+
         if (file.localPath) {
           // Normalise to NFC — state paths may be NFD (from macOS rename) or NFC (from HTML).
           // collectFiles() also returns NFC, so both sides must match.
           knownPaths.add(file.localPath.normalize("NFC"));
           if (file.sidecarPath) knownPaths.add(file.sidecarPath.normalize("NFC"));
-          for (const sp of file.submissionPaths ?? []) knownPaths.add(sp.normalize("NFC"));
-          for (const ip of file.imagePaths ?? []) knownPaths.add(ip.normalize("NFC"));
           if (file.status !== "orphan" && existsSync(file.localPath)) {
             try {
               const st = statSync(file.localPath);
