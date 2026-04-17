@@ -74,18 +74,20 @@ const VALIDATION: Partial<Record<ConfigKey, { min: number; max: number }>> = {
 };
 
 export class ConfigManager {
-  private readonly configDir: string;
+  private readonly _configDir: string;
   private readonly configFile: string;
 
   constructor(configDir?: string) {
-    this.configDir = configDir ?? join(homedir(), ".config", "moodle-scraper");
-    this.configFile = join(this.configDir, "config.json");
+    this._configDir = configDir ?? join(homedir(), ".config", "moodle-scraper");
+    this.configFile = join(this._configDir, "config.json");
     this.ensureDir();
   }
 
+  get configDir(): string { return this._configDir; }
+
   private ensureDir(): void {
-    if (!existsSync(this.configDir)) {
-      mkdirSync(this.configDir, { recursive: true, mode: 0o700 });
+    if (!existsSync(this._configDir)) {
+      mkdirSync(this._configDir, { recursive: true, mode: 0o700 });
     }
   }
 

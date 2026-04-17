@@ -7,7 +7,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXIT_CODES } from "./exit-codes.js";
 import { ConfigManager, CONFIG_DESCRIPTIONS } from "./config.js";
-import { tryCreateKeychain } from "./auth/keychain.js";
+import { tryCreateCredentialStore } from "./auth/keychain.js";
 import { createHttpClient } from "./http/client.js";
 import { createLogger, LogLevel, type Logger } from "./logger.js";
 import { runScrape } from "./commands/scrape.js";
@@ -114,7 +114,7 @@ program
   }) => {
     const globalOpts = program.opts<{ debug: boolean }>();
     const config = new ConfigManager();
-    const keychain = tryCreateKeychain();
+    const keychain = tryCreateCredentialStore(config.configDir);
     const httpClient = createHttpClient();
     // Password will be added to redact list once collected
     const logger = makeLogger(globalOpts.debug);
@@ -190,10 +190,10 @@ auth
   .option("--non-interactive", "Fail instead of prompting", false)
   .action(async (opts: { nonInteractive: boolean }) => {
     const globalOpts = program.opts<{ debug: boolean }>();
-    const keychain = tryCreateKeychain();
+    const mgr = new ConfigManager();
+    const keychain = tryCreateCredentialStore(mgr.configDir);
     const httpClient = createHttpClient();
     const logger = makeLogger(globalOpts.debug);
-    const mgr = new ConfigManager();
     try {
       await runAuthSet({ keychain, promptFn: makePromptFn(), nonInteractive: opts.nonInteractive, httpClient, ...withLogger(logger) });
     } catch (err) {
@@ -209,10 +209,10 @@ auth
   .description("Remove stored credentials and session")
   .option("--force", "Skip confirmation prompt", false)
   .action(async (opts: { force: boolean }) => {
-    const keychain = tryCreateKeychain();
+    const mgr = new ConfigManager();
+    const keychain = tryCreateCredentialStore(mgr.configDir);
     const clearOpts: Parameters<typeof runAuthClear>[0] = { keychain, force: opts.force };
     if (!opts.force) clearOpts.promptFn = makePromptFn();
-    const mgr = new ConfigManager();
     try {
       await runAuthClear(clearOpts);
     } catch (err) {
@@ -227,9 +227,9 @@ auth
   .command("status")
   .description("Check if credentials and session are valid")
   .action(async () => {
-    const keychain = tryCreateKeychain();
-    const httpClient = createHttpClient();
     const mgr = new ConfigManager();
+    const keychain = tryCreateCredentialStore(mgr.configDir);
+    const httpClient = createHttpClient();
     try {
       await runAuthStatus({ keychain, httpClient });
     } catch (err) {

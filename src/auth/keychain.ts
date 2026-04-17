@@ -32,6 +32,16 @@ export interface Credentials {
   password: string;
 }
 
+/**
+ * Common interface for credential stores.
+ * Implemented by both KeychainAdapter (macOS) and EncryptedFileAdapter (other platforms).
+ */
+export interface CredentialStore {
+  storeCredentials(username: string, password: string): Promise<void>;
+  readCredentials(): Promise<Credentials | null>;
+  deleteCredentials(): Promise<void>;
+}
+
 export class KeychainAdapter {
   private readonly platform: string;
   private storedUsername: string | null = null;

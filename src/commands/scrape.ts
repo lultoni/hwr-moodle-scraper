@@ -7,7 +7,7 @@ import { buildCourseShortPaths } from "../scraper/course-naming.js";
 import { getResourceId } from "../scraper/resource-id.js";
 import { computeSyncPlan, SyncAction } from "../sync/incremental.js";
 import { StateManager, migrateStatePaths, relocateFiles, type CourseState, type State } from "../sync/state.js";
-import { tryCreateKeychain } from "../auth/keychain.js";
+import { tryCreateCredentialStore } from "../auth/keychain.js";
 import { createHttpClient } from "../http/client.js";
 import { createLogger, LogLevel, type Logger } from "../logger.js";
 import { ConfigManager } from "../config.js";
@@ -113,13 +113,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   const httpClient = createHttpClient();
-  const keychain = tryCreateKeychain();
+  const keychain = tryCreateCredentialStore(new ConfigManager().configDir);
   const stateManager = new StateManager(outputDir);
-
-  // On non-macOS, inform the user that credentials won't be stored
-  if (!keychain && !effectiveQuiet) {
-    logger.info("Note: macOS Keychain not available — you'll be asked for credentials each run.");
-  }
 
   // Auth — returns the session cookie for use in subsequent requests
   opts.onPhase?.("start", "Authenticating...");

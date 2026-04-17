@@ -31,6 +31,7 @@ vi.mock("../../src/auth/keychain.js", () => {
   return {
     KeychainAdapter: vi.fn().mockImplementation(() => mockKeychain),
     tryCreateKeychain: vi.fn(() => mockKeychain),
+    tryCreateCredentialStore: vi.fn(() => mockKeychain),
   };
 });
 

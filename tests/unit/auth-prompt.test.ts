@@ -238,6 +238,25 @@ describe("STEP-008: Credential prompt — successful login", () => {
     stdoutSpy.mockRestore();
     stderrSpy.mockRestore();
   });
+  // Bug fix: promptAndAuthenticate must return the session cookie for use in subsequent requests
+  it("returns the session cookie string on successful login (non-testsession path)", async () => {
+    const promptFn = makePromptInputs(["alice", "correctpass"]);
+
+    const { createHttpClient } = await import("../../src/http/client.js");
+    vi.mocked(createHttpClient).mockReturnValue({
+      get: vi.fn().mockResolvedValue({ status: 200, url: FAIL_URL, body: LOGIN_PAGE_HTML, headers: {} }),
+      post: vi.fn().mockResolvedValue({
+        status: 200,
+        url: SUCCESS_URL,
+        headers: { "set-cookie": "MoodleSession=verifiedcookie; path=/" },
+        effectiveCookies: "MoodleSession=verifiedcookie; path=/",
+      }),
+    } as never);
+
+    const cookie = await promptAndAuthenticate({ promptFn, httpClient: vi.mocked(createHttpClient)() });
+    expect(typeof cookie).toBe("string");
+    expect(cookie).toContain("MoodleSession=verifiedcookie");
+  });
 });
 
 // UC-04: env-var credentials skip prompts

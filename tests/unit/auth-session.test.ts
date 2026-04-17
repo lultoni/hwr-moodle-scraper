@@ -105,7 +105,7 @@ describe("STEP-009: Session validation", () => {
   it("invokes the interactive prompt fallback when no Keychain credentials exist", async () => {
     const httpClient = makeHttpClient(false, true);
     vi.mocked(keychainInstance.readCredentials).mockResolvedValue(null);
-    const interactiveFallback = vi.fn().mockResolvedValue(undefined);
+    const interactiveFallback = vi.fn().mockResolvedValue("MoodleSession=fresh; path=/");
 
     await validateOrRefreshSession({
       httpClient: httpClient as never,
@@ -114,5 +114,20 @@ describe("STEP-009: Session validation", () => {
     });
 
     expect(interactiveFallback).toHaveBeenCalled();
+  });
+
+  // Bug fix: interactivePromptFallback must return the session cookie (not discard it)
+  it("returns the cookie from interactivePromptFallback (not empty string)", async () => {
+    const httpClient = makeHttpClient(false, true);
+    vi.mocked(keychainInstance.readCredentials).mockResolvedValue(null);
+    const interactiveFallback = vi.fn().mockResolvedValue("MoodleSession=newcookie; path=/");
+
+    const cookie = await validateOrRefreshSession({
+      httpClient: httpClient as never,
+      keychain: keychainInstance,
+      interactivePromptFallback: interactiveFallback,
+    });
+
+    expect(cookie).toBe("MoodleSession=newcookie; path=/");
   });
 });

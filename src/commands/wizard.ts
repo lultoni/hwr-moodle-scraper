@@ -1,7 +1,7 @@
 // REQ-CLI-015
 import { EXIT_CODES } from "../exit-codes.js";
 import { homedir } from "node:os";
-import type { KeychainAdapter } from "../auth/keychain.js";
+import type { CredentialStore } from "../auth/keychain.js";
 import type { HttpClient } from "../http/client.js";
 import { promptAndAuthenticate, type PromptFn } from "../auth/prompt.js";
 import type { Logger } from "../logger.js";
@@ -13,7 +13,7 @@ interface AnyConfig {
 }
 
 export interface WizardOptions {
-  keychain: KeychainAdapter | null;
+  keychain: CredentialStore | null;
   config: AnyConfig;
   promptFn: PromptFn;
   httpClient: HttpClient;
@@ -21,7 +21,7 @@ export interface WizardOptions {
   logger?: Logger;
 }
 
-export async function shouldRunWizard(opts: { keychain: KeychainAdapter | null; config: AnyConfig }): Promise<boolean> {
+export async function shouldRunWizard(opts: { keychain: CredentialStore | null; config: AnyConfig }): Promise<boolean> {
   const creds = opts.keychain ? await opts.keychain.readCredentials() : null;
   if (creds == null) return true; // no credentials → always run wizard
   const outputDir = (await opts.config.get("outputDir")) as string | undefined;

@@ -1,6 +1,6 @@
 // REQ-AUTH-004, REQ-AUTH-005
 import { EXIT_CODES } from "../exit-codes.js";
-import type { KeychainAdapter } from "./keychain.js";
+import type { CredentialStore } from "./keychain.js";
 import type { HttpClient } from "../http/client.js";
 import { AuthError, extractLoginToken } from "./prompt.js";
 import type { Logger } from "../logger.js";
@@ -26,10 +26,10 @@ export async function deleteSessionFile(): Promise<void> {
 
 export interface SessionOptions {
   httpClient: HttpClient;
-  keychain: KeychainAdapter | null;
+  keychain: CredentialStore | null;
   baseUrl?: string;
   maxRetries?: number;
-  interactivePromptFallback?: () => Promise<void>;
+  interactivePromptFallback?: () => Promise<string>;
   logger?: Logger;
 }
 
@@ -102,8 +102,9 @@ export async function validateOrRefreshSession(opts: SessionOptions): Promise<st
   const creds = keychain ? await keychain.readCredentials() : null;
   if (!creds) {
     if (interactivePromptFallback) {
-      await interactivePromptFallback();
-      return "";
+      const cookie = await interactivePromptFallback();
+      if (cookie) return cookie;
+      throw new AuthError("Authentication failed.", EXIT_CODES.AUTH_ERROR);
     }
     throw new AuthError("No credentials stored.", EXIT_CODES.AUTH_ERROR);
   }

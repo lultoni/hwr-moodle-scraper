@@ -1,6 +1,6 @@
 // REQ-AUTH-001, REQ-AUTH-003, REQ-AUTH-006
 import { EXIT_CODES } from "../exit-codes.js";
-import type { KeychainAdapter } from "./keychain.js";
+import type { CredentialStore } from "./keychain.js";
 import type { HttpClient } from "../http/client.js";
 import type { Logger } from "../logger.js";
 import { extractCookies } from "../http/cookies.js";
@@ -22,7 +22,7 @@ export interface PromptFn {
 export interface PromptAuthOptions {
   promptFn: PromptFn;
   httpClient: HttpClient;
-  keychain?: KeychainAdapter | null;
+  keychain?: CredentialStore | null;
   baseUrl?: string;
   logger?: Logger;
 }
@@ -46,7 +46,7 @@ export function extractLoginToken(html: string): string | undefined {
  *
  * On success, credentials are stored in the macOS Keychain via the provided adapter.
  */
-export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<void> {
+export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<string> {
   const { promptFn, httpClient, keychain, baseUrl = "https://moodle.hwr-berlin.de", logger } = opts;
 
   // Collect username — prefer MSC_USERNAME env var, then prompt
@@ -92,7 +92,7 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
     logger?.debug(`[auth] fetching login page: ${baseUrl}/login/index.php`);
     const loginPage = await httpClient.get(`${baseUrl}/login/index.php`, logger ? { logger } : {});
     loginToken = extractLoginToken(loginPage.body);
-    sessionCookie = extractCookies(loginPage.headers);
+    sessionCookie = loginPage.headers ? extractCookies(loginPage.headers) : "";
     if (sessionCookie) logger?.addSecret(sessionCookie);
     logger?.debug(`[auth] loginToken: ${loginToken ?? "(none)"}`);
     logger?.debug(`[auth] sessionCookie: ${sessionCookie || "(none)"}`);
@@ -102,7 +102,7 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
   }
 
   // Attempt login
-  let response: { status: number; url: string; body: string; headers: Record<string, string | string[]> };
+  let response: { status: number; url: string; body: string; headers: Record<string, string | string[]>; effectiveCookies?: string };
   try {
     const body: Record<string, string> = { username, password };
     if (loginToken) body["logintoken"] = loginToken;
@@ -124,6 +124,8 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
   // Failure path: POST → ?loginredirect=1 (200, login page with error)
   // After following all redirects, check whether we can actually reach /my/ with the accumulated session.
   let isLoggedIn = false;
+  let finalSessionCookie = "";
+
   if (response.url.includes("testsession")) {
     // Session established — verify by fetching /my/ with the cookies from the final response
     try {
@@ -137,12 +139,14 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
       });
       logger?.debug(`[auth] /my/ final URL: ${myPage.url}`);
       isLoggedIn = !myPage.url.includes("/login/");
+      finalSessionCookie = myPage.effectiveCookies || finalCookies || (myPage.headers ? extractCookies(myPage.headers) : "") || "";
     } catch (err) {
       logger?.debug(`[auth] /my/ check failed: ${(err as Error).message}`);
     }
   } else {
     // No testsession step — final URL not on /login/ means success
     isLoggedIn = !response.url.includes("/login/");
+    finalSessionCookie = response.effectiveCookies || (response.headers ? extractCookies(response.headers) : "") || "";
   }
 
   if (!isLoggedIn) {
@@ -158,4 +162,6 @@ export async function promptAndAuthenticate(opts: PromptAuthOptions): Promise<vo
   if (keychain) {
     await keychain.storeCredentials(username, password);
   }
+
+  return finalSessionCookie;
 }

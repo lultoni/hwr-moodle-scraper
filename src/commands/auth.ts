@@ -1,6 +1,6 @@
 // REQ-AUTH-007, REQ-AUTH-008, REQ-CLI-003, REQ-CLI-004, REQ-CLI-005
 import { EXIT_CODES } from "../exit-codes.js";
-import type { KeychainAdapter } from "../auth/keychain.js";
+import type { CredentialStore } from "../auth/keychain.js";
 import { deleteSessionFile, validateOrRefreshSession } from "../auth/session.js";
 import { promptAndAuthenticate, AuthError, type PromptFn } from "../auth/prompt.js";
 import type { HttpClient } from "../http/client.js";
@@ -9,7 +9,7 @@ import { ui } from "../ui.js";
 import { withSpinner } from "../tui/spinner.js";
 
 export interface AuthClearOptions {
-  keychain: KeychainAdapter | null;
+  keychain: CredentialStore | null;
   force?: boolean;
   promptFn?: PromptFn;
 }
@@ -35,7 +35,7 @@ export async function runAuthClear(opts: AuthClearOptions): Promise<void> {
 }
 
 export interface AuthStatusOptions {
-  keychain: KeychainAdapter | null;
+  keychain: CredentialStore | null;
   httpClient?: HttpClient;
   baseUrl?: string;
 }
@@ -70,7 +70,7 @@ export async function runAuthStatus(opts: AuthStatusOptions): Promise<void> {
 }
 
 export interface AuthSetOptions {
-  keychain: KeychainAdapter | null;
+  keychain: CredentialStore | null;
   promptFn: PromptFn;
   nonInteractive?: boolean;
   httpClient?: HttpClient;
