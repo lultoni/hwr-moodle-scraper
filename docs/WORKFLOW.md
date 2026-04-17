@@ -65,11 +65,11 @@
 
 **Checklist**:
 - [x] All 22 steps implemented
-- [x] All 797 tests passing (48 test files)
+- [x] All 802 tests passing (48 test files)
 - [x] Full CLI with auth, scrape, status, wizard, reset, tui, clean, help, archive commands
 - [x] Security: keychain integration, credential handling, HTTPS + retry logic, password env vars on non-macOS
 - [x] Sync: rate limiting, incremental updates, state management, orphan dismissal, last-sync tracking
-- [x] Phase 5 improvements: 47 cleanup/enhancement passes completed
+- [x] Phase 5 improvements: 48 cleanup/enhancement passes completed
 
 ---
 
