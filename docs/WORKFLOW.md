@@ -80,7 +80,7 @@
 3. For new features: use `EnterPlanMode`, surface design decisions via `AskUserQuestion`, then: write tests → implement → `npx vitest run` → `node scripts/file-checker.js` → commit per feature
 4. At end of pass: bump version if user-facing features were added (see versioning below), update CLAUDE.md, rebuild: `npm run build && npm install -g .`
 
-**Current status**: 47 cleanup/improvement passes completed. 797/797 tests passing (48 test files). Version: `0.6.4`.
+**Current status**: 48 cleanup/improvement passes completed. 802/802 tests passing (48 test files). Version: `0.6.5`.
 
 ---
 
