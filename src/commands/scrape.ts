@@ -29,8 +29,8 @@ import { writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { platform } from "node:os";
 
-// Change report colors — stdout TTY only, respects NO_COLOR
-const CR_COLOR = process.stdout.isTTY && !process.env["NO_COLOR"];
+// Change report colors — stderr TTY only, respects NO_COLOR
+const CR_COLOR = process.stderr.isTTY && !process.env["NO_COLOR"];
 const CR = {
   green:  CR_COLOR ? "\u001b[32m" : "",
   yellow: CR_COLOR ? "\u001b[33m" : "",
@@ -858,7 +858,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   // Per-course mini progress display — active when TTY + useProgressBar
   // Replaces cli-progress bar when TTY is live (same gate, higher-resolution UI)
-  const useCourseDisplay = useProgressBar && Boolean(process.stdout.isTTY);
+  const useCourseDisplay = useProgressBar && Boolean(process.stderr.isTTY);
   let courseDisplay: CourseProgressDisplay | undefined;
   if (useCourseDisplay) {
     // Compute per-course totals (binary + non-sidecar special items)
@@ -882,6 +882,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       if (progress.bar) {
         progress.bar.stop();
         progress.bar = undefined;
+        // Erase the partially-rendered bar line so it doesn't linger above the course table
+        process.stderr.write("\r\x1b[2K");
       }
       courseDisplay = new CourseProgressDisplay();
       courseDisplay.start(courseEntries);
@@ -1233,7 +1235,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     for (const entry of shown) {
       const col = entry.isNew ? CR.green : CR.yellow;
       const sym = entry.isNew ? "+" : "~";
-      process.stdout.write(`${col}  ${sym} ${entry.relativePath}${CR.reset}\n`);
+      process.stderr.write(`${col}  ${sym} ${entry.relativePath}${CR.reset}\n`);
     }
     if (sorted.length > maxLines) {
       logger.info(`  ... and ${sorted.length - maxLines} more`);

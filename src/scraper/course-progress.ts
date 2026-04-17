@@ -11,7 +11,7 @@
 const BAR_WIDTH = 20;
 const MAX_NAME = 45;
 
-const USE_COLOR = process.stdout.isTTY && !process.env["NO_COLOR"];
+const USE_COLOR = process.stderr.isTTY && !process.env["NO_COLOR"];
 const C = {
   green:  USE_COLOR ? "\u001b[32m" : "",
   dim:    USE_COLOR ? "\u001b[2m"  : "",
@@ -60,7 +60,7 @@ export class CourseProgressDisplay {
   private linesDrawn = 0;
 
   constructor() {
-    this.isTTY = Boolean(process.stdout.isTTY);
+    this.isTTY = Boolean(process.stderr.isTTY);
   }
 
   /** Print the initial course table. Must be called before tick(). */
@@ -73,7 +73,7 @@ export class CourseProgressDisplay {
     this.linesDrawn = courses.length;
     for (const id of this.courseOrder) {
       const state = this.courses.get(id)!;
-      process.stdout.write(renderLine(state, this.isTTY));
+      process.stderr.write(renderLine(state, this.isTTY));
     }
   }
 
@@ -90,15 +90,15 @@ export class CourseProgressDisplay {
     if (lineIndex < 0) return;
     const linesUp = this.linesDrawn - lineIndex;
     // Move up linesUp lines, overwrite the line, move back down
-    process.stdout.write(`\x1b[${linesUp}A`);
-    process.stdout.write(`\r\x1b[2K${renderLine(state, this.isTTY).trimEnd()}`);
-    process.stdout.write(`\x1b[${linesUp - 1}B\r`);
+    process.stderr.write(`\x1b[${linesUp}A`);
+    process.stderr.write(`\r\x1b[2K${renderLine(state, this.isTTY).trimEnd()}`);
+    process.stderr.write(`\x1b[${linesUp - 1}B\r`);
   }
 
   /** Clear the current-file line and finalize display. */
   finish(): void {
     if (!this.isTTY) return;
     // Move to end of drawn block and emit a blank line separator
-    process.stdout.write("\n");
+    process.stderr.write("\n");
   }
 }

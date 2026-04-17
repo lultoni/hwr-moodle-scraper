@@ -7,9 +7,9 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { CourseProgressDisplay } from "../../src/scraper/course-progress.js";
 
 function makeTTYStdout(): { spy: ReturnType<typeof vi.spyOn>; output: () => string } {
-  const origIsTTY = process.stdout.isTTY;
-  Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
-  const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  const origIsTTY = process.stderr.isTTY;
+  Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+  const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
   return {
     spy,
     output: () => spy.mock.calls.map((c) => c[0] as string).join(""),
@@ -17,16 +17,16 @@ function makeTTYStdout(): { spy: ReturnType<typeof vi.spyOn>; output: () => stri
 }
 
 function restoreTTY(origIsTTY: boolean | undefined): void {
-  Object.defineProperty(process.stdout, "isTTY", { value: origIsTTY, configurable: true });
+  Object.defineProperty(process.stderr, "isTTY", { value: origIsTTY, configurable: true });
 }
 
 describe("CourseProgressDisplay — non-TTY (no-op)", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("does not write anything to stdout when not a TTY", () => {
-    const origIsTTY = process.stdout.isTTY;
-    Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
-    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const origIsTTY = process.stderr.isTTY;
+    Object.defineProperty(process.stderr, "isTTY", { value: false, configurable: true });
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
     const display = new CourseProgressDisplay();
     display.start([
@@ -47,7 +47,7 @@ describe("CourseProgressDisplay — TTY active", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("start() prints one line per course", () => {
-    const origIsTTY = process.stdout.isTTY;
+    const origIsTTY = process.stderr.isTTY;
     const { spy, output } = makeTTYStdout();
 
     const display = new CourseProgressDisplay();
@@ -69,7 +69,7 @@ describe("CourseProgressDisplay — TTY active", () => {
   });
 
   it("tick() increments the done counter for the correct course", () => {
-    const origIsTTY = process.stdout.isTTY;
+    const origIsTTY = process.stderr.isTTY;
     const { spy, output } = makeTTYStdout();
 
     const display = new CourseProgressDisplay();
@@ -92,7 +92,7 @@ describe("CourseProgressDisplay — TTY active", () => {
   });
 
   it("marks course complete when done === total", () => {
-    const origIsTTY = process.stdout.isTTY;
+    const origIsTTY = process.stderr.isTTY;
     const { spy, output } = makeTTYStdout();
 
     const display = new CourseProgressDisplay();
@@ -111,7 +111,7 @@ describe("CourseProgressDisplay — TTY active", () => {
   });
 
   it("finish() writes a final newline to clear the progress area", () => {
-    const origIsTTY = process.stdout.isTTY;
+    const origIsTTY = process.stderr.isTTY;
     const { spy, output } = makeTTYStdout();
 
     const display = new CourseProgressDisplay();
@@ -129,7 +129,7 @@ describe("CourseProgressDisplay — TTY active", () => {
   });
 
   it("renders a block bar with █ and ░ characters", () => {
-    const origIsTTY = process.stdout.isTTY;
+    const origIsTTY = process.stderr.isTTY;
     const { spy, output } = makeTTYStdout();
 
     const display = new CourseProgressDisplay();
@@ -148,7 +148,7 @@ describe("CourseProgressDisplay — TTY active", () => {
   });
 
   it("does nothing on tick() for unknown courseId", () => {
-    const origIsTTY = process.stdout.isTTY;
+    const origIsTTY = process.stderr.isTTY;
     const { spy, output } = makeTTYStdout();
 
     const display = new CourseProgressDisplay();
