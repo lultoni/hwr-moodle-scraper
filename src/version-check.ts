@@ -84,6 +84,6 @@ export async function runUpdateCheck(config: UpdateCheckConfig, version: string,
   const newer = await checkForUpdate(version).catch(() => null);
   await config.set("lastUpdateCheckMs", Date.now());
   if (newer && !quiet) {
-    process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${version})\n      Update: npm install -g .\n`);
+    process.stderr.write(`\n[msc] New version available: v${newer}  (current: v${version})\n      Update: git pull && npm run build && npm install -g .\n`);
   }
 }

@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # need previous commit to diff package.json
+
+      - name: Check version bump
+        id: version
+        run: |
+          PREV=$(git show HEAD~1:package.json | node -e "const d=require('/dev/stdin');process.stdout.write(d.version)" 2>/dev/null || echo "")
+          CURR=$(node -e "const d=require('./package.json');process.stdout.write(d.version)")
+          echo "prev=$PREV" >> $GITHUB_OUTPUT
+          echo "curr=$CURR" >> $GITHUB_OUTPUT
+          if [ "$PREV" != "$CURR" ]; then
+            echo "bumped=true" >> $GITHUB_OUTPUT
+          else
+            echo "bumped=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create release
+        if: steps.version.outputs.bumped == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.curr }}
+          name: v${{ steps.version.outputs.curr }}
+          generate_release_notes: true
