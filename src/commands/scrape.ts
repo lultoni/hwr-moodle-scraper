@@ -846,7 +846,12 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     }
   }
 
-  if (useProgressBar && binaryItems.length > 0) {
+  // Per-course mini progress display — active when TTY + useProgressBar.
+  // Declared here (before cli-progress) so the bar-creation guard can reference it.
+  const useCourseDisplay = useProgressBar && Boolean(process.stderr.isTTY);
+  let courseDisplay: CourseProgressDisplay | undefined;
+
+  if (useProgressBar && !useCourseDisplay && binaryItems.length > 0) {
     const cliProgress = await import("cli-progress");
     progress.bar = new cliProgress.SingleBar({
       format: "Downloading [{bar}] {percentage}% | {value}/{total} files | {file}",
@@ -856,10 +861,6 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     progress.bar.start(binaryItems.length + specialItems.filter((s) => !s.isSidecar).length, 0, { file: "" });
   }
 
-  // Per-course mini progress display — active when TTY + useProgressBar
-  // Replaces cli-progress bar when TTY is live (same gate, higher-resolution UI)
-  const useCourseDisplay = useProgressBar && Boolean(process.stderr.isTTY);
-  let courseDisplay: CourseProgressDisplay | undefined;
   if (useCourseDisplay) {
     // Compute per-course totals (binary + non-sidecar special items)
     const courseTotals = new Map<number, number>();
@@ -878,12 +879,13 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         return { courseId: c.courseId, name, total: courseTotals.get(c.courseId)! };
       });
     if (courseEntries.length > 0) {
-      // Stop cli-progress bar if it was started — course display takes over
+      // Stop cli-progress bar if it was started — course display takes over.
+      // cli-progress stop() does cursorRestore()+newline(), leaving the bar content line
+      // visible above. Erase that line + the newline so the course table starts cleanly.
       if (progress.bar) {
         progress.bar.stop();
         progress.bar = undefined;
-        // Erase the partially-rendered bar line so it doesn't linger above the course table
-        process.stderr.write("\r\x1b[2K");
+        process.stderr.write("\r\x1b[2K\x1b[1A\r\x1b[2K");
       }
       courseDisplay = new CourseProgressDisplay();
       courseDisplay.start(courseEntries);

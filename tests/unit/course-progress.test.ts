@@ -1,7 +1,13 @@
 // Covers: Pass 41 — Feature 4: per-course mini progress display
+//         Pass 47 — Bug fix: tick() cursor return off-by-one (linesUp-1 → linesUp)
 //
 // CourseProgressDisplay renders a live in-place course table during download.
 // Tests cover: initial render, tick(), completion, non-TTY no-op mode.
+//
+// REGRESSION NOTE (Pass 47): tick() must return the cursor to line N (below the table)
+// after each redraw. The original code used \x1b[${linesUp-1}B which landed at line N-1,
+// causing every subsequent tick to write to the wrong line (one above intended), producing
+// a waterfall of duplicate course lines in the terminal output.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { CourseProgressDisplay } from "../../src/scraper/course-progress.js";

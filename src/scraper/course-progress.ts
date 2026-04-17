@@ -92,7 +92,7 @@ export class CourseProgressDisplay {
     // Move up linesUp lines, overwrite the line, move back down
     process.stderr.write(`\x1b[${linesUp}A`);
     process.stderr.write(`\r\x1b[2K${renderLine(state, this.isTTY).trimEnd()}`);
-    process.stderr.write(`\x1b[${linesUp - 1}B\r`);
+    process.stderr.write(`\x1b[${linesUp}B\r`);
   }
 
   /** Clear the current-file line and finalize display. */
