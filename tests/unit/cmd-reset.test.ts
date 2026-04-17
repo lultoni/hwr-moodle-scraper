@@ -388,10 +388,10 @@ describe("msc reset — --move-user-files (only with --full)", () => {
 
   it("calls selectItem once per user file group", async () => {
     mockLoad.mockResolvedValue(makeState());
-    mockCollectFiles.mockReturnValue(["/out/MyGuide/a.md", "/out/notes.txt"]);
+    mockCollectFiles.mockReturnValue([join("/out", "MyGuide", "a.md"), join("/out", "notes.txt")]);
     mockGroupUserFiles.mockReturnValue([
-      { displayPath: "MyGuide", absPath: "/out/MyGuide", files: ["/out/MyGuide/a.md"], isDirectory: true },
-      { displayPath: "notes.txt", absPath: "/out/notes.txt", files: ["/out/notes.txt"], isDirectory: false },
+      { displayPath: "MyGuide", absPath: join("/out", "MyGuide"), files: [join("/out", "MyGuide", "a.md")], isDirectory: true },
+      { displayPath: "notes.txt", absPath: join("/out", "notes.txt"), files: [join("/out", "notes.txt")], isDirectory: false },
     ]);
     mockSelectItem.mockResolvedValue("skip");
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -402,9 +402,9 @@ describe("msc reset — --move-user-files (only with --full)", () => {
 
   it("moves group to outputDir root when user selects 'output-root'", async () => {
     mockLoad.mockResolvedValue(makeState());
-    mockCollectFiles.mockReturnValue(["/out/MyGuide/a.md"]);
+    mockCollectFiles.mockReturnValue([join("/out", "MyGuide", "a.md")]);
     mockGroupUserFiles.mockReturnValue([
-      { displayPath: "MyGuide", absPath: "/out/MyGuide", files: ["/out/MyGuide/a.md"], isDirectory: true },
+      { displayPath: "MyGuide", absPath: join("/out", "MyGuide"), files: [join("/out", "MyGuide", "a.md")], isDirectory: true },
     ]);
     mockSelectItem.mockResolvedValue("output-root");
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -417,9 +417,9 @@ describe("msc reset — --move-user-files (only with --full)", () => {
 
   it("skips move when user selects 'skip'", async () => {
     mockLoad.mockResolvedValue(makeState());
-    mockCollectFiles.mockReturnValue(["/out/MyGuide/a.md"]);
+    mockCollectFiles.mockReturnValue([join("/out", "MyGuide", "a.md")]);
     mockGroupUserFiles.mockReturnValue([
-      { displayPath: "MyGuide", absPath: "/out/MyGuide", files: ["/out/MyGuide/a.md"], isDirectory: true },
+      { displayPath: "MyGuide", absPath: join("/out", "MyGuide"), files: [join("/out", "MyGuide", "a.md")], isDirectory: true },
     ]);
     mockSelectItem.mockResolvedValue("skip");
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -430,10 +430,10 @@ describe("msc reset — --move-user-files (only with --full)", () => {
 
   it("reports how many groups were moved vs skipped", async () => {
     mockLoad.mockResolvedValue(makeState());
-    mockCollectFiles.mockReturnValue(["/out/A/a.md", "/out/B/b.md"]);
+    mockCollectFiles.mockReturnValue([join("/out", "A", "a.md"), join("/out", "B", "b.md")]);
     mockGroupUserFiles.mockReturnValue([
-      { displayPath: "A", absPath: "/out/A", files: ["/out/A/a.md"], isDirectory: true },
-      { displayPath: "B", absPath: "/out/B", files: ["/out/B/b.md"], isDirectory: true },
+      { displayPath: "A", absPath: join("/out", "A"), files: [join("/out", "A", "a.md")], isDirectory: true },
+      { displayPath: "B", absPath: join("/out", "B"), files: [join("/out", "B", "b.md")], isDirectory: true },
     ]);
     mockSelectItem
       .mockResolvedValueOnce("output-root")

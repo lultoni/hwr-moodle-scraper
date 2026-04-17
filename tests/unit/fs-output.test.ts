@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { createHash } from "node:crypto";
 
 // We test against the real filesystem in a temp dir (memfs for pure unit tests,
@@ -264,8 +264,10 @@ describe("Security: buildOutputPath — semesterDir sanitisation", () => {
       sectionName: "Section",
       filename: "file.txt",
     });
-    expect(outPath).not.toContain(":");
-    expect(outPath).not.toContain('"');
+    // Check only the relative portion — on Windows the absolute path contains a drive letter colon (C:\...)
+    const rel = relative(tmpDir, outPath);
+    expect(rel).not.toContain(":");
+    expect(rel).not.toContain('"');
   });
 });
 

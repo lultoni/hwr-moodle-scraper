@@ -121,10 +121,10 @@ describe("msc clean", () => {
 
   it("--move moves files to 'User Files/' preserving relative paths", async () => {
     mockLoad.mockResolvedValue(makeState());
-    mockBuildKnownPaths.mockReturnValue(["/out/Course/Section/file.pdf"]);
+    mockBuildKnownPaths.mockReturnValue([join("/out", "Course", "Section", "file.pdf")]);
     mockCollectFiles.mockReturnValue([
-      "/out/Course/Section/file.pdf",
-      "/out/Course/Section/my-notes.txt",
+      join("/out", "Course", "Section", "file.pdf"),
+      join("/out", "Course", "Section", "my-notes.txt"),
     ]);
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     await runClean({ outputDir: "/out", move: true, force: true });
