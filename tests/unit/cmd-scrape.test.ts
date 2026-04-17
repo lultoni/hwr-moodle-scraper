@@ -792,3 +792,53 @@ describe("T-19: --no-descriptions does not corrupt state for binary activities",
     expect(fileEntry?.localPath).toBe("");
   });
 });
+
+// T-21: --verbose / debug mode and per-file log events
+describe("STEP-020: scrape — verbose/debug mode and no-courses message (Pass 49)", () => {
+  it("--verbose sets logger to DEBUG level (debug events appear in output)", async () => {
+    // When verbose=true the logger level is DEBUG, so debug() calls go to stderr
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, verbose: true });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+    // At DEBUG level the [DEBUG] prefix must appear somewhere
+    expect(output).toContain("[DEBUG]");
+  });
+
+  it("--verbose writes per-file COURSE events to log output", async () => {
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 42, courseName: "WI42 Test", courseUrl: "https://moodle.example.com/course/view.php?id=42" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({ courseId: 42, sections: [] });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, verbose: true, courses: [42] });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+    // Course-level debug events must include the course name
+    expect(output).toContain("WI42 Test");
+  });
+
+  it("no-courses message includes hint about msc auth --reset", async () => {
+    const { fetchEnrolledCourses } = await import("../../src/scraper/courses.js");
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([]);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+    expect(output).toContain("msc auth --reset");
+  });
+
+  it("no-courses message includes hint about --verbose flag", async () => {
+    const { fetchEnrolledCourses } = await import("../../src/scraper/courses.js");
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([]);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+    expect(output).toContain("--verbose");
+  });
+});

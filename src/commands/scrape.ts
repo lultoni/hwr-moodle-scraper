@@ -139,6 +139,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   // Register session cookies as secrets immediately to prevent leakage in subsequent log calls
   opts.onPhase?.("end", "Authenticating...");
   logger.addSecret(sessionCookies);
+  logger.debug("[AUTH] Session valid — proceeding with course fetch");
 
   // Register stored password in logger redact list so it cannot leak into logs
   if (keychain) {
@@ -179,7 +180,9 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     if (searchQuery) {
       logger.info("No courses found matching the search query. Try: msc config set courseSearch <keyword>");
     } else {
-      logger.info("No enrolled courses found on the Moodle dashboard. Make sure you are enrolled in at least one course.");
+      logger.info("No enrolled courses found. This may indicate an invalid or expired session.");
+      logger.info("  → Run: msc auth --reset to re-authenticate");
+      logger.info("  → Or use --verbose to log the full session/fetch flow for diagnosis");
     }
     return;
   }
