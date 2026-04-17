@@ -44,45 +44,45 @@ describe("STEP-006: Keychain adapter", () => {
   });
 
   // REQ-AUTH-002 — store and retrieve
-  it("storeCredentials() writes to Keychain with service 'moodle-scraper'", async () => {
+  it.skipIf(process.platform !== "darwin")("storeCredentials() writes to Keychain with service 'moodle-scraper'", async () => {
     await adapter.storeCredentials("alice", "s3cr3t");
     expect(mockedKeytar.setPassword).toHaveBeenCalledWith("moodle-scraper", "alice", "s3cr3t");
   });
 
-  it("readCredentials() returns the stored username and password", async () => {
+  it.skipIf(process.platform !== "darwin")("readCredentials() returns the stored username and password", async () => {
     mockedKeytar.findCredentials.mockResolvedValueOnce([{ account: "alice", password: "s3cr3t" }]);
     const creds = await adapter.readCredentials();
     expect(creds).toEqual({ username: "alice", password: "s3cr3t" });
   });
 
-  it("deleteCredentials() removes the Keychain entry", async () => {
+  it.skipIf(process.platform !== "darwin")("deleteCredentials() removes the Keychain entry", async () => {
     await adapter.storeCredentials("alice", "s3cr3t");
     await adapter.deleteCredentials();
     expect(mockedKeytar.deletePassword).toHaveBeenCalledWith("moodle-scraper", expect.any(String));
   });
 
-  it("readCredentials() returns null when no entry exists", async () => {
+  it.skipIf(process.platform !== "darwin")("readCredentials() returns null when no entry exists", async () => {
     mockedKeytar.findCredentials.mockResolvedValueOnce([]);
     const creds = await adapter.readCredentials();
     expect(creds).toBeNull();
   });
 
   // REQ-AUTH-002 — service name is ALWAYS 'moodle-scraper', never derived from input
-  it("service name is always the hardcoded string 'moodle-scraper'", async () => {
+  it.skipIf(process.platform !== "darwin")("service name is always the hardcoded string 'moodle-scraper'", async () => {
     await adapter.storeCredentials("bob", "pass");
     const call = mockedKeytar.setPassword.mock.calls[0];
     expect(call?.[0]).toBe("moodle-scraper");
   });
 
   // REQ-AUTH-002 — Keychain write failure: no plaintext fallback
-  it("storeCredentials() throws and does not fall back when setPassword rejects", async () => {
+  it.skipIf(process.platform !== "darwin")("storeCredentials() throws and does not fall back when setPassword rejects", async () => {
     mockedKeytar.setPassword.mockRejectedValueOnce(new Error("Keychain locked"));
     await expect(adapter.storeCredentials("alice", "pass")).rejects.toThrow(
       /could not save credentials to Keychain/
     );
   });
 
-  it("readCredentials() throws when keytar rejects", async () => {
+  it.skipIf(process.platform !== "darwin")("readCredentials() throws when keytar rejects", async () => {
     mockedKeytar.findCredentials.mockRejectedValueOnce(new Error("Permission denied"));
     await expect(adapter.readCredentials()).rejects.toThrow(
       /could not read credentials from Keychain/

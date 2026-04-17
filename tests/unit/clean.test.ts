@@ -1,6 +1,7 @@
 // Tests for msc clean command — delete or move user-added files
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { join } from "node:path";
 
 // --- fs mocks ---
 const mockUnlinkSync = vi.fn();
@@ -128,10 +129,10 @@ describe("msc clean", () => {
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     await runClean({ outputDir: "/out", move: true, force: true });
     expect(mockUnlinkSync).not.toHaveBeenCalled();
-    expect(mockMkdirSync).toHaveBeenCalledWith("/out/User Files/Course/Section", { recursive: true });
+    expect(mockMkdirSync).toHaveBeenCalledWith(join("/out", "User Files", "Course", "Section"), { recursive: true });
     expect(mockRenameSync).toHaveBeenCalledWith(
-      "/out/Course/Section/my-notes.txt",
-      "/out/User Files/Course/Section/my-notes.txt",
+      join("/out", "Course", "Section", "my-notes.txt"),
+      join("/out", "User Files", "Course", "Section", "my-notes.txt"),
     );
     const output = spy.mock.calls.flat().join("");
     expect(output).toContain('Moved 1 file to "User Files/"');

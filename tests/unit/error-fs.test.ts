@@ -34,7 +34,9 @@ describe("STEP-019: Disk full during download", () => {
 
 describe("STEP-019: Output directory inaccessible", () => {
   // REQ-ERR-009
-  it("throws with exitCode 5 when output directory does not exist and cannot be created", async () => {
+  // On Windows, POSIX root paths like /nonexistent-root... resolve from the drive root
+  // and don't trigger an access error, so this test is skipped on Windows.
+  it.skipIf(process.platform === "win32")("throws with exitCode 5 when output directory does not exist and cannot be created", async () => {
     const { buildOutputPath } = await import("../../src/fs/output.js");
     // A path that cannot be created (inside a non-existent parent on a read-only root)
     const impossible = "/nonexistent-root-level-dir-abc123/subdir/file.pdf";

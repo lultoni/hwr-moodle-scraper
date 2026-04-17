@@ -1,6 +1,7 @@
 // Covers: msc reset command
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { join } from "node:path";
 
 // --- fs mocks ---
 const mockUnlinkSync = vi.fn();
@@ -410,7 +411,7 @@ describe("msc reset — --move-user-files (only with --full)", () => {
     await runReset({ outputDir: "/out", force: true, full: true, moveUserFiles: true });
     // mkdirSync should be called for the target, renameSync should move the group
     expect(mockMkdirSync).toHaveBeenCalled();
-    expect(mockRenameSync).toHaveBeenCalledWith("/out/MyGuide", "/out/MyGuide");
+    expect(mockRenameSync).toHaveBeenCalledWith(join("/out", "MyGuide"), join("/out", "MyGuide"));
     spy.mockRestore();
   });
 

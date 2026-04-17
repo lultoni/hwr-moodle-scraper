@@ -79,8 +79,10 @@ describe("STEP-002: Config management", () => {
     const nestedDir = join(tmpDir, "nested", "config");
     await importConfigManager(nestedDir);
     const st = statSync(nestedDir);
-    // 0o40700 = directory + rwx for owner only
-    expect(st.mode & 0o777).toBe(0o700);
+    // 0o40700 = directory + rwx for owner only (POSIX only; Windows ignores mode)
+    if (process.platform !== "win32") {
+      expect(st.mode & 0o777).toBe(0o700);
+    }
   });
 
   // REQ-CLI-007 — config file permissions 0600
@@ -89,7 +91,10 @@ describe("STEP-002: Config management", () => {
     await cfg.set("outputDir", "/tmp/test");
     const configPath = join(tmpDir, "config.json");
     const st = statSync(configPath);
-    expect(st.mode & 0o777).toBe(0o600);
+    // Windows does not enforce POSIX file modes
+    if (process.platform !== "win32") {
+      expect(st.mode & 0o777).toBe(0o600);
+    }
   });
 
   // REQ-CLI-007 — get() on missing key returns undefined

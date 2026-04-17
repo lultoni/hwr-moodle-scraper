@@ -285,8 +285,11 @@ describe("Security: atomicWrite — file permissions", () => {
     const target = join(tmpDir, "private.pdf");
     await atomicWrite(target, Buffer.from("sensitive content"));
 
-    const mode = statSync(target).mode & 0o777;
-    expect(mode).toBe(0o600);
+    // Windows does not enforce POSIX file modes
+    if (process.platform !== "win32") {
+      const mode = statSync(target).mode & 0o777;
+      expect(mode).toBe(0o600);
+    }
   });
 });
 

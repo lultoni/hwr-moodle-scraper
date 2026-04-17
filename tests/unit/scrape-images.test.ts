@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { vol } from "memfs";
+import { join } from "node:path";
 
 // Mock node:fs with memfs
 vi.mock("node:fs", async () => {
@@ -44,7 +45,7 @@ describe("downloadEmbeddedImages", () => {
     const md = `# Topic\n\n![Diagram](${url})\n\nMore text`;
 
     mockedDownloadFile.mockResolvedValueOnce({
-      finalPath: "/out/Course/Section/images/diagram.png",
+      finalPath: join("/out", "Course", "Section", "images", "diagram.png"),
       hash: "abc123",
     });
 
@@ -52,12 +53,12 @@ describe("downloadEmbeddedImages", () => {
 
     expect(mockedDownloadFile).toHaveBeenCalledWith({
       url,
-      destPath: "/out/Course/Section/images/diagram.png",
+      destPath: join("/out", "Course", "Section", "images", "diagram.png"),
       sessionCookies: cookies,
       retryBaseDelayMs: retryMs,
     });
     expect(result.content).toBe("# Topic\n\n![Diagram](./images/diagram.png)\n\nMore text");
-    expect(result.imagePaths).toEqual(["/out/Course/Section/images/diagram.png"]);
+    expect(result.imagePaths).toEqual([join("/out", "Course", "Section", "images", "diagram.png")]);
   });
 
   it("handles multiple images in the same markdown", async () => {
@@ -85,15 +86,15 @@ describe("downloadEmbeddedImages", () => {
     const md = `![A](${url1})\n![B](${url2})`;
 
     mockedDownloadFile
-      .mockResolvedValueOnce({ finalPath: "/out/Course/Section/images/image.png", hash: "h1" })
-      .mockResolvedValueOnce({ finalPath: "/out/Course/Section/images/image_2.png", hash: "h2" });
+      .mockResolvedValueOnce({ finalPath: join("/out", "Course", "Section", "images", "image.png"), hash: "h1" })
+      .mockResolvedValueOnce({ finalPath: join("/out", "Course", "Section", "images", "image_2.png"), hash: "h2" });
 
     const result = await downloadEmbeddedImages(md, "/out/Course/Section/page.md", cookies, retryMs);
 
     // Second image should get deduplicated filename
     expect(mockedDownloadFile).toHaveBeenCalledTimes(2);
     const secondCall = mockedDownloadFile.mock.calls[1]![0] as { destPath: string };
-    expect(secondCall.destPath).toBe("/out/Course/Section/images/image_2.png");
+    expect(secondCall.destPath).toBe(join("/out", "Course", "Section", "images", "image_2.png"));
     expect(result.imagePaths).toHaveLength(2);
   });
 
@@ -125,14 +126,14 @@ describe("downloadEmbeddedImages", () => {
     const md = `![Übersicht](${url})`;
 
     mockedDownloadFile.mockResolvedValueOnce({
-      finalPath: "/out/Section/images/Übersicht.png",
+      finalPath: join("/out", "Section", "images", "Übersicht.png"),
       hash: "h1",
     });
 
     const result = await downloadEmbeddedImages(md, "/out/Section/page.md", cookies, retryMs);
 
     const call = mockedDownloadFile.mock.calls[0]![0] as { destPath: string };
-    expect(call.destPath).toBe("/out/Section/images/Übersicht.png");
+    expect(call.destPath).toBe(join("/out", "Section", "images", "Übersicht.png"));
     expect(result.content).toContain("./images/Übersicht.png");
   });
 

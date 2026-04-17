@@ -29,8 +29,11 @@ describe("T-6: EncryptedFileAdapter", () => {
 
   it("encrypted file has 0o600 permissions", async () => {
     await adapter.storeCredentials("alice", "s3cr3t");
-    const mode = statSync(join(tmpDir, "credentials.enc")).mode & 0o777;
-    expect(mode).toBe(0o600);
+    // Windows does not enforce POSIX file modes
+    if (process.platform !== "win32") {
+      const mode = statSync(join(tmpDir, "credentials.enc")).mode & 0o777;
+      expect(mode).toBe(0o600);
+    }
   });
 
   it("readCredentials round-trips username and password", async () => {

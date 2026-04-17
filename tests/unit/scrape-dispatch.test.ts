@@ -9,6 +9,7 @@
 //   chat, lti, imscp, grouptool, bigbluebuttonbn → info-md (title + URL + description)
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { join, sep } from "node:path";
 import { buildDownloadPlan, type DownloadPlanItem, type DownloadPlanResult, isEmptyLabel, isDividerContentRich } from "../../src/scraper/dispatch.js";
 import type { Activity } from "../../src/scraper/courses.js";
 
@@ -260,16 +261,16 @@ describe("buildDownloadPlan: activity type dispatch", () => {
     // URL activities should be grouped in _Links/ to avoid cluttering the section folder
     const act = makeActivity({ activityType: "url", activityName: "BPMN Poster", url: "https://moodle.example.com/mod/url/view.php?id=5" });
     const { items } = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
-    expect(items[0]?.destPath).toContain("/_Links/");
-    expect(items[0]?.destPath).toMatch(/\/_Links\/BPMN Poster\.url\.txt$/);
+    expect(items[0]?.destPath).toContain(`${sep}_Links${sep}`);
+    expect(items[0]?.destPath).toContain(join("_Links", "BPMN Poster.url.txt"));
   });
 
   it("url activity with subDir places _Links inside the subDir", () => {
     // When an activity has a subDir (from label-subfolder grouping), _Links goes inside it
     const act = makeActivity({ activityType: "url", activityName: "Tutorial", url: "https://moodle.example.com/mod/url/view.php?id=5", subDir: "Materialien" });
     const { items } = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
-    expect(items[0]?.destPath).toContain("/Materialien/_Links/");
-    expect(items[0]?.destPath).toMatch(/\/Materialien\/_Links\/Tutorial\.url\.txt$/);
+    expect(items[0]?.destPath).toContain(join("Materialien", "_Links") + sep);
+    expect(items[0]?.destPath).toContain(join("Materialien", "_Links", "Tutorial.url.txt"));
   });
 
   it("label with description → label-md strategy, destPath ends in .md", () => {
@@ -349,7 +350,7 @@ describe("buildDownloadPlan: activity type dispatch", () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.strategy).toBe("label-md");
     // Written as _Lernziele.md inside the Lernziele/ subfolder
-    expect(items[0]?.destPath).toContain("/Lernziele/");
+    expect(items[0]?.destPath).toContain(`${sep}Lernziele${sep}`);
     expect(items[0]?.destPath).toMatch(/_Lernziele\.md$/);
   });
 
@@ -400,7 +401,7 @@ describe("buildDownloadPlan: activity type dispatch", () => {
     const { items } = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
     expect(items).toHaveLength(1);
     // Path should contain both segments as separate directories
-    expect(items[0]?.destPath).toContain("/Materialien/Foliensammlung/");
+    expect(items[0]?.destPath).toContain(join("Materialien", "Foliensammlung") + sep);
   });
 
   it("unknown activity type → binary strategy + tracked in unknownTypes", () => {

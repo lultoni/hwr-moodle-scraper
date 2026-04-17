@@ -411,7 +411,10 @@ describe("STEP-021: Log file output", () => {
     logger.info("x");
 
     const st = statSync(logPath);
-    expect(st.mode & 0o777).toBe(0o600);
+    // Windows does not enforce POSIX file modes
+    if (process.platform !== "win32") {
+      expect(st.mode & 0o777).toBe(0o600);
+    }
   });
 
   it("log file entries include timestamps", async () => {
