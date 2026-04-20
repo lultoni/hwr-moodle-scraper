@@ -22,20 +22,23 @@ export interface WizardOptions {
 }
 
 export async function shouldRunWizard(opts: { keychain: CredentialStore | null; config: AnyConfig }): Promise<boolean> {
+  // Env-var credentials count as "auth covered" — no wizard needed for auth alone
+  const envCreds = !!(process.env["MSC_USERNAME"] && process.env["MSC_PASSWORD"]);
   const creds = opts.keychain ? await opts.keychain.readCredentials() : null;
-  if (creds == null) return true; // no credentials → always run wizard
+  if (creds == null && !envCreds) return true; // no auth at all → wizard needed
   const outputDir = (await opts.config.get("outputDir")) as string | undefined;
-  return !outputDir; // outputDir missing or empty → run wizard to reconfigure
+  return !outputDir; // outputDir missing → wizard still needed
 }
 
 export async function runWizard(opts: WizardOptions): Promise<void> {
   const { keychain, config, promptFn, httpClient, nonInteractive = false, logger } = opts;
 
+  const envCreds = !!(process.env["MSC_USERNAME"] && process.env["MSC_PASSWORD"]);
   const creds = keychain ? await keychain.readCredentials() : null;
   const storedOutputDir = ((await config.get("outputDir")) as string | undefined) ?? "";
 
-  // Nothing to do if both credentials and outputDir are already set
-  if (creds != null && storedOutputDir) return;
+  // Nothing to do: auth is covered (stored or env) and outputDir is set
+  if ((creds != null || envCreds) && storedOutputDir) return;
 
   if (nonInteractive) {
     throw Object.assign(
@@ -44,17 +47,18 @@ export async function runWizard(opts: WizardOptions): Promise<void> {
     );
   }
 
-  // Output directory (always ask if missing)
-  const hint = storedOutputDir || `${homedir()}/moodle-scraper-output`;
-  const inputDir = await promptFn(`Output directory [${hint}]: `);
-  await config.set("outputDir", inputDir.trim() || hint);
-
-  // Credentials (only ask if not already stored)
-  if (creds == null) {
-    await promptAndAuthenticate({ promptFn, httpClient, keychain, ...(logger ? { logger } : {}) });
+  // Output directory — only ask if not already configured
+  if (!storedOutputDir) {
+    const hint = `${homedir()}/moodle-scraper-output`;
+    const inputDir = await promptFn(`Output directory [${hint}]: `);
+    await config.set("outputDir", inputDir.trim() || hint);
+    // Log file is only asked on first-time outputDir setup
+    const logInput = (await promptFn("Log file path (press Enter to skip): ")).trim();
+    await config.set("logFile", logInput || null);
   }
 
-  // Log file
-  const logInput = (await promptFn("Log file path (press Enter to skip): ")).trim();
-  await config.set("logFile", logInput || null);
+  // Credentials — only ask if not covered by stored creds or env vars
+  if (creds == null && !envCreds) {
+    await promptAndAuthenticate({ promptFn, httpClient, keychain, ...(logger ? { logger } : {}) });
+  }
 }

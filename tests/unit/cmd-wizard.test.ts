@@ -3,7 +3,7 @@
 // Tests for the first-run setup wizard.
 // Terminal I/O, auth, and config are mocked.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../../src/auth/keychain.js", () => {
   const mockKeychain = {
@@ -181,5 +181,96 @@ describe("STEP-022: Wizard — logFile prompt", () => {
     await runWizard({ keychain, config, promptFn, httpClient: {} as never });
 
     expect(vi.mocked(config.set)).toHaveBeenCalledWith("logFile", null);
+  });
+});
+
+// T-21: env-var credential awareness in wizard
+describe("T-21: Wizard — env-var credential awareness", () => {
+  beforeEach(() => {
+    vi.mocked(promptAndAuthenticate).mockClear();
+    delete process.env["MSC_USERNAME"];
+    delete process.env["MSC_PASSWORD"];
+  });
+
+  afterEach(() => {
+    delete process.env["MSC_USERNAME"];
+    delete process.env["MSC_PASSWORD"];
+  });
+
+  it("shouldRunWizard returns false when MSC_USERNAME + MSC_PASSWORD env vars set and outputDir configured", async () => {
+    // Env vars cover auth — no wizard needed even with no credentials.enc
+    process.env["MSC_USERNAME"] = "s12345";
+    process.env["MSC_PASSWORD"] = "secret";
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue(null); // no credentials.enc
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue("/some/output/dir");
+
+    const result = await shouldRunWizard({ keychain, config });
+    expect(result).toBe(false);
+  });
+
+  it("shouldRunWizard returns true when env vars set but outputDir missing", async () => {
+    // Auth is covered by env vars but outputDir must still be configured
+    process.env["MSC_USERNAME"] = "s12345";
+    process.env["MSC_PASSWORD"] = "secret";
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue(null);
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue(undefined);
+
+    const result = await shouldRunWizard({ keychain, config });
+    expect(result).toBe(true);
+  });
+
+  it("runWizard returns immediately (no prompts) when env vars set and outputDir configured", async () => {
+    // Both auth and outputDir are covered — wizard does nothing
+    process.env["MSC_USERNAME"] = "s12345";
+    process.env["MSC_PASSWORD"] = "secret";
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue(null); // no credentials.enc
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue("/existing/output");
+    const promptFn = vi.fn();
+
+    await runWizard({ keychain, config, promptFn, httpClient: {} as never });
+
+    expect(promptFn).not.toHaveBeenCalled();
+    expect(vi.mocked(promptAndAuthenticate)).not.toHaveBeenCalled();
+  });
+
+  it("runWizard asks only outputDir when env vars set but outputDir missing (no credential prompt)", async () => {
+    // Env vars cover auth — only outputDir needs to be set
+    process.env["MSC_USERNAME"] = "s12345";
+    process.env["MSC_PASSWORD"] = "secret";
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue(null);
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue(undefined); // outputDir missing
+    const promptFn = vi.fn()
+      .mockResolvedValueOnce("/my/output") // outputDir
+      .mockResolvedValueOnce("");          // logFile
+
+    await runWizard({ keychain, config, promptFn, httpClient: {} as never });
+
+    expect(vi.mocked(config.set)).toHaveBeenCalledWith("outputDir", "/my/output");
+    // Credential prompt must NOT have been called — env vars cover it
+    expect(vi.mocked(promptAndAuthenticate)).not.toHaveBeenCalled();
+  });
+
+  it("runWizard does not re-ask outputDir when already set (only credential prompt needed)", async () => {
+    // outputDir is configured; only credentials are missing (no env vars either)
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue(null); // no stored creds, no env vars
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue("/existing/output"); // outputDir already set
+    const promptFn = vi.fn();
+
+    await runWizard({ keychain, config, promptFn, httpClient: {} as never });
+
+    // outputDir prompt (config.set for outputDir) must NOT have been called
+    expect(vi.mocked(config.set)).not.toHaveBeenCalledWith("outputDir", expect.anything());
+    // Credential prompt MUST have been called (no stored creds, no env vars)
+    expect(vi.mocked(promptAndAuthenticate)).toHaveBeenCalled();
   });
 });
