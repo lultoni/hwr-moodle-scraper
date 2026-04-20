@@ -136,8 +136,9 @@ program
     // Password will be added to redact list once collected
     const logger = makeLogger(globalOpts.debug);
 
-    // Fire update check early — resolved after command finishes (non-blocking)
-    const updateCheckPromise = runUpdateCheck(config, pkg.version, opts.quiet);
+    // Run update check first — blocking but has a 5 s network timeout, so it
+    // appears before the wizard prompts and is never skipped by a later crash.
+    await runUpdateCheck(config, pkg.version, opts.quiet);
 
     // First-run wizard
     if (await shouldRunWizard({ keychain, config })) {
@@ -194,8 +195,6 @@ program
       process.stderr.write(`Error: ${(err as Error).message}\n`);
       process.exit(code);
     }
-
-    await updateCheckPromise;
   });
 
 // --- auth ---
