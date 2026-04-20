@@ -46,6 +46,7 @@ vi.mock("../../src/config.js", () => ({
   ConfigManager: vi.fn().mockImplementation(() => ({
     get: vi.fn().mockResolvedValue(undefined),
     set: vi.fn().mockResolvedValue(undefined),
+    configDir: "/tmp/test-config",
   })),
 }));
 
