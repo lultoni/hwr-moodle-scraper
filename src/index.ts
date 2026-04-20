@@ -2,7 +2,7 @@
 // REQ-CLI-001, REQ-CLI-011, REQ-CLI-013, REQ-CLI-014
 import { Command } from "commander";
 import { createInterface } from "node:readline";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXIT_CODES } from "./exit-codes.js";
@@ -37,6 +37,23 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
   readFileSync(resolve(__dirname, "../package.json"), "utf8")
 ) as { version: string; name: string };
+
+// Load .env from CWD if present. Shell env takes priority (existing vars are not overwritten).
+// Enables MSC_USERNAME / MSC_PASSWORD to be supplied via a .env file.
+function loadDotEnv(): void {
+  const envPath = resolve(process.cwd(), ".env");
+  if (!existsSync(envPath)) return;
+  for (const line of readFileSync(envPath, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, "");
+    if (key && !(key in process.env)) process.env[key] = val;
+  }
+}
+loadDotEnv();
 
 // --- interactive prompt helper ---
 // For masked input (passwords): use a muted output stream so readline still
