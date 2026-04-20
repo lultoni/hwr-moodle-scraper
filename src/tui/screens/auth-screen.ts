@@ -4,7 +4,8 @@
  * displays stored credentials inline with a countdown before returning.
  */
 
-import { tryCreateKeychain } from "../../auth/keychain.js";
+import { tryCreateCredentialStore } from "../../auth/keychain.js";
+import { ConfigManager } from "../../config.js";
 import { runAuthSet, runAuthClear, runAuthStatus } from "../../commands/auth.js";
 import { createHttpClient } from "../../http/client.js";
 import { selectItem } from "../select.js";
@@ -14,7 +15,8 @@ import { C, SHOW_CURSOR, CLEAR, APP_TITLE } from "../renderer.js";
 import type { PromptFn } from "../../auth/prompt.js";
 
 export async function authScreen(promptFn: PromptFn, version: string): Promise<void> {
-  const keychain = tryCreateKeychain();
+  const config = new ConfigManager();
+  const keychain = tryCreateCredentialStore(config.configDir);
   const httpClient = createHttpClient();
 
   // Fetch stored username for display in menu item label
