@@ -65,12 +65,15 @@ files are NOT deleted. Flags compose freely:
   msc reset --credentials             → clears saved credentials + session
   msc reset --files --config --credentials  → full wipe (alias: --full)
   msc reset --dry-run                 → preview without making changes
+
+After a failed scrape, to retry with a clean state (keeps your files):
+  msc reset --state && msc scrape
 `,
   "clean": `
 msc clean
 =========
 msc clean removes personal files that YOU added to the output folder
-(files not downloaded by msc).
+(files not downloaded by msc). It does NOT touch scraper-downloaded files.
 
   msc clean            → delete user-added files (with confirmation)
   msc clean --move     → move them to "User Files/" instead
@@ -79,6 +82,8 @@ msc clean removes personal files that YOU added to the output folder
 
 Files inside a "_User-Files/" directory are always protected and never
 shown or touched by msc clean.
+
+Use "msc reset" (not msc clean) to remove files that msc downloaded.
 `,
   "sidecar": `
 Description Files (.description.md)
@@ -101,6 +106,42 @@ re-downloads all files.
 
 To see what changed in the last run:
   msc status --changed
+`,
+  "update": `
+Updating msc
+============
+To update to a newer version of msc, run in the cloned repo directory:
+
+  git pull
+  npm ci
+  npm run build
+  npm install -g .
+
+To check the current version:
+  msc --version
+
+msc checks GitHub for updates automatically (once per 24h) and prints
+a notification when a newer version is available.
+`,
+  "debug": `
+Diagnosing Errors
+=================
+If msc crashes with a cryptic error message, re-run with --debug to get
+a full stack trace:
+
+  msc --debug scrape
+
+To also save a complete debug log to a file (includes all HTTP requests
+and file operations at DEBUG level):
+
+  msc config set logFile ~/moodle-debug.log
+  msc scrape
+  # inspect ~/moodle-debug.log
+
+The log file always writes at DEBUG level regardless of the terminal
+output level. Disable it again with:
+
+  msc config set logFile null
 `,
 };
 

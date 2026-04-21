@@ -80,6 +80,26 @@ The first download takes roughly **10–20 minutes** and uses about **2–3 GB**
 
 ---
 
+## Updating
+
+To pull the latest version:
+
+```bash
+cd hwr-moodle-scraper
+git pull
+npm ci
+npm run build
+npm install -g .
+```
+
+Then verify:
+
+```bash
+msc --version
+```
+
+---
+
 ## Everyday Use
 
 | What you want to do | Command |
