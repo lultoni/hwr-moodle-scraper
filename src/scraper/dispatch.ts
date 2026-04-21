@@ -284,9 +284,12 @@ export function isDividerLabel(descriptionHtml: string): boolean {
   if (headingText !== null && hasSmallIcon(descriptionHtml)) return true;
 
   const td = createTurndown();
-  const md = td.turndown(descriptionHtml);
-
-  // Strip image markdown ![alt](url)
+  let md: string;
+  try {
+    md = td.turndown(descriptionHtml);
+  } catch {
+    return false; // malformed HTML causes Turndown crash — treat as non-divider
+  }
   const stripped = md.replace(/!\[[^\]]*\]\([^)]*\)/g, "");
 
   // Strip heading markers and bold/italic
@@ -358,7 +361,12 @@ function stripKopie(name: string): string {
  */
 export function isEmptyLabel(descriptionHtml: string): boolean {
   const td = createTurndown();
-  const md = td.turndown(descriptionHtml);
+  let md: string;
+  try {
+    md = td.turndown(descriptionHtml);
+  } catch {
+    return false; // malformed HTML — assume non-empty rather than silently dropping content
+  }
 
   // Strip image markdown, horizontal rules, whitespace, and non-alpha chars
   const stripped = md
@@ -396,7 +404,12 @@ export function isDividerContentRich(descriptionHtml: string): boolean {
 
   // Now convert remaining HTML to text to check for content
   const td = createTurndown();
-  const md = td.turndown(html);
+  let md: string;
+  try {
+    md = td.turndown(html);
+  } catch {
+    return false; // malformed HTML — treat as heading-only (no content file written)
+  }
 
   // Strip image markdown, links markdown syntax, whitespace
   const stripped = md

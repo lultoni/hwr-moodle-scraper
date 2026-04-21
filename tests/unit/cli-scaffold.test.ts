@@ -110,3 +110,26 @@ describe("Fix 4: --debug outputs stack trace on fatal error", () => {
     expect(withoutDebug).not.toContain("at ");
   });
 });
+
+describe("Fix 3 (Pass 53): fatal error writes to log file via setActiveLogger", () => {
+  // Regression: uncaughtException/unhandledRejection only wrote to process.stderr.
+  // With setActiveLogger(), if a logger with a log file is active at the time of crash,
+  // the fatal error is also written to the log file so users can diagnose crashes offline.
+
+  it("setActiveLogger is exported from src/fatal-logger.ts", async () => {
+    const mod = await import("../../src/fatal-logger.js");
+    expect(typeof mod.setActiveLogger).toBe("function");
+  });
+
+  it("after setActiveLogger(logger), active logger receives the error message", async () => {
+    const { setActiveLogger, logFatalError } = await import("../../src/fatal-logger.js");
+    const calls: string[] = [];
+    const mockLogger = { error: (msg: string) => { calls.push(msg); } };
+    setActiveLogger(mockLogger as never);
+    logFatalError("Fatal error: test crash");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("Fatal error: test crash");
+    // Cleanup
+    setActiveLogger(null);
+  });
+});

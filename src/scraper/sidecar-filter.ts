@@ -93,14 +93,20 @@ export function filterSidecars(
       const item = passThrough[i]!;
       if (item.strategy !== "label-md" || !item.description) continue;
       const dir = dirname(item.destPath).normalize("NFC");
-      const labelMd = td.turndown(item.description).trim().normalize("NFC");
+      let labelMd: string;
+      try {
+        labelMd = td.turndown(item.description).trim().normalize("NFC");
+      } catch { continue; }
       if (!labelMd) continue;
       for (let j = 0; j < passThrough.length; j++) {
         if (i === j) continue;
         const other = passThrough[j]!;
         if (!other.description) continue;
         if (dirname(other.destPath).normalize("NFC") !== dir) continue;
-        const otherMd = td.turndown(other.description).trim().normalize("NFC");
+        let otherMd: string;
+        try {
+          otherMd = td.turndown(other.description).trim().normalize("NFC");
+        } catch { continue; }
         if (otherMd.includes(labelMd)) {
           labelMdIndices.add(i);
           suppressedCount++;
@@ -114,7 +120,10 @@ export function filterSidecars(
       const item = passThrough[i]!;
       if (item.strategy !== "label-md" || !item.description) continue;
       const dir = dirname(item.destPath).normalize("NFC");
-      const labelMd = td.turndown(item.description).trim().normalize("NFC");
+      let labelMd: string;
+      try {
+        labelMd = td.turndown(item.description).trim().normalize("NFC");
+      } catch { continue; }
       if (!labelMd) continue;
       const diskFiles = diskContent.get(dir) ?? new Map<string, string>();
       for (const [, content] of diskFiles) {
@@ -132,7 +141,10 @@ export function filterSidecars(
   const td = createTurndown();
   const converted: Array<{ candidate: SidecarItem; descMd: string; dir: string }> = [];
   for (const candidate of sidecarCandidates) {
-    const descMd = td.turndown(candidate.description ?? "").trim().normalize("NFC");
+    let descMd: string;
+    try {
+      descMd = td.turndown(candidate.description ?? "").trim().normalize("NFC");
+    } catch { continue; }
     const dir = dirname(candidate.destPath).normalize("NFC");
     converted.push({ candidate, descMd, dir });
   }
@@ -175,7 +187,10 @@ export function filterSidecars(
   for (const item of passThrough) {
     if (!item.description) continue;
     const dir = dirname(item.destPath).normalize("NFC");
-    const mdContent = td.turndown(item.description).trim().normalize("NFC");
+    let mdContent: string;
+    try {
+      mdContent = td.turndown(item.description).trim().normalize("NFC");
+    } catch { continue; }
     if (!mdContent) continue;
     const arr = batchNonSidecarContent.get(dir) ?? [];
     arr.push(mdContent);
@@ -192,7 +207,10 @@ export function filterSidecars(
     const item = passThrough[i]!;
     if (item.strategy !== "label-md" || !item.description) continue;
     const dir = dirname(item.destPath).normalize("NFC");
-    const labelMd = td.turndown(item.description).trim().normalize("NFC");
+    let labelMd: string;
+    try {
+      labelMd = td.turndown(item.description).trim().normalize("NFC");
+    } catch { continue; }
     if (!labelMd) continue;
     // Check against other non-sidecar items in same dir
     for (let j = 0; j < passThrough.length; j++) {
@@ -201,7 +219,10 @@ export function filterSidecars(
       if (!other.description) continue;
       const otherDir = dirname(other.destPath).normalize("NFC");
       if (otherDir !== dir) continue;
-      const otherMd = td.turndown(other.description).trim().normalize("NFC");
+      let otherMd: string;
+      try {
+        otherMd = td.turndown(other.description).trim().normalize("NFC");
+      } catch { continue; }
       if (otherMd.includes(labelMd)) {
         labelMdIndices.add(i);
         suppressedCount++;
@@ -216,7 +237,10 @@ export function filterSidecars(
     const item = passThrough[i]!;
     if (item.strategy !== "label-md" || !item.description) continue;
     const dir = dirname(item.destPath).normalize("NFC");
-    const labelMd = td.turndown(item.description).trim().normalize("NFC");
+    let labelMd: string;
+    try {
+      labelMd = td.turndown(item.description).trim().normalize("NFC");
+    } catch { continue; }
     if (!labelMd) continue;
     const diskFiles = diskContent.get(dir) ?? new Map<string, string>();
     for (const [filename, content] of diskFiles) {

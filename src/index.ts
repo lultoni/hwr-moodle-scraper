@@ -10,6 +10,7 @@ import { ConfigManager, CONFIG_DESCRIPTIONS, coerceConfigValue } from "./config.
 import { tryCreateCredentialStore } from "./auth/keychain.js";
 import { createHttpClient } from "./http/client.js";
 import { createLogger, LogLevel, type Logger } from "./logger.js";
+import { setActiveLogger, logFatalError } from "./fatal-logger.js";
 import { runScrape } from "./commands/scrape.js";
 import { runAuthSet, runAuthClear, runAuthStatus } from "./commands/auth.js";
 import { runStatus } from "./commands/status.js";
@@ -31,11 +32,15 @@ function fatalErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 process.on("uncaughtException", (err) => {
-  process.stderr.write(`Fatal error: ${fatalErrorMessage(err)}\n`);
+  const msg = fatalErrorMessage(err);
+  logFatalError(`Fatal error: ${msg}`);
+  process.stderr.write(`Fatal error: ${msg}\n`);
   process.exit(EXIT_CODES.ERROR);
 });
 process.on("unhandledRejection", (reason) => {
-  process.stderr.write(`Fatal error: ${fatalErrorMessage(reason)}\n`);
+  const msg = fatalErrorMessage(reason);
+  logFatalError(`Fatal error: ${msg}`);
+  process.stderr.write(`Fatal error: ${msg}\n`);
   process.exit(EXIT_CODES.ERROR);
 });
 

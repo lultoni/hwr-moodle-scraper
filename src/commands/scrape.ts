@@ -10,6 +10,7 @@ import { StateManager, migrateStatePaths, relocateFiles, type CourseState, type 
 import { tryCreateCredentialStore } from "../auth/keychain.js";
 import { createHttpClient } from "../http/client.js";
 import { createLogger, LogLevel, type Logger } from "../logger.js";
+import { setActiveLogger } from "../fatal-logger.js";
 import { ConfigManager } from "../config.js";
 import { buildOutputPath, checkDiskSpace, checkDiskSpaceSafe, atomicWrite } from "../fs/output.js";
 import { sanitiseFilename } from "../fs/sanitise.js";
@@ -102,6 +103,8 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const effectiveQuiet = quiet || json;
   const level = effectiveQuiet ? LogLevel.ERROR : verbose ? LogLevel.DEBUG : LogLevel.INFO;
   const logger = opts.logger ?? createLogger({ level, redact: [], logFile: logFileCfg ?? null });
+  // Register logger so uncaughtException/unhandledRejection handlers can also write to log file
+  setActiveLogger(logger);
 
   // --fast: override request settings for faster scraping (heavier on server)
   if (fast) {
@@ -1462,6 +1465,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
   // Deregister shutdown handlers — scrape completed normally
   shutdown.unregister();
+  setActiveLogger(null);
 }
 
 /** Get display metadata for a sync plan item (used for skip/download log messages). */

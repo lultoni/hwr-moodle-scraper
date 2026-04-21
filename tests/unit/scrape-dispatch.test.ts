@@ -10,7 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { join, sep } from "node:path";
-import { buildDownloadPlan, type DownloadPlanItem, type DownloadPlanResult, isEmptyLabel, isDividerContentRich } from "../../src/scraper/dispatch.js";
+import { buildDownloadPlan, type DownloadPlanItem, type DownloadPlanResult, isEmptyLabel, isDividerContentRich, isDividerLabel } from "../../src/scraper/dispatch.js";
 import type { Activity } from "../../src/scraper/courses.js";
 
 function makeActivity(overrides: Partial<Activity>): Activity {
@@ -495,5 +495,51 @@ describe("isDividerContentRich — detects dividers with substantial content", (
     const html = `<h3><img src="buch.png" alt="Bücher" width="40" height="40">Literatur zum Teil I</h3>
 <p style="text-align: right; font-size: 9px;">Icons erstellt von <a href="https://www.flaticon.com">mikan933</a></p>`;
     expect(isDividerContentRich(html)).toBe(false);
+  });
+});
+
+// ── Turndown crash resilience (parentNode bug) ───────────────────────────────
+// Regression: Turndown throws "Cannot read properties of undefined (reading 'parentNode')"
+// on some Moodle HTML. All three helper functions must catch the error and return a safe default
+// instead of propagating — otherwise the crash bubbles up as uncaughtException and the whole
+// scrape fails with no error in the log file.
+
+describe("Turndown crash resilience — isDividerLabel, isEmptyLabel, isDividerContentRich", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("../../src/scraper/turndown.js", () => ({
+      createTurndown: () => ({
+        turndown: () => { throw new Error("Cannot read properties of undefined (reading 'parentNode')"); },
+        addRule: () => {},
+        remove: () => {},
+        use: () => {},
+      }),
+    }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  it("isDividerLabel() returns false when Turndown throws — does not propagate", async () => {
+    const { isDividerLabel: fn } = await import("../../src/scraper/dispatch.js");
+    // Should not throw, should return false (safe default: not a divider)
+    expect(() => fn("<p>Some label HTML</p>")).not.toThrow();
+    expect(fn("<p>Some label HTML</p>")).toBe(false);
+  });
+
+  it("isEmptyLabel() returns false when Turndown throws — does not propagate", async () => {
+    const { isEmptyLabel: fn } = await import("../../src/scraper/dispatch.js");
+    // Should not throw, should return false (safe: treat as non-empty)
+    expect(() => fn("<p>Some label HTML</p>")).not.toThrow();
+    expect(fn("<p>Some label HTML</p>")).toBe(false);
+  });
+
+  it("isDividerContentRich() returns false when Turndown throws — does not propagate", async () => {
+    const { isDividerContentRich: fn } = await import("../../src/scraper/dispatch.js");
+    // Should not throw, should return false (safe: treat as heading-only, no content file)
+    expect(() => fn("<p>Some label HTML</p>")).not.toThrow();
+    expect(fn("<p>Some label HTML</p>")).toBe(false);
   });
 });
