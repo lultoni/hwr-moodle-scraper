@@ -57,12 +57,28 @@ export const CONFIG_DESCRIPTIONS: Partial<Record<ConfigKey, string>> = {
   requestDelayMs: "Base delay between HTTP requests (ms)",
   requestJitterMs: "Random jitter added to each request delay (ms)",
   retryBaseDelayMs: "Base delay for retry back-off on failed requests (ms)",
-  logFile: "Path to write debug log file (null = disabled)",
+  logFile: "Path to write debug log file, e.g. ~/moodle.log (null = disabled). Set with: msc config set logFile null",
   checkUpdates: "Check for new msc versions on GitHub (true/false)",
   updateCheckIntervalHours: "Hours between automatic update checks (0 = every run)",
   displayPathFormat: "Path separator style: auto | posix | windows",
   postScrapeHook: "Shell command to run after a scrape that produces changes (null = disabled)",
 };
+
+/** Keys whose CLI value "null" should be stored as actual null (not the string "null"). */
+const NULLABLE_CLI_KEYS: ConfigKey[] = ["logFile", "courseSearch", "postScrapeHook"];
+
+/** Keys whose CLI value should be coerced to a number. */
+const NUMERIC_CLI_KEYS: ConfigKey[] = ["minFreeDiskMb", "maxConcurrentDownloads", "requestDelayMs", "requestJitterMs", "retryBaseDelayMs", "updateCheckIntervalHours"];
+
+/**
+ * Coerce a raw CLI string value to the correct ConfigValue type for the given key.
+ * Used by `msc config set <key> <value>`.
+ */
+export function coerceConfigValue(key: string, value: string): ConfigValue {
+  if (NUMERIC_CLI_KEYS.includes(key as ConfigKey)) return Number(value);
+  if (NULLABLE_CLI_KEYS.includes(key as ConfigKey) && value === "null") return null;
+  return value;
+}
 
 const VALIDATION: Partial<Record<ConfigKey, { min: number; max: number }>> = {
   requestDelayMs:             { min: 100,  max: 30_000 },

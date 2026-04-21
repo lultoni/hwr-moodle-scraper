@@ -4,7 +4,7 @@
 // and unknown command handling. All tests are failing until STEP-001 is implemented.
 
 import { describe, it, expect } from "vitest";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
 const BIN = resolve(__dirname, "../../src/index.ts");
@@ -65,5 +65,33 @@ describe("STEP-001: CLI scaffold", () => {
     expect(EXIT_CODES.AUTH_ERROR).toBe(3);
     expect(EXIT_CODES.NETWORK_ERROR).toBe(4);
     expect(EXIT_CODES.FILESYSTEM_ERROR).toBe(5);
+  });
+});
+
+describe("config set — nullable key coercion", () => {
+  // Covers Fix 2: coerceConfigValue must convert string "null" to actual null for nullable keys
+  it("coerceConfigValue('logFile', 'null') returns null", async () => {
+    const { coerceConfigValue } = await import("../../src/config.js");
+    expect(coerceConfigValue("logFile", "null")).toBeNull();
+  });
+
+  it("coerceConfigValue('postScrapeHook', 'null') returns null", async () => {
+    const { coerceConfigValue } = await import("../../src/config.js");
+    expect(coerceConfigValue("postScrapeHook", "null")).toBeNull();
+  });
+
+  it("coerceConfigValue('courseSearch', 'null') returns null", async () => {
+    const { coerceConfigValue } = await import("../../src/config.js");
+    expect(coerceConfigValue("courseSearch", "null")).toBeNull();
+  });
+
+  it("coerceConfigValue('logFile', '/path/to/file.log') returns the path string", async () => {
+    const { coerceConfigValue } = await import("../../src/config.js");
+    expect(coerceConfigValue("logFile", "/path/to/file.log")).toBe("/path/to/file.log");
+  });
+
+  it("coerceConfigValue('requestDelayMs', '1000') returns the number 1000", async () => {
+    const { coerceConfigValue } = await import("../../src/config.js");
+    expect(coerceConfigValue("requestDelayMs", "1000")).toBe(1000);
   });
 });

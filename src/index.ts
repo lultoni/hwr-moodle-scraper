@@ -6,7 +6,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXIT_CODES } from "./exit-codes.js";
-import { ConfigManager, CONFIG_DESCRIPTIONS } from "./config.js";
+import { ConfigManager, CONFIG_DESCRIPTIONS, coerceConfigValue } from "./config.js";
 import { tryCreateCredentialStore } from "./auth/keychain.js";
 import { createHttpClient } from "./http/client.js";
 import { createLogger, LogLevel, type Logger } from "./logger.js";
@@ -273,8 +273,7 @@ config
   .description("Set a config value")
   .action(async (key: string, value: string) => {
     const mgr = new ConfigManager();
-    const numericKeys = ["minFreeDiskMb", "maxConcurrentDownloads", "requestDelayMs", "requestJitterMs", "retryBaseDelayMs", "updateCheckIntervalHours"];
-    const coerced = numericKeys.includes(key) ? Number(value) : value;
+    const coerced = coerceConfigValue(key, value);
     await mgr.set(key as Parameters<ConfigManager["set"]>[0], coerced as Parameters<ConfigManager["set"]>[1]);
   });
 
