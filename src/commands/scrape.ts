@@ -358,7 +358,13 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   if (!dryRun) {
     for (const tree of trees) {
       if (!tree.summary) continue;
-      const descMd = createTurndown().turndown(tree.summary).trim();
+      let descMd: string;
+      try {
+        descMd = createTurndown().turndown(tree.summary).trim();
+      } catch (err) {
+        logger.warn(`Warning: failed to convert course README for course ${tree.courseId}: ${(err as Error).message} (HTML: ${tree.summary.slice(0, 200)})`);
+        continue;
+      }
       if (!descMd) continue;
       const sp = courseShortPaths.get(tree.courseId);
       const courseDirName = sanitiseFilename(sp?.shortName ?? courseNameMap.get(tree.courseId) ?? String(tree.courseId));
@@ -378,7 +384,13 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       const courseDir = join(outputDir, ...(sp?.semesterDir ? [sp.semesterDir] : []), courseDirName);
       for (const section of tree.sections) {
         if (!section.summary) continue;
-        const summaryMd = createTurndown().turndown(section.summary).trim();
+        let summaryMd: string;
+        try {
+          summaryMd = createTurndown().turndown(section.summary).trim();
+        } catch (err) {
+          logger.warn(`Warning: failed to convert section description for "${section.sectionName}" in course ${tree.courseId}: ${(err as Error).message} (HTML: ${section.summary.slice(0, 200)})`);
+          continue;
+        }
         if (!summaryMd) continue;
         // Skip summaries that contain only images/formatting with no meaningful text
         const textOnly = summaryMd.replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/[#*_\[\]()|\->\s]/g, "");

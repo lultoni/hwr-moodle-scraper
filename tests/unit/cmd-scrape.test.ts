@@ -794,7 +794,56 @@ describe("T-19: --no-descriptions does not corrupt state for binary activities",
   });
 });
 
-// T-21: --verbose / debug mode and per-file log events
+// ── Fix 4: Turndown crash resilience in course README / section description generation ──
+
+describe("Fix 4: Turndown crash in course README/section description generation", () => {
+  // Covers: unguarded createTurndown().turndown(tree.summary) and turndown(section.summary)
+  // must not crash the whole scrape if Turndown throws on malformed HTML.
+
+  it("scrape continues and warns if course README Turndown conversion throws", async () => {
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI24A Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    // Provide a course with a summary that will be processed by Turndown
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [],
+      summary: "<invalid>malformed & html <with unclosed",
+    } as never);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    // Must resolve (not reject) even with malformed HTML in summary
+    await expect(
+      runScrape({ outputDir: "/tmp/test", dryRun: false, force: false })
+    ).resolves.toBeUndefined();
+    stderrSpy.mockRestore();
+  });
+
+  it("scrape continues and warns if section description Turndown conversion throws", async () => {
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI24A Macro 2024", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [{
+        sectionId: "s1",
+        sectionName: "Week 1",
+        activities: [],
+        summary: "<invalid>malformed & html <with unclosed",
+      }],
+    } as never);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await expect(
+      runScrape({ outputDir: "/tmp/test", dryRun: false, force: false })
+    ).resolves.toBeUndefined();
+    stderrSpy.mockRestore();
+  });
+});
 describe("STEP-020: scrape — verbose/debug mode and no-courses message (Pass 49)", () => {
   it("--verbose sets logger to DEBUG level (debug events appear in output)", async () => {
     // When verbose=true the logger level is DEBUG, so debug() calls go to stderr

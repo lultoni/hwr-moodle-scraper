@@ -23,13 +23,19 @@ import { runUpdateCheck } from "./version-check.js";
 import { StateManager } from "./sync/state.js";
 import { matchCourses } from "./scraper/course-filter.js";
 
-// Global error handlers — prevent unredacted stack traces from leaking sensitive data
+// Global error handlers — prevent unredacted stack traces from leaking sensitive data.
+// When --debug is passed, print the full stack trace to aid diagnosis.
+const _debugMode = process.argv.includes("--debug");
+function fatalErrorMessage(err: unknown): string {
+  if (_debugMode && err instanceof Error) return err.stack ?? err.message;
+  return err instanceof Error ? err.message : String(err);
+}
 process.on("uncaughtException", (err) => {
-  process.stderr.write(`Fatal error: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.stderr.write(`Fatal error: ${fatalErrorMessage(err)}\n`);
   process.exit(EXIT_CODES.ERROR);
 });
 process.on("unhandledRejection", (reason) => {
-  process.stderr.write(`Fatal error: ${reason instanceof Error ? reason.message : String(reason)}\n`);
+  process.stderr.write(`Fatal error: ${fatalErrorMessage(reason)}\n`);
   process.exit(EXIT_CODES.ERROR);
 });
 

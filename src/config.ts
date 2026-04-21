@@ -57,7 +57,7 @@ export const CONFIG_DESCRIPTIONS: Partial<Record<ConfigKey, string>> = {
   requestDelayMs: "Base delay between HTTP requests (ms)",
   requestJitterMs: "Random jitter added to each request delay (ms)",
   retryBaseDelayMs: "Base delay for retry back-off on failed requests (ms)",
-  logFile: "Path to write debug log file, e.g. ~/moodle.log (null = disabled). Set with: msc config set logFile null",
+  logFile: "Log file path, e.g. ~/moodle.log — always writes DEBUG (null = disabled)",
   checkUpdates: "Check for new msc versions on GitHub (true/false)",
   updateCheckIntervalHours: "Hours between automatic update checks (0 = every run)",
   displayPathFormat: "Path separator style: auto | posix | windows",
