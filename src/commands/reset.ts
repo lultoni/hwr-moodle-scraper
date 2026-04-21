@@ -198,12 +198,7 @@ export async function runReset(opts: ResetOptions): Promise<void> {
         return;
       }
     }
-    // Delete state files only
-    if (deleteState) {
-      if (existsSync(sm.statePath)) unlinkSync(sm.statePath);
-      if (existsSync(sm.backupPath)) unlinkSync(sm.backupPath);
-    }
-    // Config / credentials may be cleared independently
+    // Clear config / credentials first, state last (so state survives a partial failure)
     if (clearConfig) {
       const config = new ConfigManager();
       await config.reset();
@@ -212,6 +207,11 @@ export async function runReset(opts: ResetOptions): Promise<void> {
       const keychain = tryCreateKeychain();
       if (keychain) await keychain.deleteCredentials();
       await deleteSessionFile();
+    }
+    // Delete state file last
+    if (deleteState) {
+      if (existsSync(sm.statePath)) unlinkSync(sm.statePath);
+      if (existsSync(sm.backupPath)) unlinkSync(sm.backupPath);
     }
     const extras: string[] = [];
     if (clearConfig) extras.push("config reset");
@@ -299,11 +299,7 @@ export async function runReset(opts: ResetOptions): Promise<void> {
     removeEmptyDirs(d, outputDir);
   }
 
-  // Delete state file and backup
-  if (existsSync(sm.statePath)) unlinkSync(sm.statePath);
-  if (existsSync(sm.backupPath)) unlinkSync(sm.backupPath);
-
-  // --full: also clear config and credentials (conditional on flags)
+  // Clear config / credentials before deleting state (state deleted last)
   if (clearConfig) {
     const config = new ConfigManager();
     await config.reset();
@@ -313,6 +309,10 @@ export async function runReset(opts: ResetOptions): Promise<void> {
     if (keychain) await keychain.deleteCredentials();
     await deleteSessionFile();
   }
+
+  // Delete state file and backup last
+  if (existsSync(sm.statePath)) unlinkSync(sm.statePath);
+  if (existsSync(sm.backupPath)) unlinkSync(sm.backupPath);
 
   const extras: string[] = [];
   if (sidecarCount > 0) extras.push(`${sidecarCount} sidecar${sidecarCount === 1 ? "" : "s"}`);
