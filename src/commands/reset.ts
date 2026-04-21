@@ -165,16 +165,20 @@ export async function runReset(opts: ResetOptions): Promise<void> {
   const sm = new StateManager(outputDir);
   const state = await sm.load();
 
-  if (!state) {
+  // "Nothing to reset" only when there is truly nothing to do:
+  // no state file AND no config/credentials flags were requested.
+  if (!state && !clearConfig && !clearCreds) {
     ui.info("Nothing to reset.");
     return;
   }
 
-  const courseCount = Object.keys(state.courses).length;
+  const courseCount = state ? Object.keys(state.courses).length : 0;
   let totalFiles = 0;
-  for (const course of Object.values(state.courses)) {
-    for (const section of Object.values(course.sections ?? {})) {
-      totalFiles += Object.keys(section.files ?? {}).length;
+  if (state) {
+    for (const course of Object.values(state.courses)) {
+      for (const section of Object.values(course.sections ?? {})) {
+        totalFiles += Object.keys(section.files ?? {}).length;
+      }
     }
   }
 
@@ -224,14 +228,16 @@ export async function runReset(opts: ResetOptions): Promise<void> {
   let submissionCount = 0;
   let imageCount = 0;
   let activityCount = 0;
-  for (const p of state.generatedFiles ?? []) { knownPaths.push(p); generatedCount++; }
-  for (const course of Object.values(state.courses)) {
-    for (const section of Object.values(course.sections ?? {})) {
-      for (const file of Object.values(section.files ?? {})) {
-        if (file.localPath) { knownPaths.push(file.localPath); activityCount++; }
-        if (file.sidecarPath) { knownPaths.push(file.sidecarPath); sidecarCount++; }
-        for (const sp of file.submissionPaths ?? []) { knownPaths.push(sp); submissionCount++; }
-        for (const ip of file.imagePaths ?? []) { knownPaths.push(ip); imageCount++; }
+  if (state) {
+    for (const p of state.generatedFiles ?? []) { knownPaths.push(p); generatedCount++; }
+    for (const course of Object.values(state.courses)) {
+      for (const section of Object.values(course.sections ?? {})) {
+        for (const file of Object.values(section.files ?? {})) {
+          if (file.localPath) { knownPaths.push(file.localPath); activityCount++; }
+          if (file.sidecarPath) { knownPaths.push(file.sidecarPath); sidecarCount++; }
+          for (const sp of file.submissionPaths ?? []) { knownPaths.push(sp); submissionCount++; }
+          for (const ip of file.imagePaths ?? []) { knownPaths.push(ip); imageCount++; }
+        }
       }
     }
   }

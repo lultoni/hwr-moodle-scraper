@@ -101,12 +101,42 @@ describe("msc reset — state-only (default)", () => {
     mockReaddirSync.mockReturnValue([]);
   });
 
-  it("prints 'Nothing to reset.' and returns when no state exists", async () => {
+  it("prints 'Nothing to reset.' and returns when no state exists and no config/credentials flags", async () => {
     mockLoad.mockResolvedValue(null);
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     await runReset({ outputDir: "/out", force: true });
     expect(spy.mock.calls.flat().join("")).toContain("Nothing to reset.");
     expect(mockUnlinkSync).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // Regression: --config should still run even when no state file exists (fresh install)
+  it("--config resets config even when no state file exists", async () => {
+    mockLoad.mockResolvedValue(null);
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", config: true, force: true });
+    expect(mockConfigReset).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // Regression: --credentials should still run even when no state file exists (fresh install)
+  it("--credentials clears credentials even when no state file exists", async () => {
+    mockLoad.mockResolvedValue(null);
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", credentials: true, force: true });
+    expect(mockDeleteCredentials).toHaveBeenCalled();
+    expect(mockDeleteSessionFile).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // Regression: --files --config --credentials should not crash on fresh install with no state
+  it("--files --credentials --config does NOT print 'Nothing to reset.' on fresh install", async () => {
+    mockLoad.mockResolvedValue(null);
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runReset({ outputDir: "/out", files: true, credentials: true, config: true, force: true });
+    expect(spy.mock.calls.flat().join("")).not.toContain("Nothing to reset.");
+    expect(mockConfigReset).toHaveBeenCalled();
+    expect(mockDeleteCredentials).toHaveBeenCalled();
     spy.mockRestore();
   });
 
