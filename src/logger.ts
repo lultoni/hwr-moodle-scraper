@@ -21,6 +21,12 @@ export interface LoggerOptions {
   timestamps?: boolean;
   /** Maximum log file size in MB before rotation. Default 50. */
   maxLogFileSizeMb?: number;
+  /**
+   * Minimum log level written to the log file.
+   * Defaults to `LogLevel.DEBUG` when `logFile` is set, giving full diagnostic output
+   * regardless of the stderr level. Set explicitly to restrict file output.
+   */
+  fileLevel?: LogLevel;
 }
 
 export interface Logger {
@@ -56,6 +62,8 @@ export function createLogger(opts: LoggerOptions): Logger {
   // Default: show timestamps when logFile is active (useful for diagnosis),
   // suppress in plain terminal output.
   const showTimestamps = opts.timestamps ?? (logFile != null);
+  // Default file level: DEBUG when logFile is set (full diagnostics), otherwise same as stderr level.
+  const fileLevelThreshold = opts.fileLevel ?? (logFile != null ? LogLevel.DEBUG : level);
 
   // Color support: only when stderr is a TTY and NO_COLOR is unset
   const USE_COLOR = process.stderr.isTTY && !process.env["NO_COLOR"];
@@ -89,18 +97,21 @@ export function createLogger(opts: LoggerOptions): Logger {
   }
 
   function emit(msgLevel: LogLevel, msg: string): void {
-    if (msgLevel < level) return;
+    const writesToStderr = msgLevel >= level;
+    const writesToFile = logFile != null && msgLevel >= fileLevelThreshold;
+    if (!writesToStderr && !writesToFile) return;
     const safe = redactSecrets(msg, secrets);
     const prefix = LogLevel[msgLevel] ?? "LOG";
     const ts = new Date().toISOString();
-    const col = LEVEL_COLOR[msgLevel] ?? "";
-    const coloredPrefix = USE_COLOR ? `${col}[${prefix}]${C.reset}` : `[${prefix}]`;
-    // Stderr: with optional color
-    const line = showTimestamps
-      ? `[${ts}] ${coloredPrefix} ${safe}\n`
-      : `${coloredPrefix} ${safe}\n`;
-    process.stderr.write(line);
-    if (logFile) {
+    if (writesToStderr) {
+      const col = LEVEL_COLOR[msgLevel] ?? "";
+      const coloredPrefix = USE_COLOR ? `${col}[${prefix}]${C.reset}` : `[${prefix}]`;
+      const line = showTimestamps
+        ? `[${ts}] ${coloredPrefix} ${safe}\n`
+        : `${coloredPrefix} ${safe}\n`;
+      process.stderr.write(line);
+    }
+    if (writesToFile) {
       rotateIfNeeded();
       // Log file always gets plain text (no ANSI) + timestamps for diagnostic value
       const fileLine = `[${ts}] [${prefix}] ${safe}\n`;

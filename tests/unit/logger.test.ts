@@ -298,6 +298,77 @@ describe("STEP-007: Logger — TTY color prefixes", () => {
   });
 });
 
+describe("STEP-007: Logger — log file always writes DEBUG regardless of stderr level", () => {
+  // Covers Fix 3: when logFile is set, the file receives DEBUG-level messages even if
+  // stderr is INFO-level (the default). This enables post-hoc diagnosis without
+  // requiring the user to re-run with --verbose.
+
+  it("log file receives DEBUG message even when stderr level is INFO", async () => {
+    const { writeFileSync, readFileSync, unlinkSync } = await import("node:fs");
+    const tmpPath = `/tmp/logger-debug-test-${Date.now()}.log`;
+    writeFileSync(tmpPath, "");
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    // Create logger at INFO level (default for scrape) but with a log file
+    const logger = createLogger({ level: LogLevel.INFO, redact: [], logFile: tmpPath });
+    logger.debug("deep debug detail");
+
+    // stderr: DEBUG must be suppressed (level = INFO)
+    const stderrOutput = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    expect(stderrOutput).not.toContain("deep debug detail");
+
+    // log file: DEBUG must be present (fileLevel defaults to DEBUG when logFile set)
+    const fileContent = readFileSync(tmpPath, "utf8");
+    expect(fileContent).toContain("[DEBUG]");
+    expect(fileContent).toContain("deep debug detail");
+
+    stderrSpy.mockRestore();
+    unlinkSync(tmpPath);
+  });
+
+  it("log file writes INFO message normally when stderr level is INFO", async () => {
+    const { writeFileSync, readFileSync, unlinkSync } = await import("node:fs");
+    const tmpPath = `/tmp/logger-info-test-${Date.now()}.log`;
+    writeFileSync(tmpPath, "");
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    const logger = createLogger({ level: LogLevel.INFO, redact: [], logFile: tmpPath });
+    logger.info("regular info");
+
+    const fileContent = readFileSync(tmpPath, "utf8");
+    expect(fileContent).toContain("[INFO]");
+    expect(fileContent).toContain("regular info");
+
+    stderrSpy.mockRestore();
+    unlinkSync(tmpPath);
+  });
+
+  it("explicit fileLevel overrides the DEBUG default", async () => {
+    const { writeFileSync, readFileSync, unlinkSync } = await import("node:fs");
+    const tmpPath = `/tmp/logger-filelevel-test-${Date.now()}.log`;
+    writeFileSync(tmpPath, "");
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    // Explicitly set fileLevel to WARN — DEBUG and INFO should not appear in file
+    const logger = createLogger({ level: LogLevel.INFO, redact: [], logFile: tmpPath, fileLevel: LogLevel.WARN });
+    logger.debug("skip debug");
+    logger.info("skip info");
+    logger.warn("keep warn");
+
+    const fileContent = readFileSync(tmpPath, "utf8");
+    expect(fileContent).not.toContain("skip debug");
+    expect(fileContent).not.toContain("skip info");
+    expect(fileContent).toContain("[WARN]");
+    expect(fileContent).toContain("keep warn");
+
+    stderrSpy.mockRestore();
+    unlinkSync(tmpPath);
+  });
+});
+
 describe("STEP-007: Logger — state file redaction guard", () => {
   // REQ-SEC-007
   it("assertNoSecrets() throws if a state object contains a known secret value", async () => {
