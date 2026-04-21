@@ -184,6 +184,41 @@ describe("STEP-022: Wizard — logFile prompt", () => {
   });
 });
 
+describe("STEP-022: Wizard — logFile directory validation", () => {
+  // Covers Fix 1: wizard rejects directory paths (ending with /) and retries
+  it("retries logFile prompt when user enters a path ending with /", async () => {
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue(null);
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue(undefined);
+    const promptFn = vi.fn()
+      .mockResolvedValueOnce("")                          // outputDir
+      .mockResolvedValueOnce("/some/dir/")               // logFile — invalid (directory path)
+      .mockResolvedValueOnce("~/moodle-scraper.log");    // logFile — valid on retry
+
+    await runWizard({ keychain, config, promptFn, httpClient: {} as never });
+
+    expect(vi.mocked(config.set)).toHaveBeenCalledWith("logFile", "~/moodle-scraper.log");
+    // promptFn was called 3 times: outputDir + 2x logFile
+    expect(promptFn).toHaveBeenCalledTimes(3);
+  });
+
+  it("accepts empty logFile (skip) even after a bad entry", async () => {
+    const keychain = new (vi.mocked(KeychainAdapter))() as never;
+    vi.mocked(keychain.readCredentials).mockResolvedValue(null);
+    const config = new (vi.mocked(ConfigManager))("/tmp/test") as never;
+    vi.mocked(config.get).mockResolvedValue(undefined);
+    const promptFn = vi.fn()
+      .mockResolvedValueOnce("")           // outputDir
+      .mockResolvedValueOnce("/bad/dir/")  // logFile — invalid
+      .mockResolvedValueOnce("");          // logFile — skip (Enter) → null
+
+    await runWizard({ keychain, config, promptFn, httpClient: {} as never });
+
+    expect(vi.mocked(config.set)).toHaveBeenCalledWith("logFile", null);
+  });
+});
+
 // T-21: env-var credential awareness in wizard
 describe("T-21: Wizard — env-var credential awareness", () => {
   beforeEach(() => {

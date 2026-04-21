@@ -53,7 +53,13 @@ export async function runWizard(opts: WizardOptions): Promise<void> {
     const inputDir = await promptFn(`Output directory [${hint}]: `);
     await config.set("outputDir", inputDir.trim() || hint);
     // Log file is only asked on first-time outputDir setup
-    const logInput = (await promptFn("Log file path (press Enter to skip): ")).trim();
+    let logInput = "";
+    for (let attempt = 0; attempt < 3; attempt++) {
+      logInput = (await promptFn("Log file path, e.g. ~/moodle-scraper.log (press Enter to skip): ")).trim();
+      if (logInput === "" || !logInput.endsWith("/")) break;
+      process.stderr.write("  Please enter a file path, not a directory (must not end with /).\n");
+      logInput = "";
+    }
     await config.set("logFile", logInput || null);
   }
 
