@@ -70,8 +70,10 @@ loadDotEnv();
 // --- interactive prompt helper ---
 // For masked input (passwords): use a muted output stream so readline still
 // functions correctly in a TTY but never echoes characters to the terminal.
+// defaultValue: when provided and stdin is a TTY, pre-fills the input line so
+// the user can edit the existing value with arrow keys (uses rl.write()).
 function makePromptFn() {
-  return async (prompt: string, masked = false): Promise<string> => {
+  return async (prompt: string, masked = false, defaultValue?: string): Promise<string> => {
     process.stdout.write(prompt);
     const output = masked
       ? new (await import("node:stream")).Writable({ write(_chunk, _enc, cb) { cb(); } })
@@ -83,6 +85,10 @@ function makePromptFn() {
         if (masked) process.stdout.write("\n");
         resolve(answer);
       });
+      // Pre-fill: insert defaultValue into the readline buffer so the user sees
+      // the current value and can edit it in-place with arrow keys.
+      // Only when stdin is a real TTY — in non-interactive/test contexts this is a no-op.
+      if (defaultValue && process.stdin.isTTY) rl.write(defaultValue);
     });
   };
 }

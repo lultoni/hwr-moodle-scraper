@@ -162,13 +162,19 @@ export async function configScreen(promptFn: PromptFn, version: string): Promise
     if (desc) process.stdout.write(`  ${desc}\n\n`);
     process.stdout.write(`Editing: ${selectedKey}\nCurrent: ${current}\n\n`);
 
+    // Pre-fill the current value so the user can edit in-place with arrow keys.
+    // For bool keys we don't pre-fill (the valid options are always true/false).
+    const prefill = BOOL_KEYS.includes(selectedKey)
+      ? undefined
+      : (current === "(not set)" || current === "(empty)") ? undefined : current;
+
     if (BOOL_KEYS.includes(selectedKey)) {
       process.stdout.write(`New value (true/false, Enter to keep): `);
     } else {
-      process.stdout.write(`New value (Enter to keep current): `);
+      process.stdout.write(`New value (Enter to keep, ← → to edit): `);
     }
 
-    const newVal = await promptFn("");
+    const newVal = await promptFn("", false, prefill);
     if (newVal.trim() !== "") {
       let coerced: ConfigValue;
       if (BOOL_KEYS.includes(selectedKey)) {

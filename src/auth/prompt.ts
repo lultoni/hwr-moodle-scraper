@@ -16,7 +16,7 @@ export class AuthError extends Error {
 }
 
 export interface PromptFn {
-  (prompt: string, masked?: boolean): Promise<string>;
+  (prompt: string, masked?: boolean, defaultValue?: string): Promise<string>;
 }
 
 export interface PromptAuthOptions {
