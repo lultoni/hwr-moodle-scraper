@@ -93,6 +93,9 @@ For each Moodle activity that has a description, msc writes a
 files contain the activity description converted to Markdown.
 
 They are tracked separately in state and are not counted as downloads.
+
+To skip sidecar generation entirely (binaries only):
+  msc scrape --no-descriptions
 `,
   "sync": `
 Incremental Sync
@@ -106,6 +109,12 @@ re-downloads all files.
 
 To see what changed in the last run:
   msc status --changed
+
+To re-download everything regardless of state:
+  msc scrape --force
+
+To re-download any files missing from disk (even if state says up-to-date):
+  msc scrape --check-files
 `,
   "update": `
 Updating msc
@@ -113,7 +122,7 @@ Updating msc
 To update to a newer version of msc, run in the cloned repo directory:
 
   git pull
-  npm ci
+  npm install
   npm run build
   npm install -g .
 
@@ -143,6 +152,42 @@ output level. Disable it again with:
 
   msc config set logFile null
 `,
+  "archive": `
+msc archive (experimental)
+===========================
+Removes a course from sync state without touching files on disk. Use this
+when a course has ended and you want msc status to stop showing it, but
+you want to keep the downloaded files.
+
+  msc archive                     → pick from a list of courses
+  msc archive --courses <keyword> → filter by keyword
+  msc archive --dry-run           → preview without making changes
+
+After archiving, the course no longer appears in msc status output.
+The files remain exactly where they are on disk.
+`,
+  "config": `
+msc config
+==========
+View and change persistent settings.
+
+  msc config list            → show all keys and their current values
+  msc config get <key>       → print one value
+  msc config set <key> <val> → update a value
+
+Common keys:
+
+  outputDir              Folder where scraped files are saved
+  courseSearch           Default keyword filter for every scrape
+  excludePaths           Glob patterns ignored by status/clean (comma-separated)
+  maxConcurrentDownloads Number of parallel downloads (default: 3)
+  requestDelayMs         Delay between requests in ms (default: 500)
+  logFile                Path for a persistent debug log (null = disabled)
+  postScrapeHook         Shell command to run after a scrape that downloads something
+  checkUpdates           Auto-check GitHub for new versions (default: true)
+
+All keys can also be managed interactively via: msc tui → Config
+`,
   "ignored": `
 Ignored Files and Directories
 ==============================
@@ -168,14 +213,16 @@ Files in any of these locations never appear in "msc status" output.
 // "old-entries" is an alias for "orphaned"
 TOPICS["old-entries"] = TOPICS["orphaned"]!;
 
+/** All real help topic names (alias "old-entries" excluded). */
+export const HELP_TOPICS: string[] = Object.entries(TOPICS)
+  .filter(([k, v]) => v !== null && k !== "old-entries")
+  .map(([k]) => k);
+
 export function runHelp(topic?: string): void {
   if (!topic) {
     process.stdout.write("Usage: msc help <topic>\n\n");
     process.stdout.write("Available topics:\n");
-    const uniqueTopics = Object.entries(TOPICS)
-      .filter(([k, v]) => v !== null && k !== "old-entries")
-      .map(([k]) => `  ${k}`);
-    process.stdout.write(uniqueTopics.join("\n") + "\n");
+    process.stdout.write(HELP_TOPICS.map((k) => `  ${k}`).join("\n") + "\n");
     process.stdout.write("\n");
     process.stdout.write("  old-entries  (alias for: orphaned)\n");
     return;
@@ -185,8 +232,7 @@ export function runHelp(topic?: string): void {
   if (!text) {
     process.stdout.write(`Unknown topic: "${topic}"\n\n`);
     process.stdout.write("Available topics:\n");
-    const keys = Object.keys(TOPICS).filter((k) => k !== "old-entries");
-    for (const k of keys) process.stdout.write(`  ${k}\n`);
+    for (const k of HELP_TOPICS) process.stdout.write(`  ${k}\n`);
     return;
   }
 

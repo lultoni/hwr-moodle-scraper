@@ -8,6 +8,7 @@ import { resetScreen } from "../tui/screens/reset-screen.js";
 import { cleanScreen } from "../tui/screens/clean-screen.js";
 import { scrapeScreen } from "../tui/screens/scrape-screen.js";
 import { ignoredScreen } from "../tui/screens/ignored-screen.js";
+import { helpScreen } from "../tui/screens/help-screen.js";
 import type { PromptFn } from "../auth/prompt.js";
 
 export async function runTui(opts: { promptFn: PromptFn; version: string }): Promise<void> {
@@ -55,6 +56,11 @@ export async function runTui(opts: { promptFn: PromptFn; version: string }): Pro
         label: "Config",
         hasSubmenu: true,
         action: () => configScreen(promptFn, versionTag),
+      },
+      {
+        label: "Help",
+        hasSubmenu: true,
+        action: () => helpScreen(outputDir, promptFn, versionTag),
       },
       {
         label: "Quit",
