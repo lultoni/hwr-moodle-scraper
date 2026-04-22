@@ -631,13 +631,14 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       if (activityType) break;
     }
     if (!activityType) continue;
-    // Get existing localPath and lastModified from state
+    // Get existing localPath, lastModified, and downloadedAt from state
     const courseSections = state.courses[courseIdStr]?.sections;
     let existingPath: string | undefined;
     let existingLastModified: string | undefined;
+    let existingDownloadedAt: string | undefined;
     for (const section of Object.values(courseSections ?? {})) {
       const f = section.files?.[item.resourceId];
-      if (f) { existingPath = f.localPath; existingLastModified = f.lastModified; break; }
+      if (f) { existingPath = f.localPath; existingLastModified = f.lastModified; existingDownloadedAt = f.downloadedAt; break; }
     }
     const isInfoMd = INFO_MD_ACTIVITY_TYPES.has(activityType);
     const shouldBeMd = isInfoMd || PAGE_MD_ACTIVITY_TYPES.has(activityType) || activityType === "url";
@@ -655,8 +656,10 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     // (c) binary types that are legacy ENAMETOOLONG / BUG-C artifacts:
     //   - truly extensionless paths (no dot at all — e.g. old "Dockerfile" with no ext)
     //   - numeric-only extension (e.g. ".1" from extname("FiMa 4.1") — BUG-C false extension)
-    // NOT promoted: files with unusual-but-valid extensions like .base, .env, .conf, .lock, etc.
-    if (!shouldBeMd && existingPath) {
+    // Guard: only promote if the file was NEVER correctly saved (no downloadedAt).
+    // Files like sshd_config, Makefile, Dockerfile are legitimately extensionless — they have
+    // downloadedAt set after their first successful download and must not be re-promoted.
+    if (!shouldBeMd && existingPath && !existingDownloadedAt) {
       const ext = extname(existingPath).toLowerCase();
       if (ext === "" && !existingPath.includes(".")) {
         item.action = SyncAction.DOWNLOAD; continue;

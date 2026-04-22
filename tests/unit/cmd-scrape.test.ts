@@ -358,6 +358,71 @@ describe("STEP-020: scrape — binary promotion Case (c) (Pass 42 fix)", () => {
     expect(output).not.toContain("1 new activity");
     expect(output).toContain("0 new activities");
   });
+
+  // Regression: extensionless files with legitimate names (sshd_config, Makefile, Dockerfile)
+  // were re-downloaded on every run because the BUG-C promotion check only guards against
+  // "truly extensionless paths with no dot" — which matches these files — but they are NOT
+  // legacy artifacts; they have downloadedAt set and exist correctly on disk.
+  // Fix: skip promotion when the state entry already has downloadedAt set (was correctly saved).
+  it("does not re-promote a legitimately extensionless file (e.g. sshd_config) that was correctly saved", async () => {
+    const { computeSyncPlan } = await import("../../src/sync/incremental.js");
+    const { StateManager } = await import("../../src/sync/state.js");
+    const { fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue({
+        courses: {
+          "1": {
+            name: "IT-Sicherheit",
+            sections: {
+              "s4": {
+                files: {
+                  "folder-2058237-sshd_config": {
+                    name: "sshd_config",
+                    url: "https://moodle.hwr-berlin.de/pluginfile.php/4826351/mod_folder/content/0/sshd_config?forcedownload=1",
+                    localPath: "/tmp/test/Semester_3/IT-Sicherheit/Weitere Ressourcen/sshd_config",
+                    hash: "a".repeat(64),
+                    lastModified: "2026-04-22T11:12:58.000Z",
+                    downloadedAt: "2026-04-22T11:12:58.000Z",
+                    status: "ok" as const,
+                  },
+                },
+              },
+            },
+          },
+        },
+        generatedFiles: [],
+        lastSyncAt: new Date().toISOString(),
+      }),
+      save: vi.fn().mockResolvedValue(undefined),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+      backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
+    } as unknown as InstanceType<typeof StateManager>));
+
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [{ sectionId: "s4", sectionName: "Weitere Ressourcen", activities: [{
+        activityType: "resource",
+        activityName: "sshd_config",
+        resourceId: "folder-2058237-sshd_config",
+        url: "https://moodle.hwr-berlin.de/pluginfile.php/4826351/mod_folder/content/0/sshd_config?forcedownload=1",
+        isAccessible: true,
+      }] }],
+    });
+
+    vi.mocked(computeSyncPlan).mockReturnValueOnce([
+      { action: "SKIP" as "SKIP", resourceId: "folder-2058237-sshd_config", courseId: 1, url: "https://moodle.hwr-berlin.de/pluginfile.php/4826351/mod_folder/content/0/sshd_config?forcedownload=1" },
+    ]);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, courses: [1] });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+
+    // Must stay skipped — sshd_config is legitimately extensionless, not a BUG-C artifact
+    expect(output).not.toContain("1 new activity");
+    expect(output).toContain("0 new activities");
+  });
 });
 
 describe("T-1: sidecar origin header in .description.md files", () => {
