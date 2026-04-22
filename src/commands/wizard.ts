@@ -1,6 +1,7 @@
 // REQ-CLI-015
 import { EXIT_CODES } from "../exit-codes.js";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import type { CredentialStore } from "../auth/keychain.js";
 import type { HttpClient } from "../http/client.js";
 import { promptAndAuthenticate, type PromptFn } from "../auth/prompt.js";
@@ -49,7 +50,7 @@ export async function runWizard(opts: WizardOptions): Promise<void> {
 
   // Output directory — only ask if not already configured
   if (!storedOutputDir) {
-    const hint = `${homedir()}/moodle-scraper-output`;
+    const hint = join(homedir(), "moodle-scraper-output");
     const inputDir = await promptFn(`Output directory [${hint}]: `);
     await config.set("outputDir", inputDir.trim() || hint);
     // Log file is only asked on first-time outputDir setup

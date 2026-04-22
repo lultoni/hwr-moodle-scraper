@@ -4,6 +4,8 @@
 // no real file I/O; output is captured via spy.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createLogger, LogLevel } from "../../src/logger.js";
 
 describe("STEP-007: Logger — credential redaction", () => {
@@ -274,7 +276,7 @@ describe("STEP-007: Logger — TTY color prefixes", () => {
 
     // Write to a real temp file and check its contents
     const { writeFileSync, readFileSync, unlinkSync } = await import("node:fs");
-    const tmpPath = `/tmp/logger-test-${Date.now()}.log`;
+    const tmpPath = join(tmpdir(), `logger-test-${Date.now()}.log`);
     writeFileSync(tmpPath, ""); // create empty file
 
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -305,7 +307,7 @@ describe("STEP-007: Logger — log file always writes DEBUG regardless of stderr
 
   it("log file receives DEBUG message even when stderr level is INFO", async () => {
     const { writeFileSync, readFileSync, unlinkSync } = await import("node:fs");
-    const tmpPath = `/tmp/logger-debug-test-${Date.now()}.log`;
+    const tmpPath = join(tmpdir(), `logger-debug-test-${Date.now()}.log`);
     writeFileSync(tmpPath, "");
 
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -329,7 +331,7 @@ describe("STEP-007: Logger — log file always writes DEBUG regardless of stderr
 
   it("log file writes INFO message normally when stderr level is INFO", async () => {
     const { writeFileSync, readFileSync, unlinkSync } = await import("node:fs");
-    const tmpPath = `/tmp/logger-info-test-${Date.now()}.log`;
+    const tmpPath = join(tmpdir(), `logger-info-test-${Date.now()}.log`);
     writeFileSync(tmpPath, "");
 
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -347,7 +349,7 @@ describe("STEP-007: Logger — log file always writes DEBUG regardless of stderr
 
   it("explicit fileLevel overrides the DEBUG default", async () => {
     const { writeFileSync, readFileSync, unlinkSync } = await import("node:fs");
-    const tmpPath = `/tmp/logger-filelevel-test-${Date.now()}.log`;
+    const tmpPath = join(tmpdir(), `logger-filelevel-test-${Date.now()}.log`);
     writeFileSync(tmpPath, "");
 
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
