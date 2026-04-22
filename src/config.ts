@@ -55,7 +55,7 @@ export const USER_EDITABLE_KEYS: ConfigKey[] = [
 export const CONFIG_DESCRIPTIONS: Partial<Record<ConfigKey, string>> = {
   outputDir: "Folder where scraped files are saved",
   courseSearch: "Default keyword filter for courses (comma-separated)",
-  excludePaths: "Glob patterns to exclude from user-files detection (comma-separated, e.g. .claude/**,my-notes/**)",
+  excludePaths: "Glob patterns to exclude from user-files detection (comma-separated)",
   minFreeDiskMb: "Minimum free disk space required before scraping (MB)",
   maxConcurrentDownloads: "Number of files downloaded in parallel",
   requestDelayMs: "Base delay between HTTP requests (ms)",

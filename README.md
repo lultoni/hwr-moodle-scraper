@@ -126,7 +126,7 @@ Run `msc tui` to open a full-screen interactive interface. All major features ar
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  HWR Moodle Scraper                              v0.9.0  │
+│  HWR Moodle Scraper                              v0.9.1  │
 │  ── Main Menu ──                                         │
 │                                                          │
 │  ❯ Scrape                                                │

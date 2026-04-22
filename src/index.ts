@@ -79,7 +79,11 @@ function makePromptFn() {
     const output = masked
       ? new (await import("node:stream")).Writable({ write(_chunk, _enc, cb) { cb(); } })
       : process.stdout;
-    const rl = createInterface({ input: process.stdin, output, terminal: masked });
+    // terminal:true is required even for non-masked input when called from the TUI,
+    // because the TUI's readKey() may have left stdin in a state where readline does
+    // not auto-detect TTY mode correctly. Without it, arrow keys output raw escape
+    // sequences (^[[C^[[D) instead of moving the cursor in the input line.
+    const rl = createInterface({ input: process.stdin, output, terminal: !masked });
     return new Promise((resolve) => {
       rl.question("", (answer) => {
         rl.close();
