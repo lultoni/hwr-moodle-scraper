@@ -8,6 +8,7 @@ import { ConfigManager, USER_EDITABLE_KEYS, CONFIG_DESCRIPTIONS, type ConfigKey,
 import { readKey } from "../keys.js";
 import { render, paginate, HIDE_CURSOR, SHOW_CURSOR, CLEAR, APP_TITLE, type RenderItem } from "../renderer.js";
 import type { PromptFn } from "../../auth/prompt.js";
+import { excludePathsScreen } from "./exclude-paths-screen.js";
 
 /** Category labels for config keys */
 const CATEGORIES: Record<ConfigKey, string> = {
@@ -155,6 +156,14 @@ export async function configScreen(promptFn: PromptFn, version: string): Promise
     const { focusableKeys } = buildItems(focusedIdx);
     const selectedKey = focusableKeys[focusedIdx];
     if (!selectedKey) return;
+
+    // excludePaths gets its own list editor instead of the generic text prompt
+    if (selectedKey === "excludePaths") {
+      process.stdout.write(SHOW_CURSOR);
+      await excludePathsScreen(promptFn, version);
+      process.stdout.write(HIDE_CURSOR);
+      continue;
+    }
 
     const current = formatValue(all[selectedKey] ?? null);
     process.stdout.write(CLEAR);
