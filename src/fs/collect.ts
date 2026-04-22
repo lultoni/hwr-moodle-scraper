@@ -48,8 +48,9 @@ export function mergedExcludePatterns(configValue: string): string[] {
  *    defaults and user-configured patterns. An empty array means no exclusions.
  */
 export function collectFiles(dir: string, excludePatterns: string[] = []): string[] {
-  // Build a single picomatch tester for all patterns (lazy — only created if patterns exist)
-  const isExcluded = excludePatterns.length > 0 ? picomatch(excludePatterns) : null;
+  // Build a single picomatch tester for all patterns (lazy — only created if patterns exist).
+  // dot:true is required so dotfiles and dotdirs (e.g. .claude/, .git/) are matched.
+  const isExcluded = excludePatterns.length > 0 ? picomatch(excludePatterns, { dot: true }) : null;
 
   function _collect(currentDir: string): string[] {
     const results: string[] = [];

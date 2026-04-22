@@ -8,6 +8,8 @@ import { runStatus } from "../../commands/status.js";
 import { readKey } from "../keys.js";
 import { render, paginate, C, HIDE_CURSOR, SHOW_CURSOR, CLEAR, APP_TITLE, type RenderItem } from "../renderer.js";
 import type { PromptFn } from "../../auth/prompt.js";
+import { ConfigManager } from "../../config.js";
+import { mergedExcludePatterns } from "../../fs/collect.js";
 
 interface ViewMode {
   value: "summary" | "issues" | "changed";
@@ -35,9 +37,13 @@ function buildCliCommand(viewIdx: number): string {
 }
 
 export async function statusScreen(outputDir: string, promptFn: PromptFn, version: string): Promise<void> {
+  const cfg = new ConfigManager();
+  const excludePaths = (await cfg.get("excludePaths")) as string;
+  const excludePatterns = mergedExcludePatterns(excludePaths);
+
   if (!process.stdin.isTTY) {
     // Non-TTY: run summary directly
-    await runStatus({ outputDir, showIssues: false });
+    await runStatus({ outputDir, showIssues: false, excludePatterns });
     return;
   }
 
@@ -103,6 +109,7 @@ export async function statusScreen(outputDir: string, promptFn: PromptFn, versio
             outputDir,
             showIssues: VIEWS[viewIdx]?.value === "issues",
             showChanged: VIEWS[viewIdx]?.value === "changed",
+            excludePatterns,
           });
           if (process.stdin.isTTY) {
             process.stdout.write(`${C.dimItal}\nPress any key to return to menu...${C.reset}\n`);

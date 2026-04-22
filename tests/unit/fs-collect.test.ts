@@ -105,7 +105,7 @@ describe("mergedExcludePatterns", () => {
 
 describe("collectFiles with excludePatterns", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockExistsSync.mockReturnValue(true);
   });
 
@@ -117,6 +117,26 @@ describe("collectFiles with excludePatterns", () => {
     expect(result).toEqual([join("/out", "a.pdf")]);
     // readdirSync should NOT be called a second time for .claude
     expect(mockReaddirSync).toHaveBeenCalledTimes(1);
+  });
+
+  // Pass 54 regression: picomatch requires { dot: true } to match dotfile paths.
+  // Without it, ".claude/settings.local.json" is NOT matched by ".claude/**".
+  it("skips dotfiles inside a dot-directory (dot:true required for picomatch)", () => {
+    // Only one readdirSync call expected — .claude is excluded before recursion
+    mockReaddirSync
+      .mockReturnValueOnce([dir(".claude"), file("a.pdf")]);
+    const result = collectFiles("/out", [".claude/**"]);
+    expect(result).toEqual([join("/out", "a.pdf")]);
+    // Must not have recursed into .claude at all
+    expect(mockReaddirSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips a dot-directory matching a bare directory pattern like .git/**", () => {
+    mockReaddirSync
+      .mockReturnValueOnce([dir(".git"), file("readme.md")])
+      .mockReturnValueOnce([file("HEAD"), file("config")]);
+    const result = collectFiles("/out", [".git/**"]);
+    expect(result).toEqual([join("/out", "readme.md")]);
   });
 
   it("skips files matching **/*.tmp pattern", () => {
