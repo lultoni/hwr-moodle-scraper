@@ -1,6 +1,7 @@
 // REQ-CLI-006 (extracted from status.ts)
 import { existsSync, readdirSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import picomatch from "picomatch";
 import type { State } from "../sync/state.js";
 
 export interface UserFileGroup {
@@ -20,31 +21,66 @@ const SYSTEM_FILES = new Set([".DS_Store", "Thumbs.db", "desktop.ini", ".localiz
 /** Directory name reserved for user-owned files that msc should never touch. */
 export const USER_FILES_PROTECTED_DIR = "_User-Files";
 
+/**
+ * Built-in glob patterns always excluded from user-files detection, regardless of config.
+ * Use POSIX-style forward slashes (picomatch is POSIX-only).
+ */
+export const DEFAULT_EXCLUDE_PATTERNS = [".claude/**", ".git/**"];
+
+/**
+ * Merge the built-in default exclude patterns with user-configured patterns.
+ * @param configValue — the raw string from `excludePaths` config (comma-separated)
+ */
+export function mergedExcludePatterns(configValue: string): string[] {
+  const user = configValue.split(",").map((s) => s.trim()).filter(Boolean);
+  const all = [...DEFAULT_EXCLUDE_PATTERNS];
+  for (const p of user) if (!all.includes(p)) all.push(p);
+  return all;
+}
+
 /** Recursively collect all file paths under a directory. Skips state, meta, and OS noise files.
  *  Files inside any directory named `_User-Files` are excluded — these are user-owned and
  *  must never appear as "user-added" in msc status or be targeted by msc clean.
+ *
+ *  @param dir — absolute path to the root directory to scan
+ *  @param excludePatterns — POSIX-style glob patterns (relative to dir) to exclude.
+ *    Pass the result of `mergedExcludePatterns(configValue)` to apply both built-in
+ *    defaults and user-configured patterns. An empty array means no exclusions.
  */
-export function collectFiles(dir: string): string[] {
-  const results: string[] = [];
-  if (!existsSync(dir)) return results;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === ".moodle-scraper-state.json") continue;
-    if (entry.name === ".moodle-scraper-state.json.bak") continue;
-    if (entry.name.endsWith(".meta.json")) continue;
-    if (SYSTEM_FILES.has(entry.name)) continue;
-    // Skip _User-Files directories entirely — contents are protected user data
-    if (entry.isDirectory() && entry.name === USER_FILES_PROTECTED_DIR) continue;
-    // Normalise to NFC — macOS HFS+/APFS returns NFD filenames from readdir,
-    // but the state always stores NFC (paths originate from Moodle HTML).
-    // Without this, Set.has() misses umlaut files even when the path is correct.
-    const full = join(dir, entry.name).normalize("NFC");
-    if (entry.isDirectory()) {
-      results.push(...collectFiles(full));
-    } else if (entry.isFile()) {
-      results.push(full);
+export function collectFiles(dir: string, excludePatterns: string[] = []): string[] {
+  // Build a single picomatch tester for all patterns (lazy — only created if patterns exist)
+  const isExcluded = excludePatterns.length > 0 ? picomatch(excludePatterns) : null;
+
+  function _collect(currentDir: string): string[] {
+    const results: string[] = [];
+    if (!existsSync(currentDir)) return results;
+    for (const entry of readdirSync(currentDir, { withFileTypes: true })) {
+      if (entry.name === ".moodle-scraper-state.json") continue;
+      if (entry.name === ".moodle-scraper-state.json.bak") continue;
+      if (entry.name.endsWith(".meta.json")) continue;
+      if (SYSTEM_FILES.has(entry.name)) continue;
+      // Skip _User-Files directories entirely — contents are protected user data
+      if (entry.isDirectory() && entry.name === USER_FILES_PROTECTED_DIR) continue;
+      // Normalise to NFC — macOS HFS+/APFS returns NFD filenames from readdir,
+      // but the state always stores NFC (paths originate from Moodle HTML).
+      // Without this, Set.has() misses umlaut files even when the path is correct.
+      const full = join(currentDir, entry.name).normalize("NFC");
+      // Check glob exclusions: convert to POSIX-style relative path before matching.
+      // picomatch is POSIX-only; on Windows path.sep is '\' so we normalize to '/'.
+      if (isExcluded) {
+        const relPosix = relative(dir, full).split(sep).join("/");
+        if (isExcluded(relPosix)) continue;
+      }
+      if (entry.isDirectory()) {
+        results.push(..._collect(full));
+      } else if (entry.isFile()) {
+        results.push(full);
+      }
     }
+    return results;
   }
-  return results;
+
+  return _collect(dir);
 }
 
 /**

@@ -2,7 +2,7 @@
 import { existsSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { StateManager } from "../sync/state.js";
-import { collectFiles } from "../fs/collect.js";
+import { collectFiles, mergedExcludePatterns } from "../fs/collect.js";
 import { ui } from "../ui.js";
 
 export interface StatusOptions {
@@ -12,6 +12,8 @@ export interface StatusOptions {
   dismissOrphans?: boolean;
   dryRun?: boolean;
   json?: boolean;
+  /** Merged exclude patterns (built-in defaults + user config). From mergedExcludePatterns(). */
+  excludePatterns?: string[];
 }
 
 /** Format bytes as human-readable size (MB or GB). */
@@ -94,7 +96,7 @@ function buildTreeLines(paths: string[], baseDir: string): string[] {
 }
 
 export async function runStatus(opts: StatusOptions): Promise<void> {
-  const { outputDir, showIssues = false, showChanged = false, dismissOrphans = false, dryRun = false, json = false } = opts;
+  const { outputDir, showIssues = false, showChanged = false, dismissOrphans = false, dryRun = false, json = false, excludePatterns = [] } = opts;
   const sm = new StateManager(outputDir);
   const state = await sm.load();
 
@@ -245,7 +247,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   }
 
   // User-added files (files in outputDir not tracked by scraper)
-  const allOnDisk = collectFiles(outputDir);
+  const allOnDisk = collectFiles(outputDir, excludePatterns);
   const allUserFiles = allOnDisk.filter((p) => !knownPaths.has(p));
 
   // Files already relocated by `msc clean --move` live in "User Files/" — not an issue.

@@ -13,6 +13,7 @@ import type { PromptFn } from "../../auth/prompt.js";
 const CATEGORIES: Record<ConfigKey, string> = {
   outputDir:                    "Filesystem",
   courseSearch:                 "Filesystem",
+  excludePaths:                 "Filesystem",
   minFreeDiskMb:                "Filesystem",
   logFile:                      "Filesystem",
   displayPathFormat:            "Filesystem",

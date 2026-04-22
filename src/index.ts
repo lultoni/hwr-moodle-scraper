@@ -7,6 +7,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXIT_CODES } from "./exit-codes.js";
 import { ConfigManager, CONFIG_DESCRIPTIONS, coerceConfigValue } from "./config.js";
+import { mergedExcludePatterns } from "./fs/collect.js";
 import { tryCreateCredentialStore } from "./auth/keychain.js";
 import { createHttpClient } from "./http/client.js";
 import { createLogger, LogLevel, type Logger } from "./logger.js";
@@ -330,7 +331,8 @@ program
     const mgr = new ConfigManager();
     const outputDir = (await mgr.get("outputDir")) as string;
     try {
-      await runStatus({ outputDir, showIssues: opts.issues, showChanged: opts.changed, dismissOrphans: opts.dismissOrphans, dryRun: opts.dryRun, json: opts.json });
+      const excludePaths = (await mgr.get("excludePaths")) as string;
+      await runStatus({ outputDir, showIssues: opts.issues, showChanged: opts.changed, dismissOrphans: opts.dismissOrphans, dryRun: opts.dryRun, json: opts.json, excludePatterns: mergedExcludePatterns(excludePaths) });
     } catch (err) {
       const code = (err as { exitCode?: number }).exitCode ?? EXIT_CODES.ERROR;
       process.stderr.write(`Error: ${(err as Error).message}\n`);
@@ -354,11 +356,13 @@ program
       process.exit(EXIT_CODES.USAGE_ERROR);
     }
     try {
+      const excludePaths = (await mgr.get("excludePaths")) as string;
       await runClean({
         outputDir,
         move: opts.move,
         dryRun: opts.dryRun,
         force: opts.force,
+        excludePatterns: mergedExcludePatterns(excludePaths),
         ...(!opts.force ? { promptFn: makePromptFn() } : {}),
       });
     } catch (err) {
@@ -389,6 +393,7 @@ program
       process.exit(EXIT_CODES.USAGE_ERROR);
     }
     try {
+      const excludePaths = (await mgr.get("excludePaths")) as string;
       await runReset({
         outputDir,
         state: opts.state,
@@ -399,6 +404,7 @@ program
         force: opts.force,
         dryRun: opts.dryRun,
         moveUserFiles: opts.moveUserFiles,
+        excludePatterns: mergedExcludePatterns(excludePaths),
         ...(!opts.force ? { promptFn: makePromptFn() } : {}),
       });
     } catch (err) {

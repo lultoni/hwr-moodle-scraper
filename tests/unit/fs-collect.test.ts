@@ -12,7 +12,7 @@ vi.mock("node:fs", () => ({
   readdirSync: (...args: unknown[]) => mockReaddirSync(...args),
 }));
 
-import { collectFiles, groupUserFiles } from "../../src/fs/collect.js";
+import { collectFiles, groupUserFiles, mergedExcludePatterns, DEFAULT_EXCLUDE_PATTERNS } from "../../src/fs/collect.js";
 
 // Helper to build a dirent-like object
 function dir(name: string) {
@@ -73,6 +73,76 @@ describe("collectFiles", () => {
       .mockReturnValueOnce([file("lecture.pdf")]);
     // _User-Files skipped; Course recursed
     expect(collectFiles("/out")).toEqual([join("/out", "Course", "lecture.pdf")]);
+  });
+});
+
+// Pass 54 — mergedExcludePatterns and glob exclusion in collectFiles
+describe("mergedExcludePatterns", () => {
+  it("returns only built-in defaults for empty config string", () => {
+    expect(mergedExcludePatterns("")).toEqual(DEFAULT_EXCLUDE_PATTERNS);
+  });
+
+  it("appends user patterns to defaults (no duplicates)", () => {
+    const result = mergedExcludePatterns("my-notes/**,.private/**");
+    expect(result).toContain(".claude/**");
+    expect(result).toContain(".git/**");
+    expect(result).toContain("my-notes/**");
+    expect(result).toContain(".private/**");
+  });
+
+  it("deduplicates if user repeats a built-in default", () => {
+    const result = mergedExcludePatterns(".claude/**");
+    const count = result.filter((p) => p === ".claude/**").length;
+    expect(count).toBe(1);
+  });
+
+  it("trims whitespace around patterns", () => {
+    const result = mergedExcludePatterns(" my-notes/** , .private/** ");
+    expect(result).toContain("my-notes/**");
+    expect(result).toContain(".private/**");
+  });
+});
+
+describe("collectFiles with excludePatterns", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExistsSync.mockReturnValue(true);
+  });
+
+  it("skips .claude directory when .claude/** pattern given", () => {
+    mockReaddirSync
+      .mockReturnValueOnce([dir(".claude"), file("a.pdf")]);
+    // With .claude/** pattern, .claude dir should be skipped entirely
+    const result = collectFiles("/out", [".claude/**"]);
+    expect(result).toEqual([join("/out", "a.pdf")]);
+    // readdirSync should NOT be called a second time for .claude
+    expect(mockReaddirSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips files matching **/*.tmp pattern", () => {
+    mockReaddirSync
+      .mockReturnValueOnce([dir("Course"), file("notes.md")])
+      .mockReturnValueOnce([file("lecture.pdf"), file("draft.tmp")]);
+    const result = collectFiles("/out", ["**/*.tmp"]);
+    expect(result).toContain(join("/out", "Course", "lecture.pdf"));
+    expect(result).not.toContain(join("/out", "Course", "draft.tmp"));
+    expect(result).toContain(join("/out", "notes.md"));
+  });
+
+  it("collects all files when excludePatterns is empty", () => {
+    mockReaddirSync.mockReturnValue([file("a.pdf"), file("b.md")]);
+    const result = collectFiles("/out", []);
+    expect(result).toEqual([join("/out", "a.pdf"), join("/out", "b.md")]);
+  });
+
+  it("skips nested files matching pattern like my-notes/**", () => {
+    mockReaddirSync
+      .mockReturnValueOnce([dir("my-notes"), file("readme.md")])
+      .mockReturnValueOnce([file("note1.md"), file("note2.md")]);
+    const result = collectFiles("/out", ["my-notes/**"]);
+    expect(result).toEqual([join("/out", "readme.md")]);
+    // my-notes dir should not be recursed into
+    expect(mockReaddirSync).toHaveBeenCalledTimes(1);
   });
 });
 

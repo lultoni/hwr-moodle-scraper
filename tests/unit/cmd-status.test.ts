@@ -716,3 +716,53 @@ describe("T-20: imagePaths claimed even when localPath is empty (noDescriptions 
     expect(output).not.toContain("msc clean");
   });
 });
+
+// Pass 54 — excludePatterns in runStatus
+describe("runStatus — excludePatterns", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("files matching excludePatterns are not counted as user-added", async () => {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue(makeState()),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+
+    // collectFiles receives patterns and returns only non-excluded files
+    // In the real impl collectFiles filters before returning, but since collectFiles
+    // is mocked here we simulate what it would return after exclusion:
+    // .claude/ file is excluded by the pattern → NOT in result
+    mockCollectFiles.mockReturnValue([
+      join("/tmp/test", "Macro", "Section", "file0.pdf"),
+      join("/tmp/test", "Macro", "Section", "file1.pdf"),
+      // .claude files are NOT returned because collectFiles (real impl) would filter them
+    ]);
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", excludePatterns: [".claude/**"] });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+    // No user-added files because .claude/ was excluded
+    expect(output).not.toContain("User-added files: 1");
+    expect(output).not.toContain("msc clean");
+  });
+
+  it("passes excludePatterns to collectFiles", async () => {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue(makeState()),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+
+    mockCollectFiles.mockReturnValue([
+      join("/tmp/test", "Macro", "Section", "file0.pdf"),
+      join("/tmp/test", "Macro", "Section", "file1.pdf"),
+    ]);
+
+    await runStatus({ outputDir: "/tmp/test", excludePatterns: [".claude/**", "my-notes/**"] });
+    // Verify collectFiles was called with the provided excludePatterns
+    expect(mockCollectFiles).toHaveBeenCalledWith("/tmp/test", [".claude/**", "my-notes/**"]);
+  });
+});

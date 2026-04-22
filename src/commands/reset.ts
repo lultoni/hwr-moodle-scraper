@@ -26,6 +26,8 @@ export interface ResetOptions {
   dryRun?: boolean;
   moveUserFiles?: boolean;
   promptFn?: PromptFn;
+  /** Merged exclude patterns (built-in defaults + user config). From mergedExcludePatterns(). */
+  excludePatterns?: string[];
 }
 
 type MoveTarget = "output-root" | `parent:${string}` | `custom:${string}` | "skip";
@@ -86,13 +88,14 @@ async function handleMoveUserFiles(
   knownPaths: string[],
   dryRun: boolean,
   promptFn: PromptFn | undefined,
+  excludePatterns: string[] = [],
 ): Promise<number> {
   const fallbackPrompt: PromptFn = promptFn ?? (async (p) => {
     process.stdout.write(p);
     return "";
   });
 
-  const allOnDisk = collectFiles(outputDir);
+  const allOnDisk = collectFiles(outputDir, excludePatterns);
   const knownSet = new Set(knownPaths.map((p) => p.normalize("NFC")));
   const userFiles = allOnDisk.filter((f) => !knownSet.has(f));
 
@@ -153,7 +156,7 @@ async function handleMoveUserFiles(
 }
 
 export async function runReset(opts: ResetOptions): Promise<void> {
-  const { outputDir, force = false, dryRun = false, moveUserFiles = false, promptFn } = opts;
+  const { outputDir, force = false, dryRun = false, moveUserFiles = false, promptFn, excludePatterns = [] } = opts;
 
   // Resolve flag aliases: --full is an alias for --files --config --credentials
   const deleteFiles = opts.files || opts.full || false;
@@ -270,7 +273,7 @@ export async function runReset(opts: ResetOptions): Promise<void> {
 
   // --move-user-files: interactively move user-owned files before deletion
   if (moveUserFiles) {
-    await handleMoveUserFiles(outputDir, knownPaths, dryRun, promptFn);
+    await handleMoveUserFiles(outputDir, knownPaths, dryRun, promptFn, excludePatterns);
   }
 
   if (!force && promptFn) {

@@ -12,12 +12,14 @@ export interface CleanOptions {
   dryRun?: boolean;
   force?: boolean;
   promptFn?: PromptFn;
+  /** Merged exclude patterns (built-in defaults + user config). From mergedExcludePatterns(). */
+  excludePatterns?: string[];
 }
 
 const USER_FILES_DIR = "User Files";
 
 export async function runClean(opts: CleanOptions): Promise<void> {
-  const { outputDir, move = false, dryRun = false, force = false, promptFn } = opts;
+  const { outputDir, move = false, dryRun = false, force = false, promptFn, excludePatterns = [] } = opts;
 
   const sm = new StateManager(outputDir);
   const state = await sm.load();
@@ -30,7 +32,7 @@ export async function runClean(opts: CleanOptions): Promise<void> {
   // Build known paths from state and find user-added files
   const knownPaths = buildKnownPaths(state);
   const knownSet = new Set(knownPaths.map((p) => p.normalize("NFC")));
-  const allOnDisk = collectFiles(outputDir);
+  const allOnDisk = collectFiles(outputDir, excludePatterns);
   // Belt-and-suspenders: also exclude _User-Files/ by path check (collectFiles already skips
   // the directory itself, but guard here too in case of edge cases)
   const userFiles = allOnDisk.filter(
