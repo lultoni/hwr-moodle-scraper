@@ -84,15 +84,15 @@ describe("mergedExcludePatterns", () => {
 
   it("appends user patterns to defaults (no duplicates)", () => {
     const result = mergedExcludePatterns("my-notes/**,.private/**");
-    expect(result).toContain(".claude/**");
-    expect(result).toContain(".git/**");
+    expect(result).toContain("**/.claude/**");
+    expect(result).toContain("**/.git/**");
     expect(result).toContain("my-notes/**");
     expect(result).toContain(".private/**");
   });
 
   it("deduplicates if user repeats a built-in default", () => {
-    const result = mergedExcludePatterns(".claude/**");
-    const count = result.filter((p) => p === ".claude/**").length;
+    const result = mergedExcludePatterns("**/.claude/**");
+    const count = result.filter((p) => p === "**/.claude/**").length;
     expect(count).toBe(1);
   });
 
@@ -109,34 +109,39 @@ describe("collectFiles with excludePatterns", () => {
     mockExistsSync.mockReturnValue(true);
   });
 
-  it("skips .claude directory when .claude/** pattern given", () => {
+  it("skips .claude directory when **/.claude/** pattern given", () => {
     mockReaddirSync
       .mockReturnValueOnce([dir(".claude"), file("a.pdf")]);
-    // With .claude/** pattern, .claude dir should be skipped entirely
-    const result = collectFiles("/out", [".claude/**"]);
+    // With **/.claude/** pattern, .claude dir should be skipped entirely
+    const result = collectFiles("/out", ["**/.claude/**"]);
     expect(result).toEqual([join("/out", "a.pdf")]);
     // readdirSync should NOT be called a second time for .claude
     expect(mockReaddirSync).toHaveBeenCalledTimes(1);
   });
 
   // Pass 54 regression: picomatch requires { dot: true } to match dotfile paths.
-  // Without it, ".claude/settings.local.json" is NOT matched by ".claude/**".
-  it("skips dotfiles inside a dot-directory (dot:true required for picomatch)", () => {
-    // Only one readdirSync call expected — .claude is excluded before recursion
+  // Without it, ".claude/settings.local.json" is NOT matched by "**/.claude/**".
+  it("skips dotfiles inside a dot-directory nested at any depth (dot:true required for picomatch)", () => {
+    // Simulate: Course/.claude/settings.local.json
     mockReaddirSync
-      .mockReturnValueOnce([dir(".claude"), file("a.pdf")]);
-    const result = collectFiles("/out", [".claude/**"]);
-    expect(result).toEqual([join("/out", "a.pdf")]);
-    // Must not have recursed into .claude at all
-    expect(mockReaddirSync).toHaveBeenCalledTimes(1);
+      .mockReturnValueOnce([dir("Course"), file("readme.md")])
+      .mockReturnValueOnce([dir(".claude"), file("lecture.pdf")])
+      // .claude inside Course should not be recursed
+    ;
+    const result = collectFiles("/out", ["**/.claude/**"]);
+    expect(result).toContain(join("/out", "readme.md"));
+    expect(result).toContain(join("/out", "Course", "lecture.pdf"));
+    // Must not have recursed into .claude
+    expect(mockReaddirSync).toHaveBeenCalledTimes(2);
   });
 
-  it("skips a dot-directory matching a bare directory pattern like .git/**", () => {
+  it("skips a dot-directory matching **/.git/** pattern at any depth", () => {
     mockReaddirSync
-      .mockReturnValueOnce([dir(".git"), file("readme.md")])
-      .mockReturnValueOnce([file("HEAD"), file("config")]);
-    const result = collectFiles("/out", [".git/**"]);
+      .mockReturnValueOnce([dir(".git"), file("readme.md")]);
+    const result = collectFiles("/out", ["**/.git/**"]);
     expect(result).toEqual([join("/out", "readme.md")]);
+    // .git dir skipped entirely — no second readdir call
+    expect(mockReaddirSync).toHaveBeenCalledTimes(1);
   });
 
   it("skips files matching **/*.tmp pattern", () => {

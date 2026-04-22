@@ -24,12 +24,13 @@ export const USER_FILES_PROTECTED_DIR = "_User-Files";
 /**
  * Built-in glob patterns always excluded from user-files detection, regardless of config.
  * Use POSIX-style forward slashes (picomatch is POSIX-only).
+ * The **\/ prefix ensures matching at any depth under outputDir.
  */
-export const DEFAULT_EXCLUDE_PATTERNS = [".claude/**", ".git/**"];
+export const DEFAULT_EXCLUDE_PATTERNS = ["**/.claude/**", "**/.git/**"];
 
 /**
  * Merge the built-in default exclude patterns with user-configured patterns.
- * @param configValue — the raw string from `excludePaths` config (comma-separated)
+ * @param configValue the raw string from the excludePaths config (comma-separated)
  */
 export function mergedExcludePatterns(configValue: string): string[] {
   const user = configValue.split(",").map((s) => s.trim()).filter(Boolean);
@@ -39,12 +40,12 @@ export function mergedExcludePatterns(configValue: string): string[] {
 }
 
 /** Recursively collect all file paths under a directory. Skips state, meta, and OS noise files.
- *  Files inside any directory named `_User-Files` are excluded — these are user-owned and
+ *  Files inside any directory named "_User-Files" are excluded — these are user-owned and
  *  must never appear as "user-added" in msc status or be targeted by msc clean.
  *
- *  @param dir — absolute path to the root directory to scan
- *  @param excludePatterns — POSIX-style glob patterns (relative to dir) to exclude.
- *    Pass the result of `mergedExcludePatterns(configValue)` to apply both built-in
+ *  @param dir absolute path to the root directory to scan
+ *  @param excludePatterns POSIX-style glob patterns (relative to dir) to exclude.
+ *    Pass the result of mergedExcludePatterns(configValue) to apply both built-in
  *    defaults and user-configured patterns. An empty array means no exclusions.
  */
 export function collectFiles(dir: string, excludePatterns: string[] = []): string[] {
@@ -68,8 +69,11 @@ export function collectFiles(dir: string, excludePatterns: string[] = []): strin
       const full = join(currentDir, entry.name).normalize("NFC");
       // Check glob exclusions: convert to POSIX-style relative path before matching.
       // picomatch is POSIX-only; on Windows path.sep is '\' so we normalize to '/'.
+      // For directories, append '/' so patterns like '**/.claude/**' match the dir itself
+      // and we skip recursing into it entirely.
       if (isExcluded) {
-        const relPosix = relative(dir, full).split(sep).join("/");
+        const relBase = relative(dir, full).split(sep).join("/");
+        const relPosix = entry.isDirectory() ? relBase + "/" : relBase;
         if (isExcluded(relPosix)) continue;
       }
       if (entry.isDirectory()) {
