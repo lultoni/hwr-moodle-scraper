@@ -56,12 +56,11 @@ A setup wizard asks where to save files and for your Moodle login (stored secure
 | What you want | Command |
 |---|---|
 | Download new / changed files | `msc scrape` |
+| Scrape only specific courses | `msc scrape --courses "Datenbanken,IT-Sicherheit"` |
 | Open the interactive menu | `msc tui` |
 | See what you have | `msc status` |
 | See what changed in the last run | `msc status --changed` |
 | Check for problems | `msc status --issues` |
-| Update your Moodle password | `msc auth set` |
-| Change the output folder | `msc config set outputDir ~/Documents/Moodle` |
 
 ---
 
@@ -86,7 +85,7 @@ To exclude folders like `.obsidian/` or `my-notes/` globally: `msc config set ex
 
 ```bash
 cd hwr-moodle-scraper
-git pull && npm ci && npm run build && npm install -g .
+git pull && npm install && npm run build && npm install -g .
 ```
 
 `msc` checks GitHub for updates automatically (once per day) and prints a notification with the exact command to run when a new version is available.
@@ -108,7 +107,9 @@ Add them to the exclude list: `msc config set excludePaths "folder-name/**"` —
 Select **Always Allow** when prompted (not just "Allow").
 
 **Something went wrong during scrape**
-Re-run with `--debug` for a full trace: `msc --debug scrape`. See `msc help debug` for log file options.
+Re-run with `--debug` for a full trace: `msc --debug scrape`. For a persistent log file, run `msc config set logFile ~/moodle-scraper.log` — the log is always appended to (never overwritten) and captures everything at DEBUG level. If you can't figure out what went wrong, share the log file in an issue or send it directly.
+
+The same applies if files ended up in the wrong folder or a course is missing — attach the log and describe what you expected.
 
 ---
 

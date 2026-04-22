@@ -17,3 +17,10 @@ example_course_html
 debug/
 user-notes.md
 PLAN.md
+
+# Development-only files — not relevant for end users
+agents/
+docs/
+CLAUDE.md
+audit-student-perspective.md
+scripts/

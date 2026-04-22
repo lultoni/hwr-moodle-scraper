@@ -82,7 +82,10 @@ Clears sync state and optionally deletes downloaded files. Flags compose freely.
 
 ### `msc ignored`
 
-Shows everything `msc` treats as invisible: active exclude patterns, `_User-Files` directories found in the output folder, and the `User Files/` directory if it exists.
+Shows everything `msc` treats as invisible:
+- **Section 1 — Exclude patterns:** all active glob patterns (`*` = built-in, `+` = custom from `excludePaths` config)
+- **Section 2 — `_User-Files` dirs:** any directories named `_User-Files` found in the output folder
+- **Section 3 — `User Files/`:** whether a `User Files/` folder (created by `msc clean --move`) exists
 
 ### `msc tui`
 
@@ -96,7 +99,7 @@ Available topics: `state`, `reset`, `clean`, `sync`, `orphaned`, `old-entries`, 
 
 ### `msc archive` *(experimental)*
 
-Archives selected courses into a zip file.
+Removes a course's state entry without touching files on disk. Use this when a course has ended and you want `msc status` to stop showing it, but you want to keep the downloaded files. The files stay exactly where they are — only the sync tracking entry is removed.
 
 ---
 
@@ -116,7 +119,7 @@ View all settings with `msc config list`, or edit interactively via `msc tui` �
 | `retryBaseDelayMs` | `5000` | Base delay for retry back-off on failed requests (ms) |
 | `checkUpdates` | `true` | Check GitHub for new versions automatically |
 | `updateCheckIntervalHours` | `24` | Hours between automatic update checks (`0` = every run) |
-| `logFile` | `null` | Path to write a debug log file (always at DEBUG level, `null` = disabled) |
+| `logFile` | `null` | Path for a persistent debug log file — always appended to (never overwritten), always at DEBUG level, captures all HTTP requests and file operations. Set to `null` to disable. |
 | `displayPathFormat` | `auto` | Path separator style: `auto`, `posix`, or `windows` |
 | `postScrapeHook` | `null` | Shell command to run after a scrape that produces changes (`null` = disabled) |
 
@@ -147,9 +150,16 @@ msc config set checkUpdates false
 
 | Mechanism | How | Best for |
 |-----------|-----|----------|
-| **`_User-Files/` folder** | Create a folder named `_User-Files` anywhere in the output tree | Permanently protecting notes, annotations, or personal files in a specific course folder |
-| **`excludePaths` patterns** | `msc config set excludePaths "pattern/**"` | Excluding tool folders (`.obsidian/`, `my-notes/`) that appear across many courses |
+| **`_User-Files/` folder** | Create a folder named `_User-Files` anywhere in the output tree | Permanently protecting notes or personal files in a specific course folder |
+| **`excludePaths` patterns** | `msc config set excludePaths "pattern/**"` | Excluding tool folders (`.obsidian/`, `my-notes/`) across many courses |
 | **`User Files/` folder** | Created by `msc clean --move` | Relocating personal files out of the course tree after the fact |
+
+### `msc clean --move` vs `msc reset --move-user-files`
+
+Both move personal files to safety — but in different contexts:
+
+- **`msc clean --move`** — standalone operation. Scans the output folder for personal files and moves them into `User Files/` inside the output directory. Use this anytime you want to tidy up.
+- **`msc reset --move-user-files`** — protection step *before* a destructive reset. When combined with `--files`, it interactively lets you relocate personal files before `msc` deletes all its tracked files. Without this flag, any personal files mixed in with course content could be harder to find after the reset.
 
 ### `_User-Files` folders
 
@@ -213,7 +223,7 @@ outputDir/
 └── Sonstiges/                          ← courses not mapped to a semester
 ```
 
-**Semester mapping** is based on the module code prefix in the course name (e.g. `WI2024` → Semester 1). Courses without a recognisable code go into `Sonstiges/`.
+**Semester mapping** is based on the module code prefix in the course name (e.g. `WI2024` → Semester 1). The mapping is currently hard-coded for HWR WI module codes — courses from other cohorts or degree programmes with unknown codes land in `Sonstiges/`. Dynamic mapping is planned (see `docs/backlog.md`).
 
 **Sidecar files** (`.description.md`) contain the activity description from Moodle, converted to Markdown. They are tracked separately and not counted in the download total.
 
