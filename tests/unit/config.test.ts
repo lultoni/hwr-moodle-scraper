@@ -116,6 +116,40 @@ describe("STEP-002: Config management", () => {
   });
 });
 
+// Pass 54 — excludePaths config key
+describe("excludePaths config key", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "msc-config-excl-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("excludePaths defaults to empty string", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    expect(await cfg.get("excludePaths")).toBe("");
+  });
+
+  it("excludePaths is in USER_EDITABLE_KEYS", async () => {
+    const { USER_EDITABLE_KEYS } = await import("../../src/config.js");
+    expect(USER_EDITABLE_KEYS).toContain("excludePaths");
+  });
+
+  it("excludePaths has a CONFIG_DESCRIPTION", async () => {
+    const { CONFIG_DESCRIPTIONS } = await import("../../src/config.js");
+    expect(CONFIG_DESCRIPTIONS["excludePaths"]).toBeTruthy();
+  });
+
+  it("excludePaths can be set and retrieved as a string", async () => {
+    const cfg = await importConfigManager(tmpDir);
+    await cfg.set("excludePaths", "my-notes/**,.private/**");
+    expect(await cfg.get("excludePaths")).toBe("my-notes/**,.private/**");
+  });
+});
+
 describe("Security: config value validation", () => {
   let tmpDir: string;
 

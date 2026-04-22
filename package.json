@@ -20,6 +20,7 @@
     "commander": "^12.1.0",
     "conf": "^13.0.1",
     "p-limit": "^6.1.0",
+    "picomatch": "^4.0.4",
     "turndown": "^7.2.0",
     "turndown-plugin-gfm": "^1.0.2",
     "undici": "^6.19.2"
@@ -31,6 +32,7 @@
     "@types/cli-progress": "^3.11.6",
     "@types/keytar": "^4.4.2",
     "@types/node": "^20.14.0",
+    "@types/picomatch": "^4.0.3",
     "@types/turndown": "^5.0.5",
     "@vitest/coverage-v8": "^1.6.0",
     "memfs": "^4.9.3",

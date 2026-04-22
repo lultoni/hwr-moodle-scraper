@@ -24,6 +24,8 @@ const DEFAULTS = {
   displayPathFormat: "auto" as "auto" | "posix" | "windows",
   /** Shell command to run after a scrape that produces changes. null = disabled. */
   postScrapeHook: null as string | null,
+  /** Comma-separated glob patterns (relative to outputDir) to exclude from user-files detection. */
+  excludePaths: "" as string,
 } as const;
 
 export type ConfigKey = keyof typeof DEFAULTS;
@@ -36,6 +38,7 @@ export type ConfigValue = string | number | boolean | null;
 export const USER_EDITABLE_KEYS: ConfigKey[] = [
   "outputDir",
   "courseSearch",
+  "excludePaths",
   "minFreeDiskMb",
   "maxConcurrentDownloads",
   "requestDelayMs",
@@ -52,6 +55,7 @@ export const USER_EDITABLE_KEYS: ConfigKey[] = [
 export const CONFIG_DESCRIPTIONS: Partial<Record<ConfigKey, string>> = {
   outputDir: "Folder where scraped files are saved",
   courseSearch: "Default keyword filter for courses (comma-separated)",
+  excludePaths: "Glob patterns to exclude from user-files detection (comma-separated, e.g. .claude/**,my-notes/**)",
   minFreeDiskMb: "Minimum free disk space required before scraping (MB)",
   maxConcurrentDownloads: "Number of files downloaded in parallel",
   requestDelayMs: "Base delay between HTTP requests (ms)",
