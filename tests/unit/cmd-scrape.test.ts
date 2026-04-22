@@ -957,3 +957,92 @@ describe("STEP-020: scrape — verbose/debug mode and no-courses message (Pass 4
     expect(output).toContain("--verbose");
   });
 });
+
+describe("STEP-020: scrape --semester filter", () => {
+  // REQ-CLI-002 — --semester filters enrolled courses to the specified semester before fetching trees
+
+  it("--semester 4 scrapes only Semester_4 courses and skips others", async () => {
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    // Enrolled: one Semester_3 course, one Semester_4 course
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 10, courseName: "WI-22/2-M13-WI2032-F01-WiSe-2025-51413 WI24A Datenbanken WiSe-2025", courseUrl: "https://moodle.example.com/course/view.php?id=10" },
+      { courseId: 20, courseName: "WI-22/2-M14-WI3042-F01-WiSe-2025-51414 WI24A Prozessmodellierung WiSe-2025", courseUrl: "https://moodle.example.com/course/view.php?id=20" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValue({ courseId: 20, sections: [] });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, semester: "4" });
+    stderrSpy.mockRestore();
+
+    // fetchContentTree should only be called for courseId 20 (Semester_4), not 10 (Semester_3)
+    const calls = vi.mocked(fetchContentTree).mock.calls;
+    const calledIds = calls.map((c) => (c[0] as { courseId: number }).courseId);
+    expect(calledIds).toContain(20);
+    expect(calledIds).not.toContain(10);
+  });
+
+  it("--semester latest picks the highest Semester_N among enrolled courses", async () => {
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    // Semester_2 and Semester_4 enrolled — latest = Semester_4
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 11, courseName: "WI-M01-WI1021-F01-WiSe-2024-35267 WI24A BWL WiSe-2024", courseUrl: "https://moodle.example.com/course/view.php?id=11" },
+      { courseId: 22, courseName: "WI-22/2-M14-WI3042-F01-WiSe-2025-51414 WI24A Prozessmodellierung WiSe-2025", courseUrl: "https://moodle.example.com/course/view.php?id=22" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValue({ courseId: 22, sections: [] });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, semester: "latest" });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+
+    // Only Semester_4 course (id 22) should be fetched
+    const calls = vi.mocked(fetchContentTree).mock.calls;
+    const calledIds = calls.map((c) => (c[0] as { courseId: number }).courseId);
+    expect(calledIds).toContain(22);
+    expect(calledIds).not.toContain(11);
+
+    // Output should mention which semester was targeted
+    expect(output).toContain("Semester_4");
+  });
+
+  it("--semester latest with single semester enrolled returns that semester", async () => {
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 33, courseName: "WI-M01-WI1031-F01-WiSe-2024-35268 WI24A Einführung in die WI WiSe-2024", courseUrl: "https://moodle.example.com/course/view.php?id=33" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValue({ courseId: 33, sections: [] });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, semester: "latest" });
+    stderrSpy.mockRestore();
+
+    const calledIds = vi.mocked(fetchContentTree).mock.calls.map((c) => (c[0] as { courseId: number }).courseId);
+    expect(calledIds).toContain(33);
+  });
+
+  it("--semester with no matching courses prints error and does not fetch trees", async () => {
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    // Only Semester_3 enrolled, asking for Semester_5
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 10, courseName: "WI-22/2-M13-WI2032-F01-WiSe-2025-51413 WI24A Datenbanken WiSe-2025", courseUrl: "https://moodle.example.com/course/view.php?id=10" },
+    ]);
+    vi.mocked(fetchContentTree).mockClear();
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: number | string) => { throw new Error("process.exit"); });
+
+    await expect(
+      runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, semester: "5" })
+    ).rejects.toThrow("process.exit");
+
+    stderrSpy.mockRestore();
+    exitSpy.mockRestore();
+
+    // fetchContentTree should NOT have been called after the clear
+    expect(vi.mocked(fetchContentTree)).not.toHaveBeenCalled();
+  });
+});

@@ -3,7 +3,7 @@ import { validateOrRefreshSession } from "../auth/session.js";
 import { promptAndAuthenticate, type PromptFn } from "../auth/prompt.js";
 import { fetchCourseList, fetchEnrolledCourses, fetchContentTree, fetchFolderFiles, type Course, type ContentTree, type Activity, type Section } from "../scraper/courses.js";
 import { buildDownloadPlan, applyLabelSubfolders } from "../scraper/dispatch.js";
-import { buildCourseShortPaths } from "../scraper/course-naming.js";
+import { buildCourseShortPaths, parseCourseNameParts } from "../scraper/course-naming.js";
 import { getResourceId } from "../scraper/resource-id.js";
 import { computeSyncPlan, SyncAction } from "../sync/incremental.js";
 import { StateManager, migrateStatePaths, relocateFiles, type CourseState, type State } from "../sync/state.js";
@@ -67,11 +67,36 @@ export interface ScrapeOptions {
   json?: boolean;
   /** Speed-up mode: requestDelayMs=200, maxConcurrentDownloads=8 (heavier on server). */
   fast?: boolean;
+  /** Filter to a specific semester: "1"-"6", "latest" (highest detected), "sonstiges", "praxistransfer". */
+  semester?: string;
   /** Prompt function for interactive credential entry (used as fallback when keychain unavailable). */
   promptFn?: PromptFn;
   logger?: Logger;
   /** Called at the start/end of slow waiting phases so callers (e.g. TUI) can show a spinner. */
   onPhase?: (event: "start" | "end", label: string) => void;
+}
+
+/**
+ * Resolve a --semester argument to a semesterDir string (e.g. "Semester_4").
+ * "latest" finds the highest Semester_N across the given course list.
+ * "1"-"6" map to Semester_1–Semester_6.
+ * "sonstiges" / "praxistransfer" map to those folder names.
+ * Returns null if the value is unrecognised or "latest" finds no Semester_N courses.
+ */
+function resolveSemesterTarget(courses: Course[], semester: string): string | null {
+  if (semester.toLowerCase() === "latest") {
+    let maxN = 0;
+    for (const c of courses) {
+      const { semesterDir } = parseCourseNameParts(c.courseName);
+      const m = /^Semester_(\d+)$/.exec(semesterDir);
+      if (m) maxN = Math.max(maxN, parseInt(m[1]!, 10));
+    }
+    return maxN > 0 ? `Semester_${maxN}` : null;
+  }
+  const n = parseInt(semester, 10);
+  if (!isNaN(n) && n >= 1 && n <= 6) return `Semester_${n}`;
+  const named: Record<string, string> = { sonstiges: "Sonstiges", praxistransfer: "Praxistransfer" };
+  return named[semester.toLowerCase()] ?? null;
 }
 
 export async function runScrape(opts: ScrapeOptions): Promise<void> {
@@ -166,12 +191,35 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const allCourses: Course[] = searchQuery
     ? await fetchCourseList({ baseUrl, sessionCookies, searchQuery })
     : await fetchEnrolledCourses({ baseUrl, sessionCookies });
-  const courses: Course[] = opts.courses
+  let courses: Course[] = opts.courses
     ? opts.courses.map((id) => {
         const found = allCourses.find((c) => c.courseId === id);
         return found ?? { courseId: id, courseName: String(id), courseUrl: `${baseUrl}/course/view.php?id=${id}` };
       })
     : allCourses;
+
+  // --semester filter: narrow to courses belonging to a specific semester
+  if (opts.semester) {
+    const target = resolveSemesterTarget(courses, opts.semester);
+    if (!target) {
+      logger.error(`No enrolled courses found for semester "${opts.semester}". Check msc status for available semesters.`);
+      process.exit(EXIT_CODES.GENERAL_ERROR);
+    }
+    const filtered = courses.filter((c) => {
+      const { semesterDir } = parseCourseNameParts(c.courseName);
+      return semesterDir.toLowerCase() === target.toLowerCase();
+    });
+    if (filtered.length === 0) {
+      logger.error(`No courses matched semester "${opts.semester}" (resolved: ${target}).`);
+      process.exit(EXIT_CODES.GENERAL_ERROR);
+    }
+    if (!effectiveQuiet) {
+      const src = opts.semester.toLowerCase() === "latest" ? ` (--semester latest)` : "";
+      logger.info(`Filtering to ${target}${src}.`);
+    }
+    courses = filtered;
+  }
+
   opts.onPhase?.("end", "Fetching courses...");
 
   if (courses.length === 0) {

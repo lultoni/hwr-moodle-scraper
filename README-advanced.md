@@ -18,6 +18,7 @@ Downloads new and changed files from Moodle.
 | `--check-files` | Re-download any files missing from disk (even if state says up-to-date) |
 | `--courses <keywords>` | Comma-separated keywords to filter courses (fuzzy match) |
 | `--course-ids <ids>` | Comma-separated numeric course IDs to scrape (exact match) |
+| `--semester <N\|latest>` | Scrape only courses in semester N (1–6), `latest` for the current (highest) semester, or `sonstiges` / `praxistransfer` |
 | `--fast` | Faster scrape: shorter delays, more concurrency (heavier on the server) |
 | `--no-descriptions` | Skip `.description.md` sidecars and `.url.txt` files — binaries only |
 | `--output-dir <path>` | Override the output directory for this run only |
