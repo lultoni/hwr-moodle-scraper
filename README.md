@@ -115,7 +115,93 @@ msc --version
 | Move personal files to `User Files/` instead of deleting | `msc clean --move` |
 | Change the output folder | `msc config set outputDir ~/Documents/Moodle` |
 | Update your Moodle password | `msc auth set` |
+| Open the interactive TUI | `msc tui` |
 | See all available commands | `msc --help` |
+
+---
+
+## Interactive TUI
+
+Run `msc tui` to open a full-screen interactive interface. All major features are available through a keyboard-driven menu — no need to remember command-line flags.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  HWR Moodle Scraper                              v0.9.0  │
+│  ── Main Menu ──                                         │
+│                                                          │
+│  ❯ Scrape                                                │
+│    Status                                                │
+│    Reset                                                 │
+│    Clean                                                 │
+│    Auth                                                  │
+│    Config                                                │
+│    Quit                                                  │
+│                                                          │
+│  ↑↓ navigate  Enter select  q quit                       │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Navigation:** Use `↑` / `↓` arrow keys to move, `Enter` to select, `q` or `Esc` to go back.
+
+### TUI Screens
+
+| Screen | What it does |
+|--------|-------------|
+| **Scrape** | Start a scrape run with optional flags (dry-run, fast mode, course filter). Live progress bar per course. |
+| **Status** | Show a summary of downloaded files, old entries, missing files, and user-added files. Toggle `--issues` view. |
+| **Reset** | Interactively delete state and/or all downloaded files. Offers to relocate any personal files first. |
+| **Clean** | Find and delete (or move) personal files you added to the output folder. Shows a tree before acting. |
+| **Auth** | Update your stored Moodle credentials without re-running the wizard. |
+| **Config** | Browse and edit all configuration keys. Arrow keys navigate; press `Enter` to edit a value. |
+
+### Config Screen
+
+The Config screen (`msc tui` → Config) shows all settings grouped by category:
+
+```
+── Filesystem ────────────────────────
+outputDir                  ~/Documents/Moodle
+   Folder where scraped files are saved
+
+courseSearch               (empty)
+   Default keyword filter for courses (comma-separated)
+
+excludePaths               (empty)
+   Glob patterns to exclude from user-files detection (comma-separated)
+
+── Network ───────────────────────────
+maxConcurrentDownloads     3
+   Number of files downloaded in parallel
+...
+```
+
+- Navigate with `↑` / `↓`, press `Enter` to edit a value
+- **All path and text fields pre-fill the current value** — use `←` / `→` arrow keys to position the cursor and edit in-place without retyping the whole path
+- **`excludePaths`** opens a dedicated list editor (see below)
+- Press `q` or `Esc` to go back to the main menu
+
+### Exclude Paths List Editor
+
+When you select `excludePaths` in the Config screen, a dedicated list editor opens:
+
+```
+── Exclude Paths ──────────────────────────────────────
+  Patterns excluded from user-files detection.
+
+  Built-in (always active, cannot be removed):
+    * .claude/**
+    * .git/**
+
+  Custom patterns:
+  ❯ my-notes/**
+
+  [a] Add  [d] Delete selected  [↑↓] Navigate  [q/Enter] Done
+```
+
+- Built-in defaults (`.claude/**`, `.git/**`) are always active and shown with `*` — they cannot be removed
+- Use `a` to add a custom glob pattern (e.g. `my-notes/**`, `.obsidian/**`, `*.swp`)
+- Use `d` to delete the selected custom pattern
+- Changes save immediately; press `q` or `Enter` to return to Config
 
 ---
 
@@ -129,6 +215,23 @@ Feel free to add your own notes, highlights, or files anywhere inside the output
 - **`msc clean --move`** — instead of deleting, moves your personal files into a `User Files/` subfolder inside the output directory. Everything stays on disk, just neatly separated from the course content. Safe to run repeatedly — `User Files/` is never touched by the scraper.
 
 If you're unsure, always use `--move` first. You can delete from `User Files/` yourself once you've confirmed nothing important is there.
+
+### Excluding Folders from Detection
+
+By default, `.claude/` and `.git/` folders are silently ignored — they never appear in `msc status` as user-added files. You can add more patterns:
+
+```bash
+# Exclude a notes folder and all Obsidian vault files
+msc config set excludePaths "my-notes/**,.obsidian/**"
+```
+
+Or use the interactive list editor: `msc tui` → Config → `excludePaths`.
+
+Patterns follow [glob syntax](https://github.com/micromatch/picomatch#globbing-features):
+- `my-notes/**` — everything inside `my-notes/`
+- `.obsidian/**` — everything inside `.obsidian/`
+- `**/*.swp` — all Vim swap files anywhere in the output folder
+- `personal/` — a folder named exactly `personal` at the root
 
 ### Permanently Protecting Personal Files
 
@@ -207,6 +310,9 @@ Select **Always Allow** (not just "Allow") when the prompt appears.
 
 **Session expires during a long download**
 The scraper re-authenticates automatically. If it fails repeatedly, run `msc auth set` to update your password.
+
+**Personal folders showing up as "user-added files"**
+Add the folder to the exclude list: `msc config set excludePaths "folder-name/**"` — or use the TUI: `msc tui` → Config → `excludePaths`.
 
 ---
 
