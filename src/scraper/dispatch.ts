@@ -118,7 +118,7 @@ export function buildDownloadPlan(
     if (activity.isDivider) {
       if (!activity.description || !isDividerContentRich(activity.description)) continue;
       // Content-rich divider → write as _SubfolderName.md
-      const subDirName = activity.subDir?.split("/").pop() || sanitiseFilename(activity.activityName || "unnamed");
+      const subDirName = activity.subDir?.split(/[\\/]/).pop() || sanitiseFilename(activity.activityName || "unnamed");
       const richDestPath = join(fileDir, `_${sanitiseFilename(subDirName)}.md`);
       items.push({
         activity,

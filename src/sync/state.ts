@@ -251,7 +251,7 @@ export function relocateFiles(
 
     const safeCourse = sanitiseFilename(shortPath.shortName).replace(/\s+/g, "_");
     // Expected base dir under outputDir
-    const expectedCourseDir = join(outputDir, ...shortPath.semesterDir.split("/"), safeCourse);
+    const expectedCourseDir = join(outputDir, ...shortPath.semesterDir.split(/[\\/]/), safeCourse);
 
     for (const sectionState of Object.values(courseState.sections ?? {})) {
       for (const fileState of Object.values(sectionState.files ?? {})) {

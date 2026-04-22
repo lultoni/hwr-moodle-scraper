@@ -58,7 +58,7 @@ function buildTreeLines(paths: string[], baseDir: string): string[] {
 
   for (const p of paths) {
     const rel = relative(baseDir, p);
-    const parts = rel.split("/");
+    const parts = rel.split(sep);
     const fileName = parts.pop()!;
     let node = root;
     for (const part of parts) {
