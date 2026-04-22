@@ -143,6 +143,26 @@ output level. Disable it again with:
 
   msc config set logFile null
 `,
+  "ignored": `
+Ignored Files and Directories
+==============================
+Use "msc ignored" to see everything that msc treats as invisible:
+
+  1. Exclude patterns — glob patterns applied when scanning for user-
+     added files. Built-in defaults (.claude/**, .git/**) are always
+     active. Add custom patterns with:
+       msc config set excludePaths "my-notes/**,.obsidian/**"
+     Or manage interactively: msc tui → Config → excludePaths
+
+  2. _User-Files directories — any folder named "_User-Files" anywhere
+     in your output tree is skipped entirely. Create these yourself to
+     permanently protect personal files from msc status and msc clean.
+
+  3. User Files/ directory — created by "msc clean --move" to hold
+     files that were relocated out of the output folder.
+
+Files in any of these locations never appear in "msc status" output.
+`,
 };
 
 // "old-entries" is an alias for "orphaned"

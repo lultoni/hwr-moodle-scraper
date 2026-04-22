@@ -21,6 +21,7 @@ import { runWizard, shouldRunWizard } from "./commands/wizard.js";
 import { runTui } from "./commands/tui.js";
 import { runHelp } from "./commands/help.js";
 import { runArchive } from "./commands/archive.js";
+import { runIgnored } from "./commands/ignored.js";
 import { runUpdateCheck } from "./version-check.js";
 import { StateManager } from "./sync/state.js";
 import { matchCourses } from "./scraper/course-filter.js";
@@ -345,6 +346,25 @@ program
       process.exit(code);
     }
     await runUpdateCheck(mgr, pkg.version, false);
+  });
+
+// --- ignored ---
+program
+  .command("ignored")
+  .description("Show active exclude patterns, protected _User-Files dirs, and relocated User Files/ dir")
+  .action(async () => {
+    const mgr = new ConfigManager();
+    const outputDir = (await mgr.get("outputDir")) as string;
+    if (!outputDir) {
+      process.stderr.write("Error: outputDir is not configured.\n");
+      process.exit(EXIT_CODES.USAGE_ERROR);
+    }
+    try {
+      await runIgnored({ outputDir });
+    } catch (err) {
+      process.stderr.write(`Error: ${(err as Error).message}\n`);
+      process.exit(EXIT_CODES.ERROR);
+    }
   });
 
 // --- clean ---

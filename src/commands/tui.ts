@@ -7,6 +7,7 @@ import { authScreen } from "../tui/screens/auth-screen.js";
 import { resetScreen } from "../tui/screens/reset-screen.js";
 import { cleanScreen } from "../tui/screens/clean-screen.js";
 import { scrapeScreen } from "../tui/screens/scrape-screen.js";
+import { ignoredScreen } from "../tui/screens/ignored-screen.js";
 import type { PromptFn } from "../auth/prompt.js";
 
 export async function runTui(opts: { promptFn: PromptFn; version: string }): Promise<void> {
@@ -29,6 +30,11 @@ export async function runTui(opts: { promptFn: PromptFn; version: string }): Pro
         label: "Status",
         hasSubmenu: true,
         action: () => statusScreen(outputDir, promptFn, versionTag),
+      },
+      {
+        label: "Ignored",
+        hasSubmenu: true,
+        action: () => ignoredScreen(outputDir, promptFn, versionTag),
       },
       {
         label: "Reset",
