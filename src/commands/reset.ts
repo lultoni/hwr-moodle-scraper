@@ -216,11 +216,13 @@ export async function runReset(opts: ResetOptions): Promise<void> {
       if (existsSync(sm.statePath)) unlinkSync(sm.statePath);
       if (existsSync(sm.backupPath)) unlinkSync(sm.backupPath);
     }
-    const extras: string[] = [];
-    if (clearConfig) extras.push("config reset");
-    if (clearCreds) extras.push("credentials cleared");
-    const suffix = extras.length > 0 ? ` ${extras.join(", ")}.` : "";
-    ui.success(`Sync state cleared. Files untouched.${suffix} Run \`msc scrape\` to rebuild.`);
+    const parts: string[] = [];
+    if (deleteState) parts.push("Sync state cleared. Files untouched.");
+    if (clearConfig) parts.push("Config reset.");
+    if (clearCreds) parts.push("Credentials cleared.");
+    const msg = parts.join(" ");
+    const hint = deleteState ? " Run `msc scrape` to rebuild." : "";
+    ui.success(msg + hint);
     return;
   }
 
