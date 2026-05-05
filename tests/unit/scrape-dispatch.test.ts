@@ -257,20 +257,40 @@ describe("buildDownloadPlan: activity type dispatch", () => {
     expect(items[0]?.destPath).toMatch(/\.url\.txt$/);
   });
 
-  it("url activity destPath is placed inside _Links/ subfolder", () => {
-    // URL activities should be grouped in _Links/ to avoid cluttering the section folder
-    const act = makeActivity({ activityType: "url", activityName: "BPMN Poster", url: "https://moodle.example.com/mod/url/view.php?id=5" });
-    const { items } = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
-    expect(items[0]?.destPath).toContain(`${sep}_Links${sep}`);
-    expect(items[0]?.destPath).toContain(join("_Links", "BPMN Poster.url.txt"));
+  it("url activity with mixed content uses _Links/ subfolder", () => {
+    // When a section has both url and non-url activities, urls go in _Links/
+    const urlAct = makeActivity({ activityType: "url", activityName: "BPMN Poster", url: "https://moodle.example.com/mod/url/view.php?id=5" });
+    const pdfAct = makeActivity({ activityType: "resource", activityName: "Folien.pdf", url: "https://moodle.example.com/mod/resource/view.php?id=6" });
+    const { items } = buildDownloadPlan([urlAct, pdfAct], "Kurs", "Abschnitt", "/output");
+    const urlItem = items.find((i) => i.strategy === "url-txt");
+    expect(urlItem?.destPath).toContain(`${sep}_Links${sep}`);
+    expect(urlItem?.destPath).toContain(join("_Links", "BPMN Poster.url.txt"));
   });
 
-  it("url activity with subDir places _Links inside the subDir", () => {
-    // When an activity has a subDir (from label-subfolder grouping), _Links goes inside it
+  it("url-only section: url activity placed flat (no _Links/)", () => {
+    // When a section has ONLY url activities, skip the _Links/ subfolder
+    const act = makeActivity({ activityType: "url", activityName: "BPMN Poster", url: "https://moodle.example.com/mod/url/view.php?id=5" });
+    const { items } = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
+    expect(items[0]?.destPath).not.toContain(`${sep}_Links${sep}`);
+    expect(items[0]?.destPath).toContain("BPMN Poster.url.txt");
+  });
+
+  it("url activity with subDir in url-only context: placed flat inside subDir (no _Links/)", () => {
+    // url-only within a label subfolder → also flat, no nested _Links
     const act = makeActivity({ activityType: "url", activityName: "Tutorial", url: "https://moodle.example.com/mod/url/view.php?id=5", subDir: "Materialien" });
     const { items } = buildDownloadPlan([act], "Kurs", "Abschnitt", "/output");
-    expect(items[0]?.destPath).toContain(join("Materialien", "_Links") + sep);
-    expect(items[0]?.destPath).toContain(join("Materialien", "_Links", "Tutorial.url.txt"));
+    expect(items[0]?.destPath).not.toContain("_Links");
+    expect(items[0]?.destPath).toContain(join("Materialien", "Tutorial.url.txt"));
+  });
+
+  it("url activity with subDir in mixed context: _Links inside the subDir", () => {
+    // When the subDir also has non-url activities, _Links nests inside the subDir
+    const urlAct = makeActivity({ activityType: "url", activityName: "Tutorial", url: "https://moodle.example.com/mod/url/view.php?id=5", subDir: "Materialien" });
+    const pdfAct = makeActivity({ activityType: "resource", activityName: "Folien.pdf", url: "https://moodle.example.com/mod/resource/view.php?id=6", subDir: "Materialien" });
+    const { items } = buildDownloadPlan([urlAct, pdfAct], "Kurs", "Abschnitt", "/output");
+    const urlItem = items.find((i) => i.strategy === "url-txt");
+    expect(urlItem?.destPath).toContain(join("Materialien", "_Links") + sep);
+    expect(urlItem?.destPath).toContain(join("Materialien", "_Links", "Tutorial.url.txt"));
   });
 
   it("label with description → label-md strategy, destPath ends in .md", () => {

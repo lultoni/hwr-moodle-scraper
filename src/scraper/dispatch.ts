@@ -88,6 +88,26 @@ export function buildDownloadPlan(
   /** modtype → list of activity names with that type */
   const unknownTypes = new Map<string, string[]>();
 
+  // Pre-pass: determine which fileDirs have at least one non-url real activity.
+  // When a fileDir has only url activities, urls are placed flat (no _Links/ subfolder).
+  const fileDirsWithNonUrl = new Set<string>();
+  for (const activity of activities) {
+    if (!activity.isAccessible) continue;
+    if (activity.activityType === "url") continue;
+    if (activity.isDivider) continue;
+    if (activity.activityType === "label" && !activity.description) continue;
+    if (!activity.url && activity.activityType !== "label") continue;
+    const _safeSection = sanitiseFilename(sectionName);
+    const _safeCourse  = sanitiseFilename(courseName);
+    const _sectionDir  = semesterDir
+      ? join(outputDir, semesterDir, _safeCourse, _safeSection)
+      : join(outputDir, _safeCourse, _safeSection);
+    const _fileDir = activity.subDir
+      ? join(_sectionDir, ...activity.subDir.split(/[\\/]/).map(sanitiseFilename))
+      : _sectionDir;
+    fileDirsWithNonUrl.add(_fileDir);
+  }
+
   for (const activity of activities) {
     if (!activity.isAccessible) continue;
 
@@ -136,10 +156,12 @@ export function buildDownloadPlan(
 
     switch (activity.activityType) {
       case "url":
-        // URL activities are placed in a _Links/ subfolder to avoid cluttering the section dir
-        // with .url.txt + .webloc pairs for every link. The subfolder sorts before alphabetic
-        // folders (leading underscore) and signals "secondary/reference content".
-        destPath = join(fileDir, "_Links", `${safeName}.url.txt`);
+        // Use _Links/ subfolder only when the fileDir also has non-url content.
+        // When all activities in this dir are URLs, place them flat to avoid a
+        // pointless extra nesting level.
+        destPath = fileDirsWithNonUrl.has(fileDir)
+          ? join(fileDir, "_Links", `${safeName}.url.txt`)
+          : join(fileDir, `${safeName}.url.txt`);
         strategy = "url-txt";
         break;
       case "page":
@@ -185,9 +207,11 @@ export function buildDownloadPlan(
     // under "## Description", so a separate sidecar would be pure redundancy.
     // page-md items DO get a sidecar because their main file contains fetched page content
     // (not the description), so the description is genuinely separate metadata.
-    // url-txt sidecars live in the same _Links/ folder as the .url.txt file.
+    // url-txt sidecars live in the same dir as the .url.txt file (either _Links/ or flat).
     if (activity.description && strategy !== "label-md" && strategy !== "info-md") {
-      const sidecarDir = strategy === "url-txt" ? join(fileDir, "_Links") : fileDir;
+      const sidecarDir = (strategy === "url-txt" && fileDirsWithNonUrl.has(fileDir))
+        ? join(fileDir, "_Links")
+        : fileDir;
       items.push({
         activity,
         url: activity.url,
