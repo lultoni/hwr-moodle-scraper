@@ -766,3 +766,110 @@ describe("runStatus — excludePatterns", () => {
     expect(mockCollectFiles).toHaveBeenCalledWith("/tmp/test", [".claude/**", "my-notes/**"]);
   });
 });
+
+// Feature B: msc status --issues reports generatedFiles that don't exist on disk
+describe("runStatus --issues: missing generatedFiles detection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCollectFiles.mockReturnValue([]);
+  });
+
+  it("--issues shows 'Missing generated files' section when a generatedFile is absent from disk", async () => {
+    const missingPath = "/tmp/test/Semester_4/Software Engineering/Section 1/_SectionDescription.md";
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        ...makeState(),
+        generatedFiles: [missingPath],
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    expect(output).toContain("Missing generated files");
+    expect(output).toContain("_SectionDescription.md");
+  });
+
+  it("--issues shows hint to run msc scrape for missing generated files", async () => {
+    const missingPath = "/tmp/test/Semester_4/Course/README.md";
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        ...makeState(),
+        generatedFiles: [missingPath],
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    expect(output).toContain("msc scrape");
+  });
+
+  it("does NOT show 'Missing generated files' section when generatedFiles is empty", async () => {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        ...makeState(),
+        generatedFiles: [],
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    expect(output).not.toContain("Missing generated files");
+  });
+
+  it("--json includes missingGenerated array with missing paths", async () => {
+    const missingPath = "/tmp/test/Semester_4/Course/README.md";
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        ...makeState(),
+        generatedFiles: [missingPath],
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", json: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    const result = JSON.parse(output) as Record<string, unknown>;
+    expect(result).toHaveProperty("missingGenerated");
+    expect(Array.isArray(result["missingGenerated"])).toBe(true);
+    expect((result["missingGenerated"] as string[])).toContain(missingPath);
+  });
+
+  it("--json missingGenerated is empty array when all generatedFiles exist", async () => {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        ...makeState(),
+        generatedFiles: [],
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", json: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    const result = JSON.parse(output) as Record<string, unknown>;
+    expect(result).toHaveProperty("missingGenerated");
+    expect((result["missingGenerated"] as string[])).toHaveLength(0);
+  });
+});

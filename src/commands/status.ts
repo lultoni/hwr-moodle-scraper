@@ -255,6 +255,9 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   const managedUserFiles = allUserFiles.filter((p) => p.startsWith(userFilesDir + sep));
   const userFiles = allUserFiles.filter((p) => !p.startsWith(userFilesDir + sep));
 
+  // Missing generated files: generatedFiles entries that don't exist on disk
+  const missingGeneratedFiles = (state.generatedFiles ?? []).filter((p) => !existsSync(p));
+
   // ── JSON output mode ───────────────────────────────────────────────────────
   if (json) {
     const result = {
@@ -269,6 +272,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
         path: m.localPath,
         everDownloaded: true, // presence in state implies it was once tracked
       })),
+      missingGenerated: missingGeneratedFiles,
     };
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
     return;
@@ -290,8 +294,8 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   }
 
   // --issues: tree views
-  if (orphans.length > 0 || missingFiles.length > 0 || userFiles.length > 0) {
-    ui.warn(`Issues summary: ${orphans.length} old entr${orphans.length === 1 ? "y" : "ies"}, ${missingFiles.length} missing file${missingFiles.length === 1 ? "" : "s"}, ${userFiles.length} unprotected personal file${userFiles.length === 1 ? "" : "s"}`);
+  if (orphans.length > 0 || missingFiles.length > 0 || userFiles.length > 0 || missingGeneratedFiles.length > 0) {
+    ui.warn(`Issues summary: ${orphans.length} old entr${orphans.length === 1 ? "y" : "ies"}, ${missingFiles.length} missing file${missingFiles.length === 1 ? "" : "s"}, ${missingGeneratedFiles.length} missing generated file${missingGeneratedFiles.length === 1 ? "" : "s"}, ${userFiles.length} unprotected personal file${userFiles.length === 1 ? "" : "s"}`);
   }
 
   if (orphans.length > 0) {
@@ -322,6 +326,15 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
     }
   }
 
+  if (missingGeneratedFiles.length > 0) {
+    write("");
+    write(`Missing generated files (${missingGeneratedFiles.length}) — were created by scraper but no longer on disk:`);
+    for (const line of buildTreeLines(missingGeneratedFiles, outputDir)) {
+      write(line);
+    }
+    ui.hint("Tip: Run `msc scrape` to regenerate missing files.");
+  }
+
   if (userFiles.length > 0) {
     write("");
     write(`User-added files (${userFiles.length}):`);
@@ -335,7 +348,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
     write(`User Files/ (relocated by \`msc clean --move\`, ${managedUserFiles.length} file${managedUserFiles.length === 1 ? "" : "s"} — not shown)`);
   }
 
-  if (orphans.length === 0 && missingFiles.length === 0 && userFiles.length === 0) {
+  if (orphans.length === 0 && missingFiles.length === 0 && missingGeneratedFiles.length === 0 && userFiles.length === 0) {
     write("No issues found.");
   } else {
     // Contextual tips based on what was found
