@@ -1,6 +1,6 @@
 // REQ-CLI-006, REQ-CLI-012, REQ-CLI-016
 import { existsSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { StateManager } from "../sync/state.js";
 import { collectFiles, findEmptyOrphanDirs, mergedExcludePatterns } from "../fs/collect.js";
 import { ui } from "../ui.js";
@@ -145,15 +145,35 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
     if (ls.newFiles.length === 0 && ls.updatedFiles.length === 0) {
       write("No changes in last run.");
     } else {
-      if (ls.newFiles.length > 0) {
-        write("");
-        write(`New files (${ls.newFiles.length}):`);
-        for (const f of ls.newFiles) write(`  + ${f}`);
+      // Group both lists together by directory so the same folder is shown once.
+      // Entry: { prefix: "+"|"~", relativePath: "Semester_4/GPM/Section/file.pdf" }
+      const allEntries: Array<{ prefix: "+" | "~"; rel: string }> = [
+        ...ls.newFiles.map((f) => ({ prefix: "+" as const, rel: f })),
+        ...ls.updatedFiles.map((f) => ({ prefix: "~" as const, rel: f })),
+      ];
+
+      // Build dir → entries map (preserving order of first appearance)
+      const byDir = new Map<string, Array<{ prefix: "+" | "~"; name: string }>>();
+      for (const { prefix, rel } of allEntries) {
+        const dir = dirname(rel);
+        const name = basename(rel);
+        const list = byDir.get(dir) ?? [];
+        list.push({ prefix, name });
+        byDir.set(dir, list);
       }
-      if (ls.updatedFiles.length > 0) {
-        write("");
-        write(`Updated files (${ls.updatedFiles.length}):`);
-        for (const f of ls.updatedFiles) write(`  ~ ${f}`);
+
+      const newCount = ls.newFiles.length;
+      const updCount = ls.updatedFiles.length;
+      const parts: string[] = [];
+      if (newCount > 0) parts.push(`${newCount} new`);
+      if (updCount > 0) parts.push(`${updCount} updated`);
+      write("");
+      write(`Changes (${parts.join(", ")}):`);
+      for (const [dir, files] of byDir) {
+        write(`  ${dir}/`);
+        for (const { prefix, name } of files) {
+          write(`    ${prefix} ${name}`);
+        }
       }
     }
     return;

@@ -284,8 +284,8 @@ describe("STEP-021: status command — richer output", () => {
     stdoutSpy.mockRestore();
   });
 
-  // UC-08: --changed replays last-scrape change report
-  it("--changed prints new and updated files from lastSync", async () => {
+  // UC-08: --changed replays last-scrape change report (grouped by folder)
+  it("--changed groups files by folder and shows filename only", async () => {
     vi.mocked(StateManager).mockImplementation(() => ({
       load: vi.fn().mockResolvedValue({
         version: 1,
@@ -303,9 +303,47 @@ describe("STEP-021: status command — richer output", () => {
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     await runStatus({ outputDir: "/tmp/test", showChanged: true });
     const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
-    expect(output).toContain("+ CourseA/Section/file.pdf");
-    expect(output).toContain("~ CourseB/page.md");
+    // folder header shown, filename shown without full path
+    expect(output).toContain("CourseA/Section/");
+    expect(output).toContain("+ file.pdf");
+    expect(output).toContain("CourseB/");
+    expect(output).toContain("~ page.md");
     expect(output).toContain("Legend: + new  ~ updated");
+    // full path must NOT appear as a single token
+    expect(output).not.toContain("+ CourseA/Section/file.pdf");
+    stdoutSpy.mockRestore();
+  });
+
+  // UC-08: --changed groups multiple files in the same folder under one header
+  it("--changed collapses multiple files from the same folder", async () => {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({
+        version: 1,
+        lastSyncAt: "2026-04-15T10:00:00.000Z",
+        courses: {},
+        lastSync: {
+          timestamp: "2026-04-15T10:00:00.000Z",
+          newFiles: [
+            "Semester_4/GPM/Lerneinheit 1/slides.pdf",
+            "Semester_4/GPM/Lerneinheit 1/notes.pdf",
+            "Semester_4/GPM/Lerneinheit 2/intro.pdf",
+          ],
+          updatedFiles: [],
+        },
+      }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", showChanged: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    // folder appears once despite two files
+    const le1Count = (output.match(/Lerneinheit 1\//g) ?? []).length;
+    expect(le1Count).toBe(1);
+    expect(output).toContain("+ slides.pdf");
+    expect(output).toContain("+ notes.pdf");
+    expect(output).toContain("Lerneinheit 2/");
+    expect(output).toContain("+ intro.pdf");
     stdoutSpy.mockRestore();
   });
 
