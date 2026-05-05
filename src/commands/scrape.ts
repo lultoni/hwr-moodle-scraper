@@ -1399,8 +1399,10 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const failedMsg = failedCount > 0 ? `, ${failedCount} failed` : "";
   const submissionTotal = specialItemSubmissionPaths.reduce((n, arr) => n + arr.length, 0);
   const imageTotal = specialItemImagePaths.reduce((n, arr) => n + arr.length, 0);
-  // Use the merged generated count (this run + previous runs) so the total matches what reset sees
+  // mergedGeneratedCount = all-time total (used for totalFiles so it matches msc status)
   const mergedGeneratedCount = new Set([...(state.generatedFiles ?? []), ...generatedFiles]).size;
+  // thisRunGeneratedCount = files actually written this run (shown in breakdown)
+  const thisRunGeneratedCount = generatedFiles.length;
   const totalFiles = downloadedCount + sidecarCount + submissionTotal + imageTotal + mergedGeneratedCount;
   const skipMsg = skipped.length > 0 ? `${skipped.length} skipped` : "0 skipped";
   logger.info(`Done: ${totalFiles} files across ${courses.length} courses (${skipMsg}${failedMsg})`);
@@ -1408,7 +1410,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   if (sidecarCount > 0) breakdownParts.push(`${sidecarCount} description file${sidecarCount === 1 ? "" : "s"}`);
   if (submissionTotal > 0) breakdownParts.push(`${submissionTotal} submission${submissionTotal === 1 ? "" : "s"}`);
   if (imageTotal > 0) breakdownParts.push(`${imageTotal} image${imageTotal === 1 ? "" : "s"}`);
-  if (mergedGeneratedCount > 0) breakdownParts.push(`${mergedGeneratedCount} generated`);
+  if (thisRunGeneratedCount > 0) breakdownParts.push(`${thisRunGeneratedCount} generated`);
   logger.info(`  ${breakdownParts.join(", ")}`);
 
   // Filter summary — shown whenever duplicates were suppressed or short descs consolidated
