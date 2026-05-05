@@ -379,9 +379,10 @@ program
   .command("clean")
   .description("Delete or move personal files you added to the output folder (scraper files are never touched)")
   .option("--move", 'Move files to "User Files/" folder instead of deleting', false)
+  .option("--empty-dirs", "Remove empty orphan directories left over from scraper cleanup", false)
   .option("--dry-run", "Show what would happen without acting", false)
   .option("--force", "Skip confirmation prompt", false)
-  .action(async (opts: { move: boolean; dryRun: boolean; force: boolean }) => {
+  .action(async (opts: { move: boolean; emptyDirs: boolean; dryRun: boolean; force: boolean }) => {
     const mgr = new ConfigManager();
     const outputDir = (await mgr.get("outputDir")) as string;
     if (!outputDir) {
@@ -393,6 +394,7 @@ program
       await runClean({
         outputDir,
         move: opts.move,
+        emptyDirs: opts.emptyDirs,
         dryRun: opts.dryRun,
         force: opts.force,
         excludePatterns: mergedExcludePatterns(excludePaths),

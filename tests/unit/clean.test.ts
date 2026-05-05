@@ -19,9 +19,11 @@ vi.mock("node:fs", () => ({
 // --- collect mock ---
 const mockCollectFiles = vi.fn().mockReturnValue([]);
 const mockBuildKnownPaths = vi.fn().mockReturnValue([]);
+const mockFindEmptyOrphanDirsModule = vi.fn().mockReturnValue([]);
 vi.mock("../../src/fs/collect.js", () => ({
   collectFiles: (...args: unknown[]) => mockCollectFiles(...args),
   buildKnownPaths: (...args: unknown[]) => mockBuildKnownPaths(...args),
+  findEmptyOrphanDirs: (...args: unknown[]) => mockFindEmptyOrphanDirsModule(...args),
   renderTree: (paths: string[], rootDir: string) => {
     const { relative } = require("node:path");
     return paths.map((p: string) => relative(rootDir, p)).join("\n");
@@ -200,6 +202,63 @@ describe("msc clean", () => {
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     await runClean({ outputDir: "/out", promptFn: mockPrompt });
     expect(mockUnlinkSync).toHaveBeenCalledWith("/out/Course/orphan.pdf");
+    spy.mockRestore();
+  });
+});
+
+// Feature D: msc clean --empty-dirs
+describe("msc clean --empty-dirs", () => {
+  // Mock for findEmptyOrphanDirs
+  const mockFindEmptyOrphanDirs = vi.fn().mockReturnValue([]);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExistsSync.mockReturnValue(true);
+    mockFindEmptyOrphanDirs.mockReturnValue([]);
+  });
+
+  it("--empty-dirs: prints message when no empty dirs found", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    mockFindEmptyOrphanDirs.mockReturnValue([]);
+
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runClean({ outputDir: "/out", emptyDirs: true, force: true, _findEmptyOrphanDirs: mockFindEmptyOrphanDirs });
+    const output = spy.mock.calls.flat().join("");
+    expect(output).toContain("No empty orphan");
+    spy.mockRestore();
+  });
+
+  it("--empty-dirs: removes empty dirs with --force", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const emptyDir = "/out/Semester_4/Software Engineering/Section 1";
+    mockFindEmptyOrphanDirs.mockReturnValue([emptyDir]);
+
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runClean({ outputDir: "/out", emptyDirs: true, force: true, _findEmptyOrphanDirs: mockFindEmptyOrphanDirs });
+    expect(mockRemoveEmptyDirs).toHaveBeenCalledWith(emptyDir, "/out");
+    spy.mockRestore();
+  });
+
+  it("--empty-dirs --dry-run shows dirs without removing", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    const emptyDir = "/out/Semester_4/Software Engineering/Section 1";
+    mockFindEmptyOrphanDirs.mockReturnValue([emptyDir]);
+
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runClean({ outputDir: "/out", emptyDirs: true, dryRun: true, _findEmptyOrphanDirs: mockFindEmptyOrphanDirs });
+    expect(mockRemoveEmptyDirs).not.toHaveBeenCalled();
+    const output = spy.mock.calls.flat().join("");
+    expect(output).toContain("[dry-run]");
+    spy.mockRestore();
+  });
+
+  it("--empty-dirs does not remove dirs under _User-Files/", async () => {
+    mockLoad.mockResolvedValue(makeState());
+    // findEmptyOrphanDirs is expected to already exclude _User-Files dirs
+    mockFindEmptyOrphanDirs.mockReturnValue([]);
+
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runClean({ outputDir: "/out", emptyDirs: true, force: true, _findEmptyOrphanDirs: mockFindEmptyOrphanDirs });
+    expect(mockRemoveEmptyDirs).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 });

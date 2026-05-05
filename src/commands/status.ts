@@ -2,7 +2,7 @@
 import { existsSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { StateManager } from "../sync/state.js";
-import { collectFiles, mergedExcludePatterns } from "../fs/collect.js";
+import { collectFiles, findEmptyOrphanDirs, mergedExcludePatterns } from "../fs/collect.js";
 import { ui } from "../ui.js";
 
 export interface StatusOptions {
@@ -258,6 +258,9 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   // Missing generated files: generatedFiles entries that don't exist on disk
   const missingGeneratedFiles = (state.generatedFiles ?? []).filter((p) => !existsSync(p));
 
+  // Empty orphan directories: dirs under outputDir that contain no meaningful files
+  const emptyOrphanDirs = findEmptyOrphanDirs(outputDir, excludePatterns);
+
   // ── JSON output mode ───────────────────────────────────────────────────────
   if (json) {
     const result = {
@@ -273,6 +276,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
         everDownloaded: true, // presence in state implies it was once tracked
       })),
       missingGenerated: missingGeneratedFiles,
+      emptyDirs: emptyOrphanDirs,
     };
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
     return;
@@ -294,8 +298,8 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
   }
 
   // --issues: tree views
-  if (orphans.length > 0 || missingFiles.length > 0 || userFiles.length > 0 || missingGeneratedFiles.length > 0) {
-    ui.warn(`Issues summary: ${orphans.length} old entr${orphans.length === 1 ? "y" : "ies"}, ${missingFiles.length} missing file${missingFiles.length === 1 ? "" : "s"}, ${missingGeneratedFiles.length} missing generated file${missingGeneratedFiles.length === 1 ? "" : "s"}, ${userFiles.length} unprotected personal file${userFiles.length === 1 ? "" : "s"}`);
+  if (orphans.length > 0 || missingFiles.length > 0 || userFiles.length > 0 || missingGeneratedFiles.length > 0 || emptyOrphanDirs.length > 0) {
+    ui.warn(`Issues summary: ${orphans.length} old entr${orphans.length === 1 ? "y" : "ies"}, ${missingFiles.length} missing file${missingFiles.length === 1 ? "" : "s"}, ${missingGeneratedFiles.length} missing generated file${missingGeneratedFiles.length === 1 ? "" : "s"}, ${emptyOrphanDirs.length} empty dir${emptyOrphanDirs.length === 1 ? "" : "s"}, ${userFiles.length} unprotected personal file${userFiles.length === 1 ? "" : "s"}`);
   }
 
   if (orphans.length > 0) {
@@ -335,6 +339,15 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
     ui.hint("Tip: Run `msc scrape` to regenerate missing files.");
   }
 
+  if (emptyOrphanDirs.length > 0) {
+    write("");
+    write(`Empty orphan directories (${emptyOrphanDirs.length}) — left over after scraper cleanup:`);
+    for (const line of buildTreeLines(emptyOrphanDirs, outputDir)) {
+      write(`  ${line}/`);
+    }
+    ui.hint("Tip: Run `msc clean --empty-dirs` to remove them.");
+  }
+
   if (userFiles.length > 0) {
     write("");
     write(`User-added files (${userFiles.length}):`);
@@ -348,7 +361,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
     write(`User Files/ (relocated by \`msc clean --move\`, ${managedUserFiles.length} file${managedUserFiles.length === 1 ? "" : "s"} — not shown)`);
   }
 
-  if (orphans.length === 0 && missingFiles.length === 0 && missingGeneratedFiles.length === 0 && userFiles.length === 0) {
+  if (orphans.length === 0 && missingFiles.length === 0 && missingGeneratedFiles.length === 0 && emptyOrphanDirs.length === 0 && userFiles.length === 0) {
     write("No issues found.");
   } else {
     // Contextual tips based on what was found

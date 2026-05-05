@@ -151,6 +151,59 @@ export function buildKnownPaths(state: State): string[] {
 }
 
 /**
+ * Find directories under `rootDir` that contain no meaningful files after applying
+ * excludePatterns and ignoring OS noise (see collectFiles). These are candidates for
+ * cleanup with `msc clean --empty-dirs`.
+ *
+ * Safety: never returns rootDir itself, "User Files/", "_User-Files/" dirs, or any dir
+ * that collectFiles would return files from (directly or via subdirectory).
+ */
+export function findEmptyOrphanDirs(rootDir: string, excludePatterns: string[] = []): string[] {
+  const emptied: string[] = [];
+  const isExcluded = excludePatterns.length > 0 ? picomatch(excludePatterns, { dot: true }) : null;
+
+  function _scan(currentDir: string): boolean {
+    // Returns true if this dir has any meaningful content (recursively)
+    if (!existsSync(currentDir)) return false;
+    let hasContent = false;
+    let entries: ReturnType<typeof readdirSync>;
+    try {
+      entries = readdirSync(currentDir, { withFileTypes: true });
+    } catch {
+      return true; // can't read → treat as non-empty (safe)
+    }
+    for (const entry of entries) {
+      if (entry.name === ".moodle-scraper-state.json") continue;
+      if (entry.name === ".moodle-scraper-state.json.bak") continue;
+      if (entry.name.endsWith(".meta.json")) continue;
+      if (SYSTEM_FILES.has(entry.name)) continue;
+      if (entry.isDirectory() && entry.name === USER_FILES_PROTECTED_DIR) continue;
+      if (entry.isDirectory() && entry.name === "User Files") continue;
+
+      const full = join(currentDir, entry.name).normalize("NFC");
+      if (isExcluded) {
+        const relBase = relative(rootDir, full).split(sep).join("/");
+        const relPosix = entry.isDirectory() ? relBase + "/" : relBase;
+        if (isExcluded(relPosix)) continue;
+      }
+      if (entry.isDirectory()) {
+        const childHasContent = _scan(full);
+        if (!childHasContent && full !== rootDir) {
+          emptied.push(full);
+        }
+        if (childHasContent) hasContent = true;
+      } else if (entry.isFile()) {
+        hasContent = true;
+      }
+    }
+    return hasContent;
+  }
+
+  _scan(rootDir);
+  return emptied;
+}
+
+/**
  * Render a sorted list of absolute paths as a tree relative to `rootDir`.
  *
  * Example output:

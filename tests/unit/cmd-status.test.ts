@@ -12,11 +12,13 @@ vi.mock("../../src/sync/state.js", () => ({
 }));
 
 const mockCollectFiles = vi.fn().mockReturnValue([]);
+const mockFindEmptyOrphanDirs = vi.fn().mockReturnValue([]);
 vi.mock("../../src/fs/collect.js", async (importOriginal) => {
   const actual = await importOriginal() as Record<string, unknown>;
   return {
     ...actual,
     collectFiles: (...args: unknown[]) => mockCollectFiles(...args),
+    findEmptyOrphanDirs: (...args: unknown[]) => mockFindEmptyOrphanDirs(...args),
   };
 });
 
@@ -871,5 +873,84 @@ describe("runStatus --issues: missing generatedFiles detection", () => {
     const result = JSON.parse(output) as Record<string, unknown>;
     expect(result).toHaveProperty("missingGenerated");
     expect((result["missingGenerated"] as string[])).toHaveLength(0);
+  });
+});
+
+// Feature D: msc status --issues detects empty orphan directories
+describe("runStatus --issues: empty orphan dirs detection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCollectFiles.mockReturnValue([]);
+    mockFindEmptyOrphanDirs.mockReturnValue([]);
+  });
+
+  it("--issues shows 'Empty orphan directories' section when empty dirs found", async () => {
+    const emptyDir = "/tmp/test/Semester_4/Software Engineering/Section 1";
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({ ...makeState(), generatedFiles: [] }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+    mockFindEmptyOrphanDirs.mockReturnValue([emptyDir]);
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    expect(output).toContain("Empty orphan director");
+    expect(output).toContain("Section 1");
+  });
+
+  it("--issues shows hint to run msc clean --empty-dirs when empty dirs found", async () => {
+    const emptyDir = "/tmp/test/Semester_4/Software Engineering/Section 1";
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({ ...makeState(), generatedFiles: [] }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+    mockFindEmptyOrphanDirs.mockReturnValue([emptyDir]);
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    expect(output).toContain("msc clean --empty-dirs");
+  });
+
+  it("does NOT show 'Empty orphan directories' when no empty dirs", async () => {
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({ ...makeState(), generatedFiles: [] }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+    mockFindEmptyOrphanDirs.mockReturnValue([]);
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", showIssues: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    expect(output).not.toContain("Empty orphan director");
+  });
+
+  it("--json includes emptyDirs array", async () => {
+    const emptyDir = "/tmp/test/Semester_4/Course/Section 1";
+    vi.mocked(StateManager).mockImplementation(() => ({
+      load: vi.fn().mockResolvedValue({ ...makeState(), generatedFiles: [] }),
+      save: vi.fn(),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+    } as never));
+    mockFindEmptyOrphanDirs.mockReturnValue([emptyDir]);
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runStatus({ outputDir: "/tmp/test", json: true });
+    const output = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+
+    const result = JSON.parse(output) as Record<string, unknown>;
+    expect(result).toHaveProperty("emptyDirs");
+    expect((result["emptyDirs"] as string[])).toContain(emptyDir);
   });
 });

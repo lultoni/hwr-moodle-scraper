@@ -2,7 +2,7 @@
 import { existsSync, unlinkSync, mkdirSync, renameSync } from "node:fs";
 import { relative, dirname, join, sep } from "node:path";
 import { StateManager, removeEmptyDirs } from "../sync/state.js";
-import { collectFiles, buildKnownPaths, renderTree, USER_FILES_PROTECTED_DIR } from "../fs/collect.js";
+import { collectFiles, buildKnownPaths, renderTree, findEmptyOrphanDirs, USER_FILES_PROTECTED_DIR } from "../fs/collect.js";
 import type { PromptFn } from "../auth/prompt.js";
 import { ui } from "../ui.js";
 
@@ -11,21 +11,49 @@ export interface CleanOptions {
   move?: boolean;
   dryRun?: boolean;
   force?: boolean;
+  /** Remove empty orphan directories instead of user files. */
+  emptyDirs?: boolean;
   promptFn?: PromptFn;
   /** Merged exclude patterns (built-in defaults + user config). From mergedExcludePatterns(). */
   excludePatterns?: string[];
+  /** Test injection: override findEmptyOrphanDirs implementation. */
+  _findEmptyOrphanDirs?: (dir: string, patterns?: string[]) => string[];
 }
 
 const USER_FILES_DIR = "User Files";
 
 export async function runClean(opts: CleanOptions): Promise<void> {
-  const { outputDir, move = false, dryRun = false, force = false, promptFn, excludePatterns = [] } = opts;
+  const { outputDir, move = false, dryRun = false, force = false, promptFn, excludePatterns = [], emptyDirs = false } = opts;
+  const findEmptyFn = opts._findEmptyOrphanDirs ?? findEmptyOrphanDirs;
 
   const sm = new StateManager(outputDir);
   const state = await sm.load();
 
   if (!state) {
     ui.info("No sync history. Run `msc scrape` first.");
+    return;
+  }
+
+  // --empty-dirs mode: remove empty orphan directories
+  if (emptyDirs) {
+    const dirs = findEmptyFn(outputDir, excludePatterns);
+    if (dirs.length === 0) {
+      ui.success("No empty orphan directories found.");
+      return;
+    }
+    if (dryRun) {
+      process.stdout.write(`\nEmpty orphan directories (${dirs.length}):\n\n`);
+      for (const d of dirs) process.stdout.write(`  ${d}\n`);
+      process.stdout.write("\n");
+      ui.info(`[dry-run] Would remove ${dirs.length} empty director${dirs.length === 1 ? "y" : "ies"}.`);
+      return;
+    }
+    let count = 0;
+    for (const d of dirs) {
+      removeEmptyDirs(d, outputDir);
+      count++;
+    }
+    ui.success(`Removed ${count} empty director${count === 1 ? "y" : "ies"}.`);
     return;
   }
 
