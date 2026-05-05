@@ -381,6 +381,49 @@ describe("STEP-013: Content tree traversal", () => {
     const tree = await fetchContentTree({ baseUrl: BASE, courseId: 6, sessionCookies: "" });
     expect(tree.sections[0]?.summary).toBeUndefined();
   });
+
+  it("derives section name from summary heading when Moodle uses default 'Section N' name", async () => {
+    // Covers: unnamed sections (data-sectionname absent, no sectionname h3) with a summary
+    // that contains an h3/h4 heading — the heading text should become the folder name.
+    // Note: section 0 always gets "Allgemeines" regardless (deliberate override).
+    const pool = mockAgent.get(BASE);
+    pool
+      .intercept({ path: `/course/view.php?id=50`, method: "GET" })
+      .reply(200, `
+        <html><body>
+          <li class="section" data-number="0">
+            <div class="summarytext"><h3><strong>Allgemein</strong></h3></div>
+          </li>
+          <li class="section" data-number="1">
+            <div class="summarytext">
+              <h3><strong>Teil 1: SW-Entwicklung und Qualitätssicherung</strong></h3>
+            </div>
+          </li>
+          <li class="section" data-number="2">
+            <div class="summarytext">
+              <h4><strong>1 Prozessqualität</strong></h4>
+              <hr />
+            </div>
+          </li>
+          <li class="section" data-number="3">
+            <h3 class="sectionname">Echte Sektion</h3>
+            <ul class="section img-text">
+              <li class="activity resource"><a href="${BASE}/mod/resource/view.php?id=10">Datei</a></li>
+            </ul>
+          </li>
+        </body></html>
+      `);
+
+    const tree = await fetchContentTree({ baseUrl: BASE, courseId: 50, sessionCookies: "" });
+    expect(tree.sections).toHaveLength(4);
+    // Section 0: "Allgemeines" override always wins for section 0
+    expect(tree.sections[0]?.sectionName).toBe("Allgemeines");
+    // Sections 1 and 2 have no explicit name — should use summary heading
+    expect(tree.sections[1]?.sectionName).toBe("Teil 1: SW-Entwicklung und Qualitätssicherung");
+    expect(tree.sections[2]?.sectionName).toBe("1 Prozessqualität");
+    // Section 3 has an explicit sectionname h3 — must not be overridden
+    expect(tree.sections[3]?.sectionName).toBe("Echte Sektion");
+  });
 });
 
 describe("extractCourseDescription — unit tests", () => {

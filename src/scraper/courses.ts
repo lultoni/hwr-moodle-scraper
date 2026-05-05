@@ -565,6 +565,9 @@ function parseFolderFiles(html: string): FolderFile[] {
  *   2. `<h3 class="sectionname">` heading text (classic Moodle layout)
  *   3. Onetopic format: look up the section number in the pre-parsed onetopic tab nav
  *      (`parseOnetopicTabs`), which maps `section=N` query parameters to tab labels.
+ *   4. Summary heading: if name is still "Section N" after (1)–(3), extract the first
+ *      `<h3>`–`<h5>` from the section summary (teachers sometimes leave the section title
+ *      blank and use the summary box as a chapter header).
  *
  * Activity names are extracted from the link text with `<span class="accesshide">` stripped
  * to prevent Moodle's screenreader-only labels ("Datei", "Forum", etc.) from polluting names.
@@ -657,6 +660,17 @@ function parseContentTree(html: string, courseId: number, baseUrl: string, logge
       }
       const inner = chunk.slice(innerStart, pos - 5).trim();
       if (inner.replace(/<[^>]+>/g, "").trim()) sectionSummary = inner;
+    }
+
+    // If section name is still the generic fallback, try to derive a meaningful name
+    // from the first heading in the section summary (common pattern: teacher uses the
+    // summary box as a chapter header but leaves the section title blank/default).
+    if (/^Section\s+\d+$/i.test(sectionName) && sectionSummary) {
+      const headingM = /<h[3-5][^>]*>([\s\S]*?)<\/h[3-5]>/i.exec(sectionSummary);
+      if (headingM) {
+        const headingText = decodeHtmlEntities(headingM[1]!.replace(/<[^>]+>/g, "").trim());
+        if (headingText) sectionName = headingText;
+      }
     }
 
     sections.push({ sectionId: `s${sectionIndex}`, sectionName, activities, ...(sectionSummary ? { summary: sectionSummary } : {}), ...(dataNumber !== undefined ? { dataNumber } : {}) });
