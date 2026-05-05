@@ -17,7 +17,7 @@ Downloads new and changed files from Moodle.
 | `--force` | Re-download everything, ignoring cached state |
 | `--fresh` | Reset state for matched courses before scraping so they are fully re-downloaded. Respects `--courses`/`--semester` scope. Files on disk are untouched — equivalent to `msc archive --courses X && msc scrape --courses X` in one step. |
 | `--check-files` | Re-download any files missing from disk (even if state says up-to-date) |
-| `--courses <keywords>` | Comma-separated keywords to filter courses (fuzzy match) |
+| `--courses <keywords>` | Comma-separated keywords to filter courses (fuzzy match). Quote names containing spaces: `--courses "Software Engineering,Datenbanken"` |
 | `--course-ids <ids>` | Comma-separated numeric course IDs to scrape (exact match) |
 | `--semester <N\|latest>` | Scrape only courses in semester N (1–6), `latest` for the current (highest) semester, or `sonstiges` / `praxistransfer` |
 | `--show-evictions` | Print the list of generated files deleted during cleanup (e.g. old `_SectionDescription.md` files after a section is renamed). `--verbose` implies this. |

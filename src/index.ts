@@ -123,7 +123,7 @@ program
   .command("scrape")
   .description("Download / sync Moodle content to local folder")
   .option("--output-dir <path>", "Override output directory for this run")
-  .option("--courses <keywords>", "Comma-separated keywords to filter courses (fuzzy match against course names)")
+  .option("--courses <keywords>", 'Comma-separated keywords to filter courses (fuzzy match). Quote names with spaces: --courses "Software Engineering,Datenbanken"')
   .option("--course-ids <ids>", "Comma-separated numeric course IDs to scrape (exact match)")
   .option("--semester <N|latest>", 'Scrape only courses in semester N (1–6), "latest" for the highest detected, or "sonstiges"/"praxistransfer"')
   .option("--fresh", "Reset state for matched courses before scraping (re-downloads everything for those courses)", false)
