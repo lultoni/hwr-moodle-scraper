@@ -142,7 +142,8 @@ export function extractFilename(
 /**
  * When Moodle serves a resource with display type "In frame" (eingebettet),
  * it returns a 200 HTML page instead of redirecting. The actual file URL
- * is embedded as an <iframe src="pluginfile.php/..."> or fallback <a href>.
+ * is embedded as an <iframe src="pluginfile.php/...">, fallback <a href>,
+ * or (for images with "display inline") an <img class="resourceimage" src>.
  * Extract that URL so we can follow it to the real file.
  */
 function extractEmbeddedPluginfileUrl(html: string, baseUrl: string): string | null {
@@ -157,6 +158,10 @@ function extractEmbeddedPluginfileUrl(html: string, baseUrl: string): string | n
   // Fallback: resourceworkaround popup link — <div class="resourceworkaround"><a href="...pluginfile.php/...">
   const workaroundM = /class="resourceworkaround"[\s\S]{0,500}?<a\s[^>]*href="(https?:\/\/[^"]*pluginfile\.php\/[^"?]+)"/.exec(html);
   if (workaroundM?.[1]) return workaroundM[1]!;
+  // Fallback: inline image display — <div class="resourcecontent resourceimg"><img ... src="...pluginfile.php/...">
+  // Moodle serves image resources with "display inline" as an HTML page with only an <img> tag (no iframe/link).
+  const imgM = /class="resourcecontent resourceimg"[\s\S]{0,500}?<img\s[^>]*src="(https?:\/\/[^"]*pluginfile\.php\/[^"?]+)"/.exec(html);
+  if (imgM?.[1]) return imgM[1]!;
   return null;
 }
 

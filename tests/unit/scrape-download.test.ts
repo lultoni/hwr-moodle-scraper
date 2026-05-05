@@ -166,6 +166,30 @@ describe("STEP-014: File download — streaming", () => {
     expect(readFileSync(finalPath, "utf8")).toBe(pdfContent);
   });
 
+  it("follows pluginfile.php link in resourcecontent resourceimg inline image display", async () => {
+    // Moodle "display inline" for image resources: serves HTML with <img class="resourceimage" src="pluginfile.php/...">
+    // No iframe or <a href> — extractEmbeddedPluginfileUrl must match the img src.
+    const jpgBytes = "fake jpg bytes";
+    const htmlPage = `<!DOCTYPE html><html><body>
+      <div role="main">
+        <div class="resourcecontent resourceimg"><img title="Übung Paketdiagramm" class="resourceimage" src="${BASE}/pluginfile.php/4952484/mod_resource/content/1/%C3%9Cbung%20Paketdiagramm.jpg" alt="" /></div>
+      </div></body></html>`;
+    mockAgent.get(BASE)
+      .intercept({ path: "/mod/resource/view.php?id=2163637", method: "GET" })
+      .reply(200, htmlPage, { headers: { "content-type": "text/html; charset=utf-8" } });
+    mockAgent.get(BASE)
+      .intercept({ path: "/pluginfile.php/4952484/mod_resource/content/1/%C3%9Cbung%20Paketdiagramm.jpg", method: "GET" })
+      .reply(200, jpgBytes, { headers: { "content-type": "image/jpeg" } });
+
+    const dest = join(tmpDir, "Übung Paketdiagramm");
+    const { finalPath } = await downloadFile({ url: `${BASE}/mod/resource/view.php?id=2163637`, destPath: dest, sessionCookies: "" });
+
+    expect(extname(finalPath)).toBe(".jpg");
+    expect(existsSync(finalPath)).toBe(true);
+    const { readFileSync } = await import("node:fs");
+    expect(readFileSync(finalPath, "utf8")).toBe(jpgBytes);
+  });
+
   it("retries on 'other side closed' network error and succeeds on second attempt", async () => {
     const content = "retry content";
     let attempts = 0;
