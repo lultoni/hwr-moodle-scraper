@@ -103,6 +103,15 @@ function resolveSemesterTarget(courses: Course[], semester: string): string | nu
   return named[semester.toLowerCase()] ?? null;
 }
 
+/**
+ * Returns true when a section is a structural "group header" — it has zero downloadable
+ * activities and thus acts only as a visual/structural divider in Moodle. Such sections
+ * become parent folders; all subsequent sections nest inside until the next group header.
+ */
+export function isSectionGroupHeader(activities: Activity[], _summaryMd: string | undefined): boolean {
+  return activities.length === 0;
+}
+
 export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const {
     outputDir,
@@ -414,6 +423,41 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     scrapedCourseDirs.add(courseDir + sep);
   }
 
+  // Build (courseId:sectionId) → { parent, grandparent? } for group-header section folding.
+  // Consecutive group headers nest (grandparent → parent → children); capped at 2 levels.
+  // A section is a group header when: zero activities AND description is heading/hrule-only.
+  // Uses raw `trees` (not expanded) — folder expansion only adds activities; zero-activity
+  // sections remain zero-activity after expansion.
+  const sectionParentMap = new Map<string, { parent: string; grandparent?: string }>();
+  for (const tree of trees) {
+    let level1: string | undefined;
+    let level2: string | undefined;
+    let prevWasHeader = false;
+    for (const section of tree.sections) {
+      let summaryMd: string | undefined;
+      if (section.summary) {
+        try { summaryMd = createTurndown().turndown(section.summary).trim(); } catch { /* skip */ }
+      }
+      const isHeader = isSectionGroupHeader(section.activities, summaryMd);
+      if (isHeader) {
+        if (prevWasHeader) {
+          level2 = section.sectionName;  // consecutive header → child of level1
+        } else {
+          level1 = section.sectionName;  // first in a run → new top-level group
+          level2 = undefined;
+        }
+        prevWasHeader = true;
+      } else {
+        if (level2 !== undefined) {
+          sectionParentMap.set(`${tree.courseId}:${section.sectionId}`, { parent: level2, grandparent: level1 });
+        } else if (level1 !== undefined) {
+          sectionParentMap.set(`${tree.courseId}:${section.sectionId}`, { parent: level1 });
+        }
+        prevWasHeader = false;
+      }
+    }
+  }
+
   // ── README.md + _SectionDescription.md ────────────────────────────────
   // These files are written OUTSIDE the sync-state system (no FileState entry,
   // no hash tracking). They are refreshed on every run from the live Moodle HTML,
@@ -480,7 +524,12 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
         const readmeMd = readmeContentByDir.get(courseDir);
         if (readmeMd && summaryMd.trim() === readmeMd.trim()) continue;
         const sectionDirName = sanitiseFilename(section.sectionName);
-        const summaryPath = join(courseDir, sectionDirName, "_SectionDescription.md");
+        const parentInfo = sectionParentMap.get(`${tree.courseId}:${section.sectionId}`);
+        const summaryPath = parentInfo?.grandparent
+          ? join(courseDir, sanitiseFilename(parentInfo.grandparent), sanitiseFilename(parentInfo.parent), sectionDirName, "_SectionDescription.md")
+          : parentInfo?.parent
+            ? join(courseDir, sanitiseFilename(parentInfo.parent), sectionDirName, "_SectionDescription.md")
+            : join(courseDir, sectionDirName, "_SectionDescription.md");
         mkdirSync(dirname(summaryPath), { recursive: true });
         // Download embedded Moodle images and rewrite URLs to relative paths
         const { downloadEmbeddedImages } = await import("../scraper/images.js");
@@ -659,6 +708,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     }
   }
 
+  // Build (courseId:sectionId) → { parent, grandparent? } for group-header section folding.
   // Build resourceId → { sectionId, hash } lookup for state saving
   const resourceSectionMap = new Map<string, { courseId: number; sectionId: string; hash: string }>();
   for (const tree of expandedTrees) {
@@ -774,16 +824,20 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   // Build a map from resourceId → Activity for dispatch
-  const activityByResourceId = new Map<string, { activity: Activity; courseName: string; sectionName: string; semesterDir?: string }>();
+  const activityByResourceId = new Map<string, { activity: Activity; courseName: string; sectionName: string; semesterDir?: string; parentSectionNames?: string[] }>();
   for (const tree of expandedTrees) {
     for (const section of tree.sections) {
       const sp = courseShortPaths.get(tree.courseId);
       const courseName = sp?.shortName ?? (courseNameMap.get(tree.courseId) ?? String(tree.courseId));
       const semesterDir = sp?.semesterDir;
       const sectionName = sectionNameMap.get(`${tree.courseId}:${section.sectionId}`) ?? "General";
+      const parentInfo = sectionParentMap.get(`${tree.courseId}:${section.sectionId}`);
+      const parentSectionNames = parentInfo?.grandparent
+        ? [parentInfo.grandparent, parentInfo.parent]
+        : parentInfo?.parent ? [parentInfo.parent] : undefined;
       for (const activity of section.activities) {
         const resourceId = getResourceId(activity, tree.courseId, section.sectionId);
-        activityByResourceId.set(resourceId, { activity, courseName, sectionName, ...(semesterDir ? { semesterDir } : {}) });
+        activityByResourceId.set(resourceId, { activity, courseName, sectionName, ...(semesterDir ? { semesterDir } : {}), ...(parentSectionNames ? { parentSectionNames } : {}) });
       }
     }
   }
@@ -865,7 +919,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       continue;
     }
 
-    const { items: planItems, unknownTypes: sectionUnknownTypes } = buildDownloadPlan([meta.activity], courseName, sectionName, outputDir, semesterDir);
+    const { items: planItems, unknownTypes: sectionUnknownTypes } = buildDownloadPlan([meta!.activity], courseName, sectionName, outputDir, semesterDir, meta?.parentSectionNames);
     // Accumulate unknown types for end-of-scrape summary
     for (const [modtype, names] of sectionUnknownTypes) {
       for (const name of names) {

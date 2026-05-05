@@ -563,3 +563,63 @@ describe("Turndown crash resilience — isDividerLabel, isEmptyLabel, isDividerC
     expect(fn("<p>Some label HTML</p>")).toBe(false);
   });
 });
+
+// ── parentSectionNames: group-header section folding in buildDownloadPlan ───
+// Covers: Pass 58 Fix 2 — sections nested under group-header parents
+// When parentSectionNames is provided, buildDownloadPlan injects the parent
+// dir segment(s) between the course dir and the section dir.
+describe("buildDownloadPlan: parentSectionNames group-header folding", () => {
+  it("no parentSectionNames → path is courseDir/section/file (baseline)", () => {
+    const act = makeActivity({ activityType: "resource", url: "https://moodle.example.com/mod/resource/view.php?id=1", activityName: "Folien.pdf" });
+    const { items } = buildDownloadPlan([act], "Software Engineering", "1.1 Prozessparadigmen", "/output");
+    expect(items[0]?.destPath).toBe(join("/output", "Software Engineering", "1.1 Prozessparadigmen", "Folien.pdf"));
+  });
+
+  it("parentSectionNames with one parent → courseDir/parent/section/file", () => {
+    const act = makeActivity({ activityType: "resource", url: "https://moodle.example.com/mod/resource/view.php?id=1", activityName: "Folien.pdf" });
+    const { items } = buildDownloadPlan(
+      [act], "Software Engineering", "1.1 Prozessparadigmen", "/output",
+      undefined, ["1 Prozessqualität"],
+    );
+    expect(items[0]?.destPath).toBe(
+      join("/output", "Software Engineering", "1 Prozessqualität", "1.1 Prozessparadigmen", "Folien.pdf"),
+    );
+  });
+
+  it("parentSectionNames with two parents → courseDir/grandparent/parent/section/file", () => {
+    const act = makeActivity({ activityType: "resource", url: "https://moodle.example.com/mod/resource/view.php?id=1", activityName: "Folien.pdf" });
+    const { items } = buildDownloadPlan(
+      [act], "Software Engineering", "1.1 Prozessparadigmen", "/output",
+      undefined, ["Teil 1_ SW-Entwicklung", "1 Prozessqualität"],
+    );
+    expect(items[0]?.destPath).toBe(
+      join("/output", "Software Engineering", "Teil 1_ SW-Entwicklung", "1 Prozessqualität", "1.1 Prozessparadigmen", "Folien.pdf"),
+    );
+  });
+
+  it("parentSectionNames with semesterDir → semester/courseDir/parent/section/file", () => {
+    const act = makeActivity({ activityType: "resource", url: "https://moodle.example.com/mod/resource/view.php?id=1", activityName: "Folien.pdf" });
+    const { items } = buildDownloadPlan(
+      [act], "Software Engineering", "1.1 Prozessparadigmen", "/output",
+      "Semester_4", ["1 Prozessqualität"],
+    );
+    expect(items[0]?.destPath).toBe(
+      join("/output", "Semester_4", "Software Engineering", "1 Prozessqualität", "1.1 Prozessparadigmen", "Folien.pdf"),
+    );
+  });
+
+  it("parentSectionNames applies to url-txt destPath", () => {
+    const url = makeActivity({ activityType: "url", url: "https://example.com/link", activityName: "Kurs-Website" });
+    const resource = makeActivity({ activityType: "resource", url: "https://moodle.example.com/mod/resource/view.php?id=1", activityName: "Script.pdf" });
+    // Mixed content → url goes in _Links/
+    const { items } = buildDownloadPlan(
+      [url, resource], "Software Engineering", "1.1 Prozessparadigmen", "/output",
+      undefined, ["1 Prozessqualität"],
+    );
+    const urlItem = items.find((i) => i.strategy === "url-txt");
+    expect(urlItem?.destPath).toBe(
+      join("/output", "Software Engineering", "1 Prozessqualität", "1.1 Prozessparadigmen", "_Links", "Kurs-Website.url.txt"),
+    );
+  });
+});
+

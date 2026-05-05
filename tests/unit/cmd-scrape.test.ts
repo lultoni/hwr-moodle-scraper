@@ -69,7 +69,7 @@ vi.mock("../../src/fs/output.js", async (importOriginal) => {
   };
 });
 
-import { runScrape } from "../../src/commands/scrape.js";
+import { runScrape, isSectionGroupHeader } from "../../src/commands/scrape.js";
 import { ConfigManager } from "../../src/config.js";
 
 describe("STEP-020: scrape command", () => {
@@ -1286,5 +1286,48 @@ describe("scrape --show-evictions flag", () => {
     expect(result).toHaveProperty("evictedFiles");
     expect(Array.isArray(result["evictedFiles"])).toBe(true);
     expect((result["evictedFiles"] as string[])).toContain(staleFile);
+  });
+});
+
+// ── isSectionGroupHeader: group-header section detection ────────────────────
+// Covers: Pass 58 Fix 2 — heading-only sections become parent folders
+// A section is a group header when it has zero activities, regardless of description.
+// Sections with zero activities are purely structural (no files to download).
+describe("isSectionGroupHeader", () => {
+  function acts(n: number) {
+    return Array.from({ length: n }, (_, i) => ({
+      activityType: "resource",
+      activityName: `File ${i}`,
+      url: `https://moodle.example.com/mod/resource/view.php?id=${i}`,
+      isAccessible: true,
+    }));
+  }
+
+  it("returns true when section has no activities and no description", () => {
+    expect(isSectionGroupHeader([], undefined)).toBe(true);
+  });
+
+  it("returns true when section has no activities and empty description", () => {
+    expect(isSectionGroupHeader([], "")).toBe(true);
+  });
+
+  it("returns true when section has no activities and heading-only description", () => {
+    // e.g. "Teil 1: SW-Entwicklung..." section in Software Engineering
+    expect(isSectionGroupHeader([], "### **Teil 1: SW-Entwicklung**")).toBe(true);
+  });
+
+  it("returns true when section has no activities and description with real text", () => {
+    // Even if description has content, zero activities → group header
+    const summaryWithContent = "## Videotutorials\n\nIn diesem Abschnitt finden Sie Lernvideos.";
+    expect(isSectionGroupHeader([], summaryWithContent)).toBe(true);
+  });
+
+  it("returns false when section has activities (regardless of description)", () => {
+    expect(isSectionGroupHeader(acts(1), undefined)).toBe(false);
+    expect(isSectionGroupHeader(acts(3), "### **Teil 1**")).toBe(false);
+  });
+
+  it("returns false when section has activities even with empty description", () => {
+    expect(isSectionGroupHeader(acts(1), "")).toBe(false);
   });
 });

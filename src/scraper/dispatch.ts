@@ -83,6 +83,9 @@ export function buildDownloadPlan(
   sectionName: string,
   outputDir: string,
   semesterDir?: string,
+  /** Optional parent section name(s) for group-header folding.
+   *  A single parent → [parent, sectionName]; with grandparent → [grandparent, parent, sectionName]. */
+  parentSectionNames?: string[],
 ): DownloadPlanResult {
   const items: DownloadPlanItem[] = [];
   /** modtype → list of activity names with that type */
@@ -91,6 +94,7 @@ export function buildDownloadPlan(
   // Pre-pass: determine which fileDirs have at least one non-url real activity.
   // When a fileDir has only url activities, urls are placed flat (no _Links/ subfolder).
   const fileDirsWithNonUrl = new Set<string>();
+  const _parentSegments = (parentSectionNames ?? []).map(sanitiseFilename);
   for (const activity of activities) {
     if (!activity.isAccessible) continue;
     if (activity.activityType === "url") continue;
@@ -100,8 +104,8 @@ export function buildDownloadPlan(
     const _safeSection = sanitiseFilename(sectionName);
     const _safeCourse  = sanitiseFilename(courseName);
     const _sectionDir  = semesterDir
-      ? join(outputDir, semesterDir, _safeCourse, _safeSection)
-      : join(outputDir, _safeCourse, _safeSection);
+      ? join(outputDir, semesterDir, _safeCourse, ..._parentSegments, _safeSection)
+      : join(outputDir, _safeCourse, ..._parentSegments, _safeSection);
     const _fileDir = activity.subDir
       ? join(_sectionDir, ...activity.subDir.split(/[\\/]/).map(sanitiseFilename))
       : _sectionDir;
@@ -119,8 +123,8 @@ export function buildDownloadPlan(
     const safeSection = sanitiseFilename(sectionName);
     const safeCourse = sanitiseFilename(courseName);
     const sectionDir = semesterDir
-      ? join(outputDir, semesterDir, safeCourse, safeSection)
-      : join(outputDir, safeCourse, safeSection);
+      ? join(outputDir, semesterDir, safeCourse, ..._parentSegments, safeSection)
+      : join(outputDir, safeCourse, ..._parentSegments, safeSection);
 
     // Skip separator-only labels (just <hr>, "* * *", nbsp, etc.)
     if (activity.activityType === "label" && activity.description && isEmptyLabel(activity.description)) continue;
