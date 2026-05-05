@@ -24,8 +24,8 @@ import { createTurndown } from "../scraper/turndown.js";
 import { EXIT_CODES } from "../exit-codes.js";
 import { registerShutdownHandlers } from "../process/shutdown.js";
 import { isSameOrigin } from "../http/url-guard.js";
-import { mkdirSync, renameSync, existsSync } from "node:fs";
-import { basename, dirname, extname, join, relative } from "node:path";
+import { mkdirSync, renameSync, existsSync, unlinkSync, rmdirSync } from "node:fs";
+import { basename, dirname, extname, join, relative, sep } from "node:path";
 import { writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { platform } from "node:os";
@@ -383,6 +383,16 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     )
   );
   opts.onPhase?.("end", "Fetching course content...");
+
+  // Compute course dirs for this run up-front — used to evict stale generatedFiles entries
+  // (e.g. renamed sections) at both the early save and the final save.
+  const scrapedCourseDirs = new Set<string>();
+  for (const tree of trees) {
+    const sp = courseShortPaths.get(tree.courseId);
+    const courseDirName = sanitiseFilename(sp?.shortName ?? courseNameMap.get(tree.courseId) ?? String(tree.courseId));
+    const courseDir = join(outputDir, ...(sp?.semesterDir ? [sp.semesterDir] : []), courseDirName);
+    scrapedCourseDirs.add(courseDir + sep);
+  }
 
   // ── README.md + _SectionDescription.md ────────────────────────────────
   // These files are written OUTSIDE the sync-state system (no FileState entry,
@@ -929,7 +939,16 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     // (which runs next) still records any _Descriptions.md paths that were just written.
     // Downloads have not started yet, so courses are unchanged — only generatedFiles is updated.
     if (generatedFiles.length > 0) {
-      const mergedNow = [...new Set([...(state.generatedFiles ?? []), ...generatedFiles])];
+      const newGeneratedSetEarly = new Set(generatedFiles);
+      const staleEarly = (state.generatedFiles ?? []).filter(
+        (p) => [...scrapedCourseDirs].some((d) => p.startsWith(d)) && !newGeneratedSetEarly.has(p)
+      );
+      for (const stalePath of staleEarly) {
+        try { unlinkSync(stalePath); } catch { /* already gone */ }
+        try { rmdirSync(dirname(stalePath)); } catch { /* not empty or already gone */ }
+      }
+      const prunedEarly = (state.generatedFiles ?? []).filter((p) => !staleEarly.includes(p));
+      const mergedNow = [...new Set([...prunedEarly, ...generatedFiles])];
       await stateManager.save({ courses: state.courses as Record<string, import("../sync/state.js").CourseState>, generatedFiles: mergedNow });
     }
   }
@@ -1475,10 +1494,21 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   // Save state
-  // Merge generatedFiles with existing state to preserve entries from previous runs
-  // (e.g. a --courses partial run only writes some courses' README/section files).
+  // For courses scraped in this run, evict stale generatedFiles entries (files under
+  // those course dirs that weren't written this run) and delete them from disk.
+  // This fixes renamed sections: old "_SectionDescription.md" paths under "Section N/"
+  // are removed when the section is re-scraped with a new name.
   const existingGeneratedFiles = state.generatedFiles ?? [];
-  const mergedGeneratedFiles = [...new Set([...existingGeneratedFiles, ...generatedFiles])];
+  const newGeneratedSet = new Set(generatedFiles);
+  const staleGeneratedFiles = existingGeneratedFiles.filter(
+    (p) => [...scrapedCourseDirs].some((d) => p.startsWith(d)) && !newGeneratedSet.has(p)
+  );
+  for (const stalePath of staleGeneratedFiles) {
+    try { unlinkSync(stalePath); } catch { /* already gone */ }
+    try { rmdirSync(dirname(stalePath)); } catch { /* not empty or already gone */ }
+  }
+  const prunedExisting = existingGeneratedFiles.filter((p) => !staleGeneratedFiles.includes(p));
+  const mergedGeneratedFiles = [...new Set([...prunedExisting, ...generatedFiles])];
   await stateManager.save({
     courses: updatedCourses,
     generatedFiles: mergedGeneratedFiles,

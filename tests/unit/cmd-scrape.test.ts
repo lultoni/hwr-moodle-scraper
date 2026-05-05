@@ -909,6 +909,56 @@ describe("Fix 4: Turndown crash in course README/section description generation"
     stderrSpy.mockRestore();
   });
 });
+describe("stale generatedFiles cleanup on re-scrape", () => {
+  // When a section is renamed (e.g. "Section 1" → "Teil 1: …" via summary heading fix),
+  // the old _SectionDescription.md path must be removed from generatedFiles and deleted
+  // from disk. Previously it accumulated indefinitely.
+
+  it("removes stale generatedFiles entries for scraped courses and deletes the files on disk", async () => {
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+    const { StateManager } = await import("../../src/sync/state.js");
+
+    const staleFile = "/tmp/test/Semester_4/Software Engineering/Section 1/_SectionDescription.md";
+
+    const saveMock = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue({
+        courses: {},
+        generatedFiles: [staleFile],
+        lastSyncAt: new Date().toISOString(),
+      }),
+      save: saveMock,
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+      backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
+    } as unknown as InstanceType<typeof StateManager>));
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI-22/2-M16-WI2044-F01-SoSe-2026-59385 WI24A Software Engineering SoSe-2026", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [{
+        sectionId: "s1",
+        sectionName: "Teil 1: SW-Entwicklung",
+        activities: [],
+        summary: "<h3>Teil 1: SW-Entwicklung</h3>",
+      }],
+    } as never);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false });
+    stderrSpy.mockRestore();
+
+    // Final save must NOT contain the stale path
+    const lastSaveCall = saveMock.mock.calls.at(-1)?.[0] as { generatedFiles?: string[] };
+    expect(lastSaveCall?.generatedFiles ?? []).not.toContain(staleFile);
+
+    // New path must be present
+    const newFile = "/tmp/test/Semester_4/Software Engineering/Teil 1_ SW-Entwicklung/_SectionDescription.md";
+    expect(lastSaveCall?.generatedFiles ?? []).toContain(newFile);
+  });
+});
+
 describe("STEP-020: scrape — verbose/debug mode and no-courses message (Pass 49)", () => {
   it("--verbose sets logger to DEBUG level (debug events appear in output)", async () => {
     // When verbose=true the logger level is DEBUG, so debug() calls go to stderr
