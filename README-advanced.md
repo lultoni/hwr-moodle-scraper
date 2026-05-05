@@ -99,7 +99,9 @@ Opens the full-screen interactive interface. All major features are available th
 
 Plain-language explanations for common concepts.
 
-Available topics: `state`, `reset`, `clean`, `sync`, `orphaned`, `old-entries`, `user-files`, `sidecar`, `update`, `debug`, `ignored`
+Available topics: `orphaned`, `user-files`, `state`, `reset`, `clean`, `sidecar`, `sync`, `update`, `debug`, `archive`, `config`, `ignored`
+
+`old-entries` is an alias for `orphaned`.
 
 ### `msc archive` *(experimental)*
 
@@ -213,32 +215,46 @@ outputDir/
 ├── _LastSync.md                        ← timestamp and summary of the last scrape run
 ├── Semester_1/
 │   └── Course Name/
-│       ├── _README.md                  ← course description
-│       └── Section Name/
-│           ├── file.pdf                ← downloaded resource
-│           ├── file.description.md     ← activity description (sidecar)
-│           ├── link.url.txt            ← external link as plain text
-│           ├── link.webloc             ← macOS URL shortcut
-│           ├── link.url                ← Windows URL shortcut
-│           ├── images/                 ← embedded images from course pages
-│           ├── _SectionDescription.md  ← section summary from Moodle
-│           └── _Ordnerbeschreibung.md  ← folder description (if present)
+│       ├── README.md                   ← course description
+│       ├── Group Header Section/       ← zero-activity section becomes a parent folder
+│       │   └── Child Section/
+│       │       ├── file.pdf            ← downloaded resource
+│       │       ├── file.description.md ← activity description (sidecar)
+│       │       ├── _SectionDescription.md ← section summary from Moodle
+│       │       ├── Subfolder/          ← label-divider group inside a section
+│       │       │   ├── another-file.pdf
+│       │       │   └── _SubfolderName.md  ← divider content (if any)
+│       │       └── _Links/             ← external links (only when mixed with other files)
+│       │           ├── link.url.txt    ← external link as plain text
+│       │           └── link.webloc     ← macOS URL shortcut
+│       └── Regular Section/
+│           ├── file.pdf
+│           ├── _FolderDescription.md   ← Moodle folder description (inside expanded folders)
+│           └── _SectionDescription.md
 ├── Semester_2/ … Semester_6/
 └── Sonstiges/                          ← courses not mapped to a semester
 ```
 
 **Semester mapping** is based on the module code prefix in the course name (e.g. `WI2024` → Semester 1). The mapping is currently hard-coded for HWR WI module codes — courses from other cohorts or degree programmes with unknown codes land in `Sonstiges/`. Dynamic mapping is planned (see `docs/backlog.md`).
 
+**Group-header sections** — Moodle sections with zero downloadable activities act as structural parent folders. All subsequent sections nest inside until the next zero-activity section. Consecutive zero-activity sections create two levels of nesting (e.g. `Teil 1/1 Prozessqualität/1.1 Prozessparadigmen/`).
+
+**`_Links/` subfolder** — external links (`.url.txt`, `.webloc` on macOS, `.url` on Windows) are placed in a `_Links/` subfolder only when the section also contains other files. If a section contains nothing but links, they sit flat in the section folder with no extra nesting.
+
 **Sidecar files** (`.description.md`) contain the activity description from Moodle, converted to Markdown. They are tracked separately and not counted in the download total.
 
 **`_SectionDescription.md`** files contain the section summary text from Moodle. They are refreshed on every scrape run.
+
+**`_FolderDescription.md`** files are written inside expanded Moodle folder activities when the folder has a description.
+
+**`_SubfolderName.md`** files appear inside label-divider subfolders when the divider label itself contains content (e.g. learning objectives).
 
 ---
 
 ## For Developers
 
 ```bash
-npm test              # run all tests (856 tests, 49 files)
+npm test              # run all tests (907 tests, 50 files)
 npm run test:watch    # run tests in watch mode
 npm run test:coverage # generate coverage report
 npm run build         # compile TypeScript → dist/
