@@ -127,6 +127,7 @@ program
   .option("--course-ids <ids>", "Comma-separated numeric course IDs to scrape (exact match)")
   .option("--semester <N|latest>", 'Scrape only courses in semester N (1–6), "latest" for the highest detected, or "sonstiges"/"praxistransfer"')
   .option("--fresh", "Reset state for matched courses before scraping (re-downloads everything for those courses)", false)
+  .option("--show-evictions", "Print a list of stale generated files deleted during cleanup (implied by --verbose)", false)
   .option("--force", "Re-download everything, ignoring cached state", false)
   .option("--check-files", "Re-download any files missing from disk (even if state says up-to-date)", false)
   .option("--dry-run", "Print planned actions without writing files", false)
@@ -155,6 +156,7 @@ program
     fast: boolean;
     semester?: string;
     fresh: boolean;
+    showEvictions: boolean;
   }) => {
     const globalOpts = program.opts<{ debug: boolean }>();
     const config = new ConfigManager();
@@ -216,6 +218,7 @@ program
     }
     if (opts.semester) scrapeOpts.semester = opts.semester;
     if (opts.fresh) scrapeOpts.fresh = true;
+    if (opts.showEvictions) scrapeOpts.showEvictions = true;
 
     try {
       await runScrape(scrapeOpts);

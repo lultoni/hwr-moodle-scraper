@@ -1098,8 +1098,7 @@ describe("STEP-020: scrape --semester filter", () => {
 });
 
 // ── Feature C: --fresh flag ────────────────────────────────────────────────────
-describe("scrape --fresh flag", () => {
-  it("--fresh: state entries for scraped courses are absent from the save call (treated as new)", async () => {
+describe("scrape --fresh flag", () => {  it("--fresh: state entries for scraped courses are absent from the save call (treated as new)", async () => {
     // Pre-existing state has course 1 with a known file.
     // --fresh should clear that course from state before scraping,
     // so the final save doesn't carry the old entry.
@@ -1188,5 +1187,104 @@ describe("scrape --fresh flag", () => {
     expect(lastSave?.courses?.["1"]?.sections?.["s1"]?.files?.["r-a"]).toBeUndefined();
     // Course 2 (NOT in --courses scope) — old entry must be preserved
     expect(lastSave?.courses?.["2"]?.sections?.["s1"]?.files?.["r-b"]).toBeDefined();
+  });
+});
+
+// ── Feature A: --show-evictions flag ──────────────────────────────────────────
+describe("scrape --show-evictions flag", () => {
+  it("--show-evictions: prints evicted generatedFile path to stderr", async () => {
+    const { StateManager } = await import("../../src/sync/state.js");
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    const staleFile = "/tmp/test/Semester_4/Software Engineering/Section 1/_SectionDescription.md";
+
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue({
+        courses: {},
+        generatedFiles: [staleFile],
+        lastSyncAt: new Date().toISOString(),
+      }),
+      save: vi.fn().mockResolvedValue(undefined),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+      backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
+    } as unknown as InstanceType<typeof StateManager>));
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI-22/2-M16-WI2044-F01-SoSe-2026-59385 WI24A Software Engineering SoSe-2026", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({ courseId: 1, sections: [] });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, showEvictions: true });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+
+    expect(output).toContain("Section 1");
+    expect(output).toContain("_SectionDescription.md");
+  });
+
+  it("--verbose implies --show-evictions (evicted files appear in verbose output)", async () => {
+    const { StateManager } = await import("../../src/sync/state.js");
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    const staleFile = "/tmp/test/Semester_4/Software Engineering/Old Section/_SectionDescription.md";
+
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue({
+        courses: {},
+        generatedFiles: [staleFile],
+        lastSyncAt: new Date().toISOString(),
+      }),
+      save: vi.fn().mockResolvedValue(undefined),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+      backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
+    } as unknown as InstanceType<typeof StateManager>));
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI-22/2-M16-WI2044-F01-SoSe-2026-59385 WI24A Software Engineering SoSe-2026", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({ courseId: 1, sections: [] });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, verbose: true });
+    const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("");
+    stderrSpy.mockRestore();
+
+    expect(output).toContain("Old Section");
+  });
+
+  it("--json includes evictedFiles array when generatedFiles were evicted", async () => {
+    const { StateManager } = await import("../../src/sync/state.js");
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    const staleFile = "/tmp/test/Semester_4/Software Engineering/Gone Section/_SectionDescription.md";
+
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue({
+        courses: {},
+        generatedFiles: [staleFile],
+        lastSyncAt: new Date().toISOString(),
+      }),
+      save: vi.fn().mockResolvedValue(undefined),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+      backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
+    } as unknown as InstanceType<typeof StateManager>));
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI-22/2-M16-WI2044-F01-SoSe-2026-59385 WI24A Software Engineering SoSe-2026", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({ courseId: 1, sections: [] });
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, json: true });
+    const stdoutOutput = stdoutSpy.mock.calls.map((c) => c[0] as string).join("");
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+
+    const result = JSON.parse(stdoutOutput) as Record<string, unknown>;
+    expect(result).toHaveProperty("evictedFiles");
+    expect(Array.isArray(result["evictedFiles"])).toBe(true);
+    expect((result["evictedFiles"] as string[])).toContain(staleFile);
   });
 });

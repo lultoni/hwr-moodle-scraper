@@ -71,6 +71,8 @@ export interface ScrapeOptions {
   semester?: string;
   /** Reset state for matched courses before scraping (same scope as --courses/--semester). */
   fresh?: boolean;
+  /** Print a list of generatedFiles evicted (deleted) during this run. --verbose implies this. */
+  showEvictions?: boolean;
   /** Prompt function for interactive credential entry (used as fallback when keychain unavailable). */
   promptFn?: PromptFn;
   logger?: Logger;
@@ -1533,6 +1535,14 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
     lastSync: { timestamp: new Date().toISOString(), newFiles, updatedFiles },
   });
 
+  // Report evictions when --show-evictions or --verbose
+  if (staleGeneratedFiles.length > 0 && (opts.showEvictions || verbose) && !effectiveQuiet) {
+    logger.info(`Evicted ${staleGeneratedFiles.length} stale generated file${staleGeneratedFiles.length === 1 ? "" : "s"}:`);
+    for (const p of staleGeneratedFiles) {
+      logger.info(`  - ${relative(outputDir, p)}`);
+    }
+  }
+
   // Run postScrapeHook if configured and there were changes (UC-35)
   const hookCmd = (await config.get("postScrapeHook")) as string | null | undefined ?? null;
   if (hookCmd && changeEntries.length > 0) {
@@ -1558,6 +1568,7 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
       updatedFiles: changeEntries.filter((e) => !e.isNew).map((e) => e.relativePath),
       skipped: skipped.length,
       errors: failedCount > 0 ? [`${failedCount} download(s) failed`] : [] as string[],
+      evictedFiles: staleGeneratedFiles,
     };
     process.stdout.write(JSON.stringify(jsonResult, null, 2) + "\n");
   }
