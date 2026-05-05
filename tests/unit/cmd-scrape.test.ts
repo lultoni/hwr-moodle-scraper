@@ -1096,3 +1096,97 @@ describe("STEP-020: scrape --semester filter", () => {
     expect(vi.mocked(fetchContentTree)).not.toHaveBeenCalled();
   });
 });
+
+// ── Feature C: --fresh flag ────────────────────────────────────────────────────
+describe("scrape --fresh flag", () => {
+  it("--fresh: state entries for scraped courses are absent from the save call (treated as new)", async () => {
+    // Pre-existing state has course 1 with a known file.
+    // --fresh should clear that course from state before scraping,
+    // so the final save doesn't carry the old entry.
+    const { StateManager } = await import("../../src/sync/state.js");
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    const oldFile = {
+      name: "Old Lecture.pdf",
+      url: "https://moodle.example.com/r/old",
+      localPath: "/tmp/test/Semester_4/Software Engineering/Week 1/Old Lecture.pdf",
+      hash: "a".repeat(64),
+      lastModified: "2026-01-01T00:00:00Z",
+      status: "ok" as const,
+    };
+
+    const savedStates: object[] = [];
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue({
+        courses: {
+          "1": {
+            name: "WI24A Software Engineering SoSe-2026",
+            sections: { "s1": { files: { "r-old": oldFile } } },
+          },
+        },
+        generatedFiles: [],
+        lastSyncAt: new Date().toISOString(),
+      }),
+      save: vi.fn().mockImplementation((s: object) => { savedStates.push(s); return Promise.resolve(); }),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+      backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
+    } as unknown as InstanceType<typeof StateManager>));
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI-22/2-M16-WI2044-F01-SoSe-2026-59385 WI24A Software Engineering SoSe-2026", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({ courseId: 1, sections: [] });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, fresh: true });
+    stderrSpy.mockRestore();
+
+    // The final save must not contain the old file entry for course 1
+    const lastSave = savedStates.at(-1) as { courses: Record<string, { sections: Record<string, { files: Record<string, unknown> }> }> } | undefined;
+    const section = lastSave?.courses?.["1"]?.sections?.["s1"];
+    expect(section?.files?.["r-old"]).toBeUndefined();
+  });
+
+  it("--fresh with --courses: only resets the specified courses, not all", async () => {
+    const { StateManager } = await import("../../src/sync/state.js");
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+
+    const savedStates: object[] = [];
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue({
+        courses: {
+          "1": {
+            name: "WI24A Course A",
+            sections: { "s1": { files: { "r-a": { status: "ok", localPath: "/tmp/a.pdf", url: "u", hash: "a".repeat(64), lastModified: "" } } } },
+          },
+          "2": {
+            name: "WI24A Course B",
+            sections: { "s1": { files: { "r-b": { status: "ok", localPath: "/tmp/b.pdf", url: "u", hash: "b".repeat(64), lastModified: "" } } } },
+          },
+        },
+        generatedFiles: [],
+        lastSyncAt: new Date().toISOString(),
+      }),
+      save: vi.fn().mockImplementation((s: object) => { savedStates.push(s); return Promise.resolve(); }),
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+      backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
+    } as unknown as InstanceType<typeof StateManager>));
+
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI-M01-WI1001-F01-SoSe-2026-001 WI24A Course A SoSe-2026", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+      { courseId: 2, courseName: "WI-M02-WI1002-F01-SoSe-2026-002 WI24A Course B SoSe-2026", courseUrl: "https://moodle.example.com/course/view.php?id=2" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValue({ courseId: 1, sections: [] });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    // --fresh with --courses [1] should only clear course 1, not course 2
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false, fresh: true, courses: [1] });
+    stderrSpy.mockRestore();
+
+    const lastSave = savedStates.at(-1) as { courses: Record<string, { sections: Record<string, { files: Record<string, unknown> }> }> } | undefined;
+    // Course 1 (fresh) — old entry should be gone (no files from new empty tree)
+    expect(lastSave?.courses?.["1"]?.sections?.["s1"]?.files?.["r-a"]).toBeUndefined();
+    // Course 2 (NOT in --courses scope) — old entry must be preserved
+    expect(lastSave?.courses?.["2"]?.sections?.["s1"]?.files?.["r-b"]).toBeDefined();
+  });
+});

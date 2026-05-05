@@ -69,6 +69,8 @@ export interface ScrapeOptions {
   fast?: boolean;
   /** Filter to a specific semester: "1"-"6", "latest" (highest detected), "sonstiges", "praxistransfer". */
   semester?: string;
+  /** Reset state for matched courses before scraping (same scope as --courses/--semester). */
+  fresh?: boolean;
   /** Prompt function for interactive credential entry (used as fallback when keychain unavailable). */
   promptFn?: PromptFn;
   logger?: Logger;
@@ -348,6 +350,22 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
 
     if (urlMigrationNeeded) {
       await stateManager.save({ courses: state.courses, generatedFiles: state.generatedFiles });
+    }
+  }
+
+  // --fresh: reset state for all courses being scraped so they are treated as new
+  // (same semantics as msc archive --courses X + msc scrape --courses X in one step)
+  if (opts.fresh) {
+    const freshCourseIds = new Set(courses.map((c) => String(c.courseId)));
+    let freshCount = 0;
+    for (const id of freshCourseIds) {
+      if (state.courses[id]) {
+        delete (state.courses as Record<string, unknown>)[id];
+        freshCount++;
+      }
+    }
+    if (freshCount > 0 && !effectiveQuiet) {
+      logger.info(`[--fresh] Reset state for ${freshCount} course${freshCount === 1 ? "" : "s"} — will re-download.`);
     }
   }
 
