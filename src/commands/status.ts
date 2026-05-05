@@ -343,7 +343,7 @@ export async function runStatus(opts: StatusOptions): Promise<void> {
     write("");
     write(`Empty orphan directories (${emptyOrphanDirs.length}) — left over after scraper cleanup:`);
     for (const line of buildTreeLines(emptyOrphanDirs, outputDir)) {
-      write(`  ${line}/`);
+      write(`  ${line}`);
     }
     ui.hint("Tip: Run `msc clean --empty-dirs` to remove them.");
   }

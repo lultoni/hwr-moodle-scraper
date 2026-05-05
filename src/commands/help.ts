@@ -80,6 +80,10 @@ msc clean removes personal files that YOU added to the output folder
   msc clean --dry-run  → preview without making changes
   msc clean --force    → skip confirmation prompt
 
+To remove empty directories left over from scraper cleanup (e.g. old
+section folders after a section was renamed):
+  msc clean --empty-dirs
+
 Files inside a "_User-Files/" directory are always protected and never
 shown or touched by msc clean.
 
@@ -112,6 +116,9 @@ To see what changed in the last run:
 
 To re-download everything regardless of state:
   msc scrape --force
+
+To re-download a specific course from scratch (reset its state first):
+  msc scrape --courses <name> --fresh
 
 To re-download any files missing from disk (even if state says up-to-date):
   msc scrape --check-files

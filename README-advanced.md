@@ -15,14 +15,16 @@ Downloads new and changed files from Moodle.
 |------|-------------|
 | `--dry-run` | Show what would be downloaded without writing anything |
 | `--force` | Re-download everything, ignoring cached state |
+| `--fresh` | Reset state for matched courses before scraping so they are fully re-downloaded. Respects `--courses`/`--semester` scope. Files on disk are untouched — equivalent to `msc archive --courses X && msc scrape --courses X` in one step. |
 | `--check-files` | Re-download any files missing from disk (even if state says up-to-date) |
 | `--courses <keywords>` | Comma-separated keywords to filter courses (fuzzy match) |
 | `--course-ids <ids>` | Comma-separated numeric course IDs to scrape (exact match) |
 | `--semester <N\|latest>` | Scrape only courses in semester N (1–6), `latest` for the current (highest) semester, or `sonstiges` / `praxistransfer` |
+| `--show-evictions` | Print the list of generated files deleted during cleanup (e.g. old `_SectionDescription.md` files after a section is renamed). `--verbose` implies this. |
 | `--fast` | Faster scrape: shorter delays, more concurrency (heavier on the server) |
 | `--no-descriptions` | Skip `.description.md` sidecars and `.url.txt` files — binaries only |
 | `--output-dir <path>` | Override the output directory for this run only |
-| `--json` | Output a machine-readable JSON summary to stdout |
+| `--json` | Output a machine-readable JSON summary to stdout (includes `evictedFiles` array) |
 | `--quiet` / `-q` | Suppress all output except errors |
 | `--non-interactive` | Exit instead of prompting for credentials (useful in scripts) |
 | `--skip-disk-check` | Skip the minimum free disk space check |
@@ -33,11 +35,11 @@ Shows a summary of your downloaded files.
 
 | Flag | Description |
 |------|-------------|
-| `--issues` | List old entries (ended courses) and user-added files |
+| `--issues` | Check for problems: old state entries, missing downloaded files, missing generated files (e.g. `README.md`, `_SectionDescription.md` deleted manually), empty orphan directories, and user-added files |
 | `--changed` | Show files that changed in the last scrape run |
 | `--dismiss-orphans` | Remove state entries for files from ended courses |
 | `--dry-run` | Preview `--dismiss-orphans` without making changes |
-| `--json` | Output machine-readable JSON to stdout |
+| `--json` | Output machine-readable JSON to stdout (includes `missingGenerated` and `emptyDirs` arrays) |
 
 ### `msc clean`
 
@@ -47,6 +49,7 @@ Shows a tree and asks for confirmation before acting.
 | Flag | Description |
 |------|-------------|
 | `--move` | Move personal files to `User Files/` instead of deleting them |
+| `--empty-dirs` | Remove empty directories left over from scraper cleanup (e.g. after a section is renamed and its old folder is empty). Never removes dirs that contain user files or `_User-Files/` content. |
 | `--dry-run` | Show what would happen without acting |
 | `--force` | Skip the confirmation prompt |
 
