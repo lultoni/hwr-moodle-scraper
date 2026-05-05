@@ -1,6 +1,25 @@
 // UC-20: msc help <topic>
 // Plain-language explanations for common msc concepts.
 
+/** One-line descriptions shown in the topic listing. */
+export const HELP_TOPIC_DESCRIPTIONS: Record<string, string> = {
+  "orphaned":     "old state entries left over when a course ended",
+  "user-files":   "personal files you added — how msc treats them",
+  "state":        "what the sync state file is and how to clear it",
+  "reset":        "clear state, delete downloaded files, wipe config",
+  "delete-files": "how to delete files that msc downloaded",
+  "clean":        "remove personal files from the output folder",
+  "fresh":        "force a full re-download of one or more courses",
+  "sidecar":      ".description.md files written alongside downloads",
+  "sync":         "incremental sync — how msc avoids re-downloading",
+  "update":       "how to update msc to a newer version",
+  "debug":        "diagnose errors with --debug and log files",
+  "archive":      "hide an ended course from status without deleting",
+  "config":       "view and change persistent settings",
+  "ignored":      "files and folders msc treats as invisible",
+  "credentials":  "manage your Moodle login credentials",
+};
+
 const TOPICS: Record<string, string | null> = {
   "orphaned": `
 Old Entries (from ended courses)
@@ -69,6 +88,29 @@ files are NOT deleted. Flags compose freely:
 After a failed scrape, to retry with a clean state (keeps your files):
   msc reset --state && msc scrape
 `,
+  "delete-files": `
+Deleting Downloaded Files
+==========================
+msc never deletes its own downloaded files automatically. To delete them:
+
+Delete ALL downloaded files (across all courses):
+  msc reset --files
+
+Preview what would be deleted without actually deleting:
+  msc reset --files --dry-run
+
+Delete files for one specific course only (re-scrape it fresh):
+  msc scrape --courses <name> --fresh
+  # This resets state for that course and re-downloads everything.
+  # Old files at the previous paths are left on disk — delete them manually
+  # after the scrape, or run: msc clean --empty-dirs
+
+Delete files AND reset config AND clear credentials (full wipe):
+  msc reset --full
+
+Note: msc clean does NOT delete scraper-downloaded files — it only removes
+personal files that you added yourself.
+`,
   "clean": `
 msc clean
 =========
@@ -88,6 +130,30 @@ Files inside a "_User-Files/" directory are always protected and never
 shown or touched by msc clean.
 
 Use "msc reset" (not msc clean) to remove files that msc downloaded.
+`,
+  "fresh": `
+Force Re-download a Course
+===========================
+Use --fresh to fully re-download one or more courses as if they'd never
+been scraped before. Files already on disk are kept — only the sync state
+for the matched courses is reset before the run begins.
+
+Re-download a single course:
+  msc scrape --courses "Datenbanken" --fresh
+
+Re-download multiple courses:
+  msc scrape --courses "Software Engineering,Datenbanken" --fresh
+
+Re-download all courses in a semester:
+  msc scrape --semester 4 --fresh
+
+Re-download everything from scratch:
+  msc scrape --force
+  # (or: msc reset --state && msc scrape)
+
+Difference from --force:
+  --fresh   resets state for matched courses before scraping (scoped)
+  --force   re-downloads every file regardless of state (no scope)
 `,
   "sidecar": `
 Description Files (.description.md)
@@ -215,12 +281,33 @@ Use "msc ignored" to see everything that msc treats as invisible:
 
 Files in any of these locations never appear in "msc status" output.
 `,
+  "credentials": `
+Managing Credentials
+====================
+msc stores your Moodle username and password in your system keychain
+(macOS Keychain, Windows Credential Manager, or libsecret on Linux).
+
+To update stored credentials:
+  msc auth set
+
+To clear stored credentials and session cookie:
+  msc auth clear
+
+To clear credentials as part of a full reset:
+  msc reset --credentials
+
+On the next scrape after clearing credentials, msc will prompt you to
+log in again.
+
+If you're running msc in a script or CI and don't want interactive prompts:
+  msc scrape --non-interactive
+`,
 };
 
 // "old-entries" is an alias for "orphaned"
 TOPICS["old-entries"] = TOPICS["orphaned"]!;
 
-/** All real help topic names (alias "old-entries" excluded). */
+/** All real help topic names (aliases excluded). */
 export const HELP_TOPICS: string[] = Object.entries(TOPICS)
   .filter(([k, v]) => v !== null && k !== "old-entries")
   .map(([k]) => k);
@@ -229,9 +316,13 @@ export function runHelp(topic?: string): void {
   if (!topic) {
     process.stdout.write("Usage: msc help <topic>\n\n");
     process.stdout.write("Available topics:\n");
-    process.stdout.write(HELP_TOPICS.map((k) => `  ${k}`).join("\n") + "\n");
+    const width = Math.max(...HELP_TOPICS.map((k) => k.length));
+    for (const k of HELP_TOPICS) {
+      const desc = HELP_TOPIC_DESCRIPTIONS[k] ? `  — ${HELP_TOPIC_DESCRIPTIONS[k]}` : "";
+      process.stdout.write(`  ${k.padEnd(width)}${desc}\n`);
+    }
     process.stdout.write("\n");
-    process.stdout.write("  old-entries  (alias for: orphaned)\n");
+    process.stdout.write(`  ${"old-entries".padEnd(width)}  — alias for: orphaned\n`);
     return;
   }
 
@@ -245,3 +336,4 @@ export function runHelp(topic?: string): void {
 
   process.stdout.write(text.trimStart());
 }
+

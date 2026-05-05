@@ -99,7 +99,7 @@ Opens the full-screen interactive interface. All major features are available th
 
 Plain-language explanations for common concepts.
 
-Available topics: `orphaned`, `user-files`, `state`, `reset`, `clean`, `sidecar`, `sync`, `update`, `debug`, `archive`, `config`, `ignored`
+Available topics: `orphaned`, `user-files`, `state`, `reset`, `delete-files`, `clean`, `fresh`, `sidecar`, `sync`, `update`, `debug`, `archive`, `config`, `ignored`, `credentials`
 
 `old-entries` is an alias for `orphaned`.
 
