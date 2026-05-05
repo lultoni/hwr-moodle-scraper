@@ -112,6 +112,21 @@ export function isSectionGroupHeader(activities: Activity[], _summaryMd: string 
   return activities.length === 0;
 }
 
+/**
+ * Returns the nesting level of a group-header section based on the HTML heading tag in
+ * its raw summary HTML. `1` = top-level (h1–h3), `2` = sub-level (h4–h6), `null` = no heading.
+ *
+ * Moodle SE uses h3 for "Teil N" top-level parts and h4 for numbered sub-sections.
+ * This drives the two-level folding: h3 sections are level-1 parents; h4 sections are
+ * level-2 children of the most recent h3, regardless of intervening non-header sections.
+ */
+export function sectionGroupHeaderLevel(summaryHtml: string | undefined): 1 | 2 | null {
+  if (!summaryHtml) return null;
+  const match = summaryHtml.match(/<h([1-6])/i);
+  if (!match) return null;
+  return Number(match[1]) <= 3 ? 1 : 2;
+}
+
 export async function runScrape(opts: ScrapeOptions): Promise<void> {
   const {
     outputDir,
@@ -424,36 +439,41 @@ export async function runScrape(opts: ScrapeOptions): Promise<void> {
   }
 
   // Build (courseId:sectionId) → { parent, grandparent? } for group-header section folding.
-  // Consecutive group headers nest (grandparent → parent → children); capped at 2 levels.
-  // A section is a group header when: zero activities AND description is heading/hrule-only.
+  // Uses HTML heading level from raw summary to determine nesting:
+  //   h1–h3 (level 1) → new top-level group (e.g. "Teil 1", "Teil 2")
+  //   h4–h6 (level 2) → child of most recent level-1 header (e.g. "1 Prozessqualität")
+  //   no heading      → treated as level-1 (safe default for headerless zero-act sections)
+  // A non-header section between two h4 headers does NOT reset the h3 parent context.
+  // Both group-header sections (for _SectionDescription.md paths) AND non-header sections
+  // (for file paths) are added to the map when they have a parent.
   // Uses raw `trees` (not expanded) — folder expansion only adds activities; zero-activity
   // sections remain zero-activity after expansion.
   const sectionParentMap = new Map<string, { parent: string; grandparent?: string }>();
   for (const tree of trees) {
     let level1: string | undefined;
     let level2: string | undefined;
-    let prevWasHeader = false;
     for (const section of tree.sections) {
-      let summaryMd: string | undefined;
-      if (section.summary) {
-        try { summaryMd = createTurndown().turndown(section.summary).trim(); } catch { /* skip */ }
-      }
-      const isHeader = isSectionGroupHeader(section.activities, summaryMd);
+      const isHeader = isSectionGroupHeader(section.activities, undefined);
       if (isHeader) {
-        if (prevWasHeader) {
-          level2 = section.sectionName;  // consecutive header → child of level1
+        const headingLevel = sectionGroupHeaderLevel(section.summary);
+        if (headingLevel === 2) {
+          // h4/h5/h6 → child of current level-1; record its own parent so its
+          // _SectionDescription.md lands under the level-1 folder
+          if (level1 !== undefined) {
+            sectionParentMap.set(`${tree.courseId}:${section.sectionId}`, { parent: level1 });
+          }
+          level2 = section.sectionName;
         } else {
-          level1 = section.sectionName;  // first in a run → new top-level group
+          // h1–h3 or no heading → new top-level group; reset level-2
+          level1 = section.sectionName;
           level2 = undefined;
         }
-        prevWasHeader = true;
       } else {
         if (level2 !== undefined) {
           sectionParentMap.set(`${tree.courseId}:${section.sectionId}`, { parent: level2, grandparent: level1 });
         } else if (level1 !== undefined) {
           sectionParentMap.set(`${tree.courseId}:${section.sectionId}`, { parent: level1 });
         }
-        prevWasHeader = false;
       }
     }
   }

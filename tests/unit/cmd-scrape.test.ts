@@ -69,7 +69,7 @@ vi.mock("../../src/fs/output.js", async (importOriginal) => {
   };
 });
 
-import { runScrape, isSectionGroupHeader } from "../../src/commands/scrape.js";
+import { runScrape, isSectionGroupHeader, sectionGroupHeaderLevel } from "../../src/commands/scrape.js";
 import { ConfigManager } from "../../src/config.js";
 
 describe("STEP-020: scrape command", () => {
@@ -959,6 +959,84 @@ describe("stale generatedFiles cleanup on re-scrape", () => {
   });
 });
 
+// ── heading-level-based group-header folding (Pass 59) ───────────────────────
+// Covers: h3 sections are level-1 parents; h4 sections are level-2 (child of last h3).
+// A non-header section between two group headers does NOT reset h4 to top-level.
+// This matches the Software Engineering course structure where Teilleistung 1 (has files)
+// sits between "1 Prozessqualität" (h4) and "2 Produktqualität" (h4), both under "Teil 1" (h3).
+describe("group-header folding: heading-level-based nesting (Pass 59)", () => {
+  it("h4 section stays nested under h3 even when non-header sections appear between them", async () => {
+    // Simulates SE course: Teil 1 (h3) → 1 Prozessqualität (h4) → 1.1 (acts) →
+    //   Teilleistung 1 (acts) → 2 Produktqualität (h4, should still nest under Teil 1)
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+    const { StateManager } = await import("../../src/sync/state.js");
+    const saveMock = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue({ courses: {}, generatedFiles: [], lastSyncAt: new Date().toISOString() }),
+      save: saveMock,
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+      backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
+    } as unknown as InstanceType<typeof StateManager>));
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI-22/2-M16-WI2044-F01-SoSe-2026-59385 WI24A Software Engineering SoSe-2026", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [
+        { sectionId: "s1", sectionName: "Teil 1: SW-Entwicklung", activities: [], summary: "<h3><strong>Teil 1: SW-Entwicklung</strong></h3>" },
+        { sectionId: "s2", sectionName: "1 Prozessqualität", activities: [], summary: "<h4><strong>1 Prozessqualität</strong></h4>" },
+        { sectionId: "s3", sectionName: "1.1 Prozessparadigmen", activities: [{ activityType: "resource", activityName: "Folien.pdf", url: "https://moodle.example.com/pluginfile.php/1/mod_resource/content/0/Folien.pdf", isAccessible: true }], summary: "" },
+        { sectionId: "s5", sectionName: "Teilleistung 1: Planspiel", activities: [{ activityType: "resource", activityName: "Aufgabe.pdf", url: "https://moodle.example.com/pluginfile.php/2/mod_resource/content/0/Aufgabe.pdf", isAccessible: true }], summary: "" },
+        { sectionId: "s6", sectionName: "2 Produktqualität", activities: [], summary: "<h4><strong>2 Produktqualität</strong></h4>" },
+        { sectionId: "s7", sectionName: "2.1 Formale Spezifikationen", activities: [{ activityType: "resource", activityName: "Skript.pdf", url: "https://moodle.example.com/pluginfile.php/3/mod_resource/content/0/Skript.pdf", isAccessible: true }], summary: "" },
+      ],
+    } as never);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false });
+    stderrSpy.mockRestore();
+    const lastSave = saveMock.mock.calls.at(-1)?.[0] as { generatedFiles?: string[] };
+    const generatedFiles = lastSave?.generatedFiles ?? [];
+    // 1.1 Prozessparadigmen is child of "1 Prozessqualität" (h4) which is child of "Teil 1" (h3)
+    expect(generatedFiles).toContain("/tmp/test/Semester_4/Software Engineering/Teil 1_ SW-Entwicklung/1 Prozessqualität/_SectionDescription.md");
+    // 2 Produktqualität is ALSO a child of "Teil 1" (h3), even though Teilleistung 1 sits between them
+    expect(generatedFiles).toContain("/tmp/test/Semester_4/Software Engineering/Teil 1_ SW-Entwicklung/2 Produktqualität/_SectionDescription.md");
+  });
+
+  it("h3 section resets level-1 context (Teil 2 becomes a new top-level parent)", async () => {
+    // Teil 1 (h3) → child (h4) → content → Teil 2 (h3) → new top-level context
+    const { fetchEnrolledCourses, fetchContentTree } = await import("../../src/scraper/courses.js");
+    const { StateManager } = await import("../../src/sync/state.js");
+    const saveMock = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(StateManager).mockImplementationOnce(() => ({
+      load: vi.fn().mockResolvedValue({ courses: {}, generatedFiles: [], lastSyncAt: new Date().toISOString() }),
+      save: saveMock,
+      statePath: "/tmp/test/.moodle-scraper-state.json",
+      backupPath: "/tmp/test/.moodle-scraper-state.json.bak",
+    } as unknown as InstanceType<typeof StateManager>));
+    vi.mocked(fetchEnrolledCourses).mockResolvedValueOnce([
+      { courseId: 1, courseName: "WI-22/2-M16-WI2044-F01-SoSe-2026-59385 WI24A Software Engineering SoSe-2026", courseUrl: "https://moodle.example.com/course/view.php?id=1" },
+    ]);
+    vi.mocked(fetchContentTree).mockResolvedValueOnce({
+      courseId: 1,
+      sections: [
+        { sectionId: "s1", sectionName: "Teil 1: SW-Entwicklung", activities: [], summary: "<h3><strong>Teil 1: SW-Entwicklung</strong></h3>" },
+        { sectionId: "s2", sectionName: "1 Prozessqualität", activities: [], summary: "<h4><strong>1 Prozessqualität</strong></h4>" },
+        { sectionId: "s3", sectionName: "1.1 Prozessparadigmen", activities: [{ activityType: "resource", activityName: "Folien.pdf", url: "https://moodle.example.com/pluginfile.php/1/mod_resource/content/0/Folien.pdf", isAccessible: true }], summary: "" },
+        { sectionId: "s12", sectionName: "Teil 2: Softwarearchitekturen", activities: [], summary: "<h3><strong>Teil 2: Softwarearchitekturen</strong></h3>" },
+        { sectionId: "s14", sectionName: "1 Grundlagen", activities: [{ activityType: "resource", activityName: "Intro.pdf", url: "https://moodle.example.com/pluginfile.php/4/mod_resource/content/0/Intro.pdf", isAccessible: true }], summary: "" },
+      ],
+    } as never);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runScrape({ outputDir: "/tmp/test", dryRun: false, force: false });
+    stderrSpy.mockRestore();
+    const lastSave = saveMock.mock.calls.at(-1)?.[0] as { generatedFiles?: string[] };
+    const generatedFiles = lastSave?.generatedFiles ?? [];
+    // "1 Grundlagen" is a child of Teil 2, NOT Teil 1
+    expect(generatedFiles).toContain("/tmp/test/Semester_4/Software Engineering/Teil 2_ Softwarearchitekturen/_SectionDescription.md");
+    expect(generatedFiles).not.toContain("/tmp/test/Semester_4/Software Engineering/Teil 1_ SW-Entwicklung/1 Grundlagen/_SectionDescription.md");
+  });
+});
+
 describe("STEP-020: scrape — verbose/debug mode and no-courses message (Pass 49)", () => {
   it("--verbose sets logger to DEBUG level (debug events appear in output)", async () => {
     // When verbose=true the logger level is DEBUG, so debug() calls go to stderr
@@ -1329,5 +1407,51 @@ describe("isSectionGroupHeader", () => {
 
   it("returns false when section has activities even with empty description", () => {
     expect(isSectionGroupHeader(acts(1), "")).toBe(false);
+  });
+});
+
+// ── sectionGroupHeaderLevel: heading-level detection from raw summary HTML ───
+// Covers: Pass 59 — h3-based level-1 vs h4-based level-2 group-header detection
+// Moodle SE course uses h3 for "Teil N" top-level headers and h4 for numbered sub-headers.
+describe("sectionGroupHeaderLevel", () => {
+  it("returns 1 for h3 heading (top-level Teil sections)", () => {
+    expect(sectionGroupHeaderLevel('<div class="no-overflow"><h3><strong>Teil 1: SW-Entwicklung</strong></h3></div>')).toBe(1);
+  });
+
+  it("returns 1 for h2 heading", () => {
+    expect(sectionGroupHeaderLevel("<h2>Überblick</h2>")).toBe(1);
+  });
+
+  it("returns 1 for h1 heading", () => {
+    expect(sectionGroupHeaderLevel("<h1>Top Level</h1>")).toBe(1);
+  });
+
+  it("returns 2 for h4 heading (numbered sub-sections like 1 Prozessqualität)", () => {
+    expect(sectionGroupHeaderLevel('<div class="no-overflow"><h4><strong>1 Prozessqualität</strong></h4>\n<hr id="null"></div>')).toBe(2);
+  });
+
+  it("returns 2 for h5 heading", () => {
+    expect(sectionGroupHeaderLevel("<h5>Sub sub</h5>")).toBe(2);
+  });
+
+  it("returns 2 for h6 heading", () => {
+    expect(sectionGroupHeaderLevel("<h6>Deep heading</h6>")).toBe(2);
+  });
+
+  it("returns null when summary has no heading tags", () => {
+    expect(sectionGroupHeaderLevel("<p>Some description text</p>")).toBeNull();
+  });
+
+  it("returns null for undefined summary", () => {
+    expect(sectionGroupHeaderLevel(undefined)).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(sectionGroupHeaderLevel("")).toBeNull();
+  });
+
+  it("uses the first (outermost) heading level when multiple headings are present", () => {
+    // h3 comes first → level 1, even though h4 also present
+    expect(sectionGroupHeaderLevel("<h3>Top</h3><h4>Sub</h4>")).toBe(1);
   });
 });

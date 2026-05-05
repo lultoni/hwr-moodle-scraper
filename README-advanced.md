@@ -254,7 +254,7 @@ outputDir/
 ## For Developers
 
 ```bash
-npm test              # run all tests (907 tests, 50 files)
+npm test              # run all tests (919 tests, 50 files)
 npm run test:watch    # run tests in watch mode
 npm run test:coverage # generate coverage report
 npm run build         # compile TypeScript → dist/
